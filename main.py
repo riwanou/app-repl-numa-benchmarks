@@ -3,6 +3,7 @@ import requests
 import os
 import h5py
 import numpy as np
+import multiprocessing
 
 import mod_faiss
 import mod_annoy
@@ -10,23 +11,24 @@ import mod_usearch
 
 NUM_RUNS = 10
 
+NUM_THREADS = multiprocessing.cpu_count()
 DATA_DIR = "data"
 INDEX_DIR = "indices"
 
 CONFIG = {
     "glove-100-angular.hdf5": {
         "faiss": {"nlist": 100, "nprobe": 20},
-        "annoy": {"trees": 100, "search_k": 200_000, "threads": 64},
+        "annoy": {"trees": 100, "search_k": 200_000},
         "usearch": {"e_search": 4000},
     },
     "sift-128-euclidean.hdf5": {
         "faiss": {"nlist": 100, "nprobe": 10},
-        "annoy": {"trees": 100, "search_k": 40_000, "threads": 64},
+        "annoy": {"trees": 100, "search_k": 40_000},
         "usearch": {"e_search": 256},
     },
     "gist-960-euclidean.hdf5": {
         "faiss": {"nlist": 100, "nprobe": 10},
-        "annoy": {"trees": 100, "search_k": 500_000, "threads": 64},
+        "annoy": {"trees": 100, "search_k": 500_000},
         "usearch": {"e_search": 3000},
     },
 }
@@ -44,6 +46,9 @@ DATASETS = [
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "--run", type=int, default=NUM_RUNS, help="Create the indices"
+)
+parser.add_argument(
+    "--threads", type=int, default=NUM_THREADS, help="Number of threads"
 )
 parser.add_argument(
     "--datasets",
@@ -122,7 +127,7 @@ def runner_bench(
     neighbors: h5py.Dataset,
 ):
     runner, index_path, config = create_f(dataset, dataset_config)
-    runner.load_index(train, index_path, config)
+    runner.load_index(train, index_path, args.threads, config)
 
     k = neighbors.shape[1]
     total = neighbors.shape[0] * k

@@ -26,16 +26,21 @@ class Faiss:
 
         print(f"Index created {index_path}")
 
-    def load_index(self, train: h5py.Dataset, index_path: str, config):
+    def load_index(
+        self, train: h5py.Dataset, index_path: str, threads: int, config
+    ):
         _, dims = train.shape
         nprobe = config["nprobe"]
 
         index = faiss.read_index(index_path, faiss.IO_FLAG_MMAP)
+        faiss.omp_set_num_threads(threads)
         index.nprobe = nprobe
 
         self._index = index
 
-        print(f"Index loaded {index_path}, dims={dims}, nprobe={nprobe}")
+        print(
+            f"Index loaded {index_path}, dims={dims}, nprobe={nprobe}, threads={threads}"
+        )
 
     def query_batch(self, test: h5py.Dataset, k: int):
         start_time = time.perf_counter()

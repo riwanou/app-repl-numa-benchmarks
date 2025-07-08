@@ -29,10 +29,11 @@ class Annoy:
 
         print(f"Index created {index_path}")
 
-    def load_index(self, train: h5py.Dataset, index_path: str, config):
+    def load_index(
+        self, train: h5py.Dataset, index_path: str, threads: int, config
+    ):
         _, dims = train.shape
         search_k = config["search_k"]
-        threads = config["threads"]
 
         index = self._annoy_index(dims, index_path)
         index.load(index_path)

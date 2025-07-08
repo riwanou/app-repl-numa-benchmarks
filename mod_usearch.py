@@ -33,7 +33,7 @@ class Usearch:
 
         print(f"Index created {index_path}")
 
-    def load_index(self, train: h5py.Dataset, index_path: str, config):
+    def load_index(self, train: h5py.Dataset, index_path: str, _: int, config):
         _, dims = train.shape
         e_search = config["e_search"]
 
