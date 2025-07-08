@@ -126,7 +126,7 @@ def runner_create_index(
 
 def save_bench(
     dataset: str,
-    mode: str,
+    tag: str,
     runner_name: str,
     nb_runs: int,
     mean_recall,
@@ -135,10 +135,11 @@ def save_bench(
     mean_qps,
     std_qps,
 ):
-    path = os.path.join(RESULT_DIR, f"{dataset}-{mode}.csv")
+    path = os.path.join(RESULT_DIR, f"{dataset}.csv")
     header = [
         "runner_name",
         "nb_runs",
+        "tag",
         "mean_recall",
         "mean_time",
         "std_time",
@@ -154,7 +155,11 @@ def save_bench(
             data_rows = [
                 row
                 for row in data_rows
-                if not (row[0] == runner_name and int(row[1]) == nb_runs)
+                if not (
+                    row[0] == runner_name
+                    and int(row[1]) == nb_runs
+                    and row[2] == tag
+                )
             ]
     else:
         data_rows = []
@@ -165,6 +170,7 @@ def save_bench(
             [
                 runner_name,
                 nb_runs,
+                tag,
                 mean_recall,
                 mean_time,
                 std_time,
@@ -175,7 +181,7 @@ def save_bench(
     )
 
     data_rows.append(new_row)
-    data_rows.sort(key=lambda r: (r[0], int(r[1])))
+    data_rows.sort(key=lambda r: (r[0], int(r[1]), r[2]))
 
     with open(path, mode="w", newline="") as f:
         writer = csv.writer(f)
