@@ -3,17 +3,21 @@ import requests
 import os
 import h5py
 import numpy as np
+import csv
 import multiprocessing
+import platform
 
 import mod_faiss
 import mod_annoy
 import mod_usearch
 
 NUM_RUNS = 10
-
+TAG = "default"
 NUM_THREADS = multiprocessing.cpu_count()
+PLATFORM = platform.platform()
 DATA_DIR = "data"
 INDEX_DIR = "indices"
+RESULT_DIR = os.path.join("results", PLATFORM)
 
 CONFIG = {
     "glove-100-angular.hdf5": {
@@ -33,15 +37,7 @@ CONFIG = {
     },
 }
 
-DATASETS = [
-    "glove-100-angular.hdf5",
-    "sift-128-euclidean",
-    "fashion-mnist-784-euclidean",
-    "nytimes-256-angular",
-    "gist-960-euclidean",
-    "glove-25-angular",
-]
-
+DATASETS = list(CONFIG.keys())
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -50,6 +46,7 @@ parser.add_argument(
 parser.add_argument(
     "--threads", type=int, default=NUM_THREADS, help="Number of threads"
 )
+parser.add_argument("--tag", default=TAG, help="CSV filename tag")
 parser.add_argument(
     "--datasets",
     nargs="*",
@@ -91,31 +88,90 @@ def create_faiss(dataset: str, dataset_config):
     index_path = os.path.join(INDEX_DIR, f"{dataset}.ivf")
     config = dataset_config.get("faiss", {})
     runner = mod_faiss.Faiss()
-    return runner, index_path, config
+    return runner, index_path, config, "faiss"
 
 
 def create_annoy(dataset: str, dataset_config):
     index_path = os.path.join(INDEX_DIR, f"{dataset}.ann")
     config = dataset_config.get("annoy", {})
     runner = mod_annoy.Annoy()
-    return runner, index_path, config
+    return runner, index_path, config, "annoy"
 
 
 def create_usearch(dataset: str, dataset_config):
     index_path = os.path.join(INDEX_DIR, f"{dataset}.usearch")
     config = dataset_config.get("usearch", {})
     runner = mod_usearch.Usearch()
-    return runner, index_path, config
+    return runner, index_path, config, "usearch"
 
 
 def runner_create_index(
     create_f, dataset: str, dataset_config, train: h5py.Dataset
 ):
-    runner, index_path, config = create_f(dataset, dataset_config)
+    runner, index_path, config, _ = create_f(dataset, dataset_config)
     if not args.recreate_index and os.path.exists(index_path):
         return
     runner.create_index(train, index_path, config)
     pass
+
+
+def save_bench(
+    dataset: str,
+    mode: str,
+    runner_name: str,
+    nb_runs: int,
+    mean_recall,
+    mean_time,
+    std_time,
+    mean_qps,
+    std_qps,
+):
+    path = os.path.join(RESULT_DIR, f"{dataset}-{mode}.csv")
+    header = [
+        "runner_name",
+        "nb_runs",
+        "mean_recall",
+        "mean_time",
+        "std_time",
+        "mean_qps",
+        "std_qps",
+    ]
+
+    if os.path.isfile(path):
+        with open(path, mode="r", newline="") as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+            data_rows = rows[1:] if len(rows) > 1 else []
+            data_rows = [
+                row
+                for row in data_rows
+                if not (row[0] == runner_name and int(row[1]) == nb_runs)
+            ]
+    else:
+        data_rows = []
+
+    new_row = list(
+        map(
+            str,
+            [
+                runner_name,
+                nb_runs,
+                mean_recall,
+                mean_time,
+                std_time,
+                mean_qps,
+                std_qps,
+            ],
+        )
+    )
+
+    data_rows.append(new_row)
+    data_rows.sort(key=lambda r: (r[0], int(r[1])))
+
+    with open(path, mode="w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(header)
+        writer.writerows(data_rows)
 
 
 def runner_bench(
@@ -126,7 +182,7 @@ def runner_bench(
     test: h5py.Dataset,
     neighbors: h5py.Dataset,
 ):
-    runner, index_path, config = create_f(dataset, dataset_config)
+    runner, index_path, config, runner_name = create_f(dataset, dataset_config)
     runner.load_index(train, index_path, args.threads, config)
 
     k = neighbors.shape[1]
@@ -138,7 +194,7 @@ def runner_bench(
     qpss = []
 
     for run in range(args.run):
-        print(f"Run {run + 1}/{args.run}")
+        print(f"Run {run + 1}/{args.run}/{args.tag}")
 
         pred_vecs, total_time = runner.query_batch(test, k)
         hits = 0
@@ -161,6 +217,18 @@ def runner_bench(
     mean_qps = np.mean(qpss)
     std_qps = np.std(qpss)
 
+    save_bench(
+        dataset,
+        args.tag,
+        runner_name,
+        args.run,
+        mean_recall,
+        mean_time,
+        std_time,
+        mean_qps,
+        std_qps,
+    )
+
     print(f"Mean Recall@{k}: {mean_recall:.4f}")
     print(f"Mean Total search time: {mean_time:.6f} ± {std_time:.6f} seconds")
     print(f"Mean Queries per second (QPS): {mean_qps:.2f} ± {std_qps:.2f}\n")
@@ -169,6 +237,7 @@ def runner_bench(
 def run():
     os.makedirs(DATA_DIR, exist_ok=True)
     os.makedirs(INDEX_DIR, exist_ok=True)
+    os.makedirs(RESULT_DIR, exist_ok=True)
 
     for dataset in args.datasets:
         path = os.path.join(DATA_DIR, dataset)
