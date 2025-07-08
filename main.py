@@ -5,8 +5,8 @@ import h5py
 import numpy as np
 import csv
 import multiprocessing
-import platform
-
+import cpuinfo
+import re
 import mod_faiss
 import mod_annoy
 import mod_usearch
@@ -14,7 +14,16 @@ import mod_usearch
 NUM_RUNS = 10
 TAG = "default"
 NUM_THREADS = multiprocessing.cpu_count()
-PLATFORM = platform.platform()
+CPU_INFO = cpuinfo.get_cpu_info()
+PLATFORM = (
+    re.sub(
+        r"\s+",
+        "_",
+        re.sub(r"[()]", "", CPU_INFO.get("brand_raw", "unknown-cpu")).strip(),
+    )
+    + "_"
+    + CPU_INFO.get("arch", "unknown-arch")
+)
 DATA_DIR = "data"
 INDEX_DIR = "indices"
 RESULT_DIR = os.path.join("results", PLATFORM)
@@ -194,7 +203,7 @@ def runner_bench(
     qpss = []
 
     for run in range(args.run):
-        print(f"Run {run + 1}/{args.run}/{args.tag}")
+        print(f"Run {run + 1}/{args.run} ({args.tag})")
 
         pred_vecs, total_time = runner.query_batch(test, k)
         hits = 0
@@ -240,6 +249,7 @@ def run():
     os.makedirs(RESULT_DIR, exist_ok=True)
 
     for dataset in args.datasets:
+        print(f"-- Dataset {dataset} --")
         path = os.path.join(DATA_DIR, dataset)
         download_data(dataset, path)
 
