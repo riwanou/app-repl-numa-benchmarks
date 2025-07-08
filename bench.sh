@@ -1,6 +1,6 @@
 # use all the cores, no numa policy
 echo 3 > /proc/sys/vm/drop_caches
-uv run main.py --faiss --annoy --usearch --bench --run 10
+uv run main.py --faiss --annoy --usearch --bench --run 10 --tag default
 
 # limited number of cores, check numa effect
 # full local
