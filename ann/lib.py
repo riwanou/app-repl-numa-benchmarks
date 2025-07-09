@@ -1,32 +1,11 @@
-import argparse
 import requests
 import os
 import h5py
 import numpy as np
 import csv
-import multiprocessing
-import cpuinfo
-import re
-import mod_faiss
-import mod_annoy
-import mod_usearch
-
-NUM_RUNS = 10
-TAG = "default"
-NUM_THREADS = multiprocessing.cpu_count()
-CPU_INFO = cpuinfo.get_cpu_info()
-PLATFORM = (
-    re.sub(
-        r"\s+",
-        "_",
-        re.sub(r"[()]", "", CPU_INFO.get("brand_raw", "unknown-cpu")).strip(),
-    )
-    + "_"
-    + CPU_INFO.get("arch", "unknown-arch")
-)
-DATA_DIR = "data"
-INDEX_DIR = "indices"
-RESULT_DIR = os.path.join("results", PLATFORM)
+from . import mod_faiss
+from . import mod_annoy
+from . import mod_usearch
 
 CONFIG = {
     "glove-100-angular.hdf5": {
@@ -48,35 +27,6 @@ CONFIG = {
 
 DATASETS = list(CONFIG.keys())
 
-parser = argparse.ArgumentParser()
-parser.add_argument(
-    "--run", type=int, default=NUM_RUNS, help="Create the indices"
-)
-parser.add_argument(
-    "--threads", type=int, default=NUM_THREADS, help="Number of threads"
-)
-parser.add_argument("--tag", default=TAG, help="CSV filename tag")
-parser.add_argument(
-    "--datasets",
-    nargs="*",
-    default=DATASETS,
-    help="List of datasets to use (default: all datasets)",
-)
-parser.add_argument(
-    "--recreate-index", action="store_true", help="Re create the indices"
-)
-parser.add_argument("--bench", action="store_true", help="Bench the ann search")
-parser.add_argument(
-    "--faiss", action="store_true", help="Evaluate faiss benchmark"
-)
-parser.add_argument(
-    "--annoy", action="store_true", help="Evaluate annoy benchmark"
-)
-parser.add_argument(
-    "--usearch", action="store_true", help="Evaluate usearch benchmark"
-)
-args = parser.parse_args()
-
 
 def download_data(dataset: str, path: str):
     if os.path.exists(path):
@@ -93,38 +43,44 @@ def download_data(dataset: str, path: str):
     print(f"Downloaded {dataset} to {path}")
 
 
-def create_faiss(dataset: str, dataset_config):
-    index_path = os.path.join(INDEX_DIR, f"{dataset}.ivf")
+def create_faiss(index_dir: str, dataset: str, dataset_config):
+    index_path = os.path.join(index_dir, f"{dataset}.ivf")
     config = dataset_config.get("faiss", {})
     runner = mod_faiss.Faiss()
     return runner, index_path, config, "faiss"
 
 
-def create_annoy(dataset: str, dataset_config):
-    index_path = os.path.join(INDEX_DIR, f"{dataset}.ann")
+def create_annoy(index_dir: str, dataset: str, dataset_config):
+    index_path = os.path.join(index_dir, f"{dataset}.ann")
     config = dataset_config.get("annoy", {})
     runner = mod_annoy.Annoy()
     return runner, index_path, config, "annoy"
 
 
-def create_usearch(dataset: str, dataset_config):
-    index_path = os.path.join(INDEX_DIR, f"{dataset}.usearch")
+def create_usearch(index_dir: str, dataset: str, dataset_config):
+    index_path = os.path.join(index_dir, f"{dataset}.usearch")
     config = dataset_config.get("usearch", {})
     runner = mod_usearch.Usearch()
     return runner, index_path, config, "usearch"
 
 
 def runner_create_index(
-    create_f, dataset: str, dataset_config, train: h5py.Dataset
+    create_f,
+    index_dir: str,
+    dataset: str,
+    dataset_config,
+    train: h5py.Dataset,
+    recreate_index: bool,
 ):
-    runner, index_path, config, _ = create_f(dataset, dataset_config)
-    if not args.recreate_index and os.path.exists(index_path):
+    runner, index_path, config, _ = create_f(index_dir, dataset, dataset_config)
+    if not recreate_index and os.path.exists(index_path):
         return
     runner.create_index(train, index_path, config)
     pass
 
 
 def save_bench(
+    result_dir: str,
     dataset: str,
     tag: str,
     runner_name: str,
@@ -135,7 +91,7 @@ def save_bench(
     mean_qps,
     std_qps,
 ):
-    path = os.path.join(RESULT_DIR, f"{dataset}.csv")
+    path = os.path.join(result_dir, f"{dataset}.csv")
     header = [
         "runner_name",
         "nb_runs",
@@ -191,14 +147,21 @@ def save_bench(
 
 def runner_bench(
     create_f,
+    index_dir: str,
+    result_dir: str,
     dataset: str,
     dataset_config,
     train: h5py.Dataset,
     test: h5py.Dataset,
     neighbors: h5py.Dataset,
+    tag: str,
+    nb_runs: int,
+    threads: int,
 ):
-    runner, index_path, config, runner_name = create_f(dataset, dataset_config)
-    runner.load_index(train, index_path, args.threads, config)
+    runner, index_path, config, runner_name = create_f(
+        index_dir, dataset, dataset_config
+    )
+    runner.load_index(train, index_path, threads, config)
 
     k = neighbors.shape[1]
     total = neighbors.shape[0] * k
@@ -208,8 +171,8 @@ def runner_bench(
     total_times = []
     qpss = []
 
-    for run in range(args.run):
-        print(f"Run {run + 1}/{args.run} ({args.tag})")
+    for run in range(nb_runs):
+        print(f"Run {run + 1}/{nb_runs} ({tag})")
 
         pred_vecs, total_time = runner.query_batch(test, k)
         hits = 0
@@ -233,10 +196,11 @@ def runner_bench(
     std_qps = np.std(qpss)
 
     save_bench(
+        result_dir,
         dataset,
-        args.tag,
+        tag,
         runner_name,
-        args.run,
+        nb_runs,
         mean_recall,
         mean_time,
         std_time,
@@ -249,14 +213,27 @@ def runner_bench(
     print(f"Mean Queries per second (QPS): {mean_qps:.2f} ± {std_qps:.2f}\n")
 
 
-def run():
-    os.makedirs(DATA_DIR, exist_ok=True)
-    os.makedirs(INDEX_DIR, exist_ok=True)
-    os.makedirs(RESULT_DIR, exist_ok=True)
+def run(
+    data_dir: str,
+    index_dir: str,
+    result_dir: str,
+    datasets,
+    faiss: bool,
+    annoy: bool,
+    usearch: bool,
+    bench: bool,
+    recreate_index: bool,
+    tag: str,
+    nb_runs: int,
+    threads: int,
+):
+    os.makedirs(data_dir, exist_ok=True)
+    os.makedirs(index_dir, exist_ok=True)
+    os.makedirs(result_dir, exist_ok=True)
 
-    for dataset in args.datasets:
+    for dataset in datasets:
         print(f"-- Dataset {dataset} --")
-        path = os.path.join(DATA_DIR, dataset)
+        path = os.path.join(data_dir, dataset)
         download_data(dataset, path)
 
         with h5py.File(path, "r") as f:
@@ -278,50 +255,77 @@ def run():
             test = test[:]
             neighbors = neighbors[:]
 
-            if args.faiss:
+            if faiss:
                 runner_create_index(
-                    create_faiss, dataset_base, dataset_config, train
+                    create_faiss,
+                    index_dir,
+                    dataset_base,
+                    dataset_config,
+                    train,
+                    recreate_index,
                 )
-            if args.annoy:
+            if annoy:
                 runner_create_index(
-                    create_annoy, dataset_base, dataset_config, train
+                    create_annoy,
+                    index_dir,
+                    dataset_base,
+                    dataset_config,
+                    train,
+                    recreate_index,
                 )
-            if args.usearch:
+            if usearch:
                 runner_create_index(
-                    create_usearch, dataset_base, dataset_config, train
+                    create_usearch,
+                    index_dir,
+                    dataset_base,
+                    dataset_config,
+                    train,
+                    recreate_index,
                 )
 
-            if args.bench:
-                if args.faiss:
+            if bench:
+                if faiss:
                     print("== Benching Faiss ==")
                     runner_bench(
                         create_faiss,
+                        index_dir,
+                        result_dir,
                         dataset_base,
                         dataset_config,
                         train,
                         test,
                         neighbors,
+                        tag,
+                        nb_runs,
+                        threads,
                     )
-                if args.annoy:
+                if annoy:
                     print("== Benching Annoy ==")
                     runner_bench(
                         create_annoy,
+                        index_dir,
+                        result_dir,
                         dataset_base,
                         dataset_config,
                         train,
                         test,
                         neighbors,
+                        tag,
+                        nb_runs,
+                        threads,
                     )
-                if args.usearch:
+                if usearch:
                     print("== Benching Usearch ==")
                     runner_bench(
                         create_usearch,
+                        index_dir,
+                        result_dir,
                         dataset_base,
                         dataset_config,
                         train,
                         test,
                         neighbors,
+                        tag,
+                        nb_runs,
+                        threads,
                     )
-
-
-run()
