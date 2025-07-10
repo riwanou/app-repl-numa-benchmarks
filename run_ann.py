@@ -2,7 +2,6 @@ import ann.lib
 import config
 import argparse
 
-NUM_RUNS = 10
 TAG = "default"
 NUM_THREADS = config.NUM_THREADS
 DATA_DIR = "ann/data"
@@ -10,9 +9,6 @@ INDEX_DIR = "ann/indices"
 RESULT_DIR = config.RESULT_DIR_ANN
 
 parser = argparse.ArgumentParser()
-parser.add_argument(
-    "--run", type=int, default=NUM_RUNS, help="Create the indices"
-)
 parser.add_argument(
     "--threads", type=int, default=NUM_THREADS, help="Number of threads"
 )
@@ -49,6 +45,5 @@ ann.lib.run(
     args.bench,
     args.recreate_index,
     args.tag,
-    args.run,
     args.threads,
 )

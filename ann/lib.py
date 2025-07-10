@@ -3,9 +3,14 @@ import os
 import h5py
 import numpy as np
 import csv
+import time
 from . import mod_faiss
 from . import mod_annoy
 from . import mod_usearch
+
+MIN_NB_RUNS = 3
+MIN_STD_TIME = 0.1
+MAX_BENCH_TIME = 60
 
 CONFIG = {
     "glove-100-angular.hdf5": {
@@ -111,11 +116,7 @@ def save_bench(
             data_rows = [
                 row
                 for row in data_rows
-                if not (
-                    row[0] == runner_name
-                    and int(row[1]) == nb_runs
-                    and row[2] == tag
-                )
+                if not (row[0] == runner_name and row[2] == tag)
             ]
     else:
         data_rows = []
@@ -155,7 +156,6 @@ def runner_bench(
     test: h5py.Dataset,
     neighbors: h5py.Dataset,
     tag: str,
-    nb_runs: int,
     threads: int,
 ):
     runner, index_path, config, runner_name = create_f(
@@ -171,8 +171,11 @@ def runner_bench(
     total_times = []
     qpss = []
 
-    for run in range(nb_runs):
-        print(f"Run {run + 1}/{nb_runs} ({tag})")
+    start_time = time.time()
+    nb_runs = 0
+
+    while True:
+        nb_runs += 1
 
         pred_vecs, total_time = runner.query_batch(test, k)
         hits = 0
@@ -189,9 +192,19 @@ def runner_bench(
         total_times.append(total_time)
         qpss.append(qps)
 
+        mean_time = np.mean(total_times)
+        std_time = np.std(total_times)
+        elapsed_time = time.time() - start_time
+
+        print(
+            f"Run {nb_runs} (min {MIN_NB_RUNS}) [{tag}] elapsed {elapsed_time:.2f}s (max {MAX_BENCH_TIME}s) +- {std_time:.4f}s (min {MIN_STD_TIME:.4f})"
+        )
+        if std_time <= MIN_STD_TIME and nb_runs >= MIN_NB_RUNS:
+            break
+        if elapsed_time >= MAX_BENCH_TIME:
+            break
+
     mean_recall = np.mean(recalls)
-    mean_time = np.mean(total_times)
-    std_time = np.std(total_times)
     mean_qps = np.mean(qpss)
     std_qps = np.std(qpss)
 
@@ -208,9 +221,9 @@ def runner_bench(
         std_qps,
     )
 
-    print(f"Mean Recall@{k}: {mean_recall:.4f}")
-    print(f"Mean Total search time: {mean_time:.6f} ± {std_time:.6f} seconds")
-    print(f"Mean Queries per second (QPS): {mean_qps:.2f} ± {std_qps:.2f}\n")
+    print(
+        f"[{tag}] Recall@{k}: {mean_recall:.4f}  Time: {mean_time:.4f} ± {std_time:.4f}s  QPS: {mean_qps:.2f} ± {std_qps:.2f}"
+    )
 
 
 def run(
@@ -224,7 +237,6 @@ def run(
     bench: bool,
     recreate_index: bool,
     tag: str,
-    nb_runs: int,
     threads: int,
 ):
     os.makedirs(data_dir, exist_ok=True)
@@ -296,7 +308,6 @@ def run(
                         test,
                         neighbors,
                         tag,
-                        nb_runs,
                         threads,
                     )
                 if annoy:
@@ -311,7 +322,6 @@ def run(
                         test,
                         neighbors,
                         tag,
-                        nb_runs,
                         threads,
                     )
                 if usearch:
@@ -326,6 +336,5 @@ def run(
                         test,
                         neighbors,
                         tag,
-                        nb_runs,
                         threads,
                     )

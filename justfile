@@ -8,7 +8,7 @@ build-rocksdb:
     set -euxo pipefail
     mkdir -p rocksdb/build
     cd rocksdb/build
-    cmake -DCMAKE_BUILD_TYPE=Release -DFAIL_ON_WARNINGS=OFF ..
+    cmake -DCMAKE_BUILD_TYPE=Release -DFAIL_ON_WARNINGS=OFF -DWITH_ZSTD=ON ..
     make -j
 
 bench-rocksdb:

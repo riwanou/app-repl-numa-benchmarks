@@ -29,24 +29,28 @@ def run_bench_ann():
     sh("echo 3 > /proc/sys/vm/drop_caches")
     sh(f"{run_bench('default')}")
 
+    # worst case (mem in 1 node)
+    sh("echo 3 > /proc/sys/vm/drop_caches")
+    sh(f"numactl --membind={0} {run_bench('imbalanced-memory')}")
+
     # full local
-    sh("echo 3 > /proc/sys/vm/drop_caches")
-    sh(f"numactl --membind=0 --cpunodebind=0 {run_bench('local')}")
+    # sh("echo 3 > /proc/sys/vm/drop_caches")
+    # sh(f"numactl --membind=0 --cpunodebind=0 {run_bench('local')}")
 
-    # full remote
-    sh("echo 3 > /proc/sys/vm/drop_caches")
-    sh(f"numactl --membind=0 --cpunodebind=1 {run_bench('distant')}")
+    # # full remote
+    # sh("echo 3 > /proc/sys/vm/drop_caches")
+    # sh(f"numactl --membind=0 --cpunodebind=1 {run_bench('distant')}")
 
-    # cpus interleaved, 1 node
-    cpus = get_interleaved_cpus_one_node()
-    sh("echo 3 > /proc/sys/vm/drop_caches")
-    sh(f"numactl --physcpubind={cpus} {run_bench('balanced')}")
+    # # cpus interleaved, 1 node
+    # cpus = get_interleaved_cpus_one_node()
+    # sh("echo 3 > /proc/sys/vm/drop_caches")
+    # sh(f"numactl --physcpubind={cpus} {run_bench('balanced')}")
 
 
 def run_bench_ann_repl():
-    # baseline patched, all cores, no repl
+    # worst case (mem in 1 node)
     sh("echo 3 > /proc/sys/vm/drop_caches")
-    sh(f"{run_bench('patched')}")
+    sh(f"numactl --membind={0} {run_bench('patched-imbalanced-memory')}")
 
     # baseline patched, all cores, repl
     sh("echo 1 > /sys/kernel/debug/repl_pt/clear_registered")
@@ -61,14 +65,14 @@ def run_bench_ann_repl():
       echo 0 > /sys/kernel/debug/repl_pt/policy
     )""")
 
-    # cpus interleaved, 1 node, no repl
-    cpus = get_interleaved_cpus_one_node()
-    sh("echo 3 > /proc/sys/vm/drop_caches")
-    sh(f"numactl --physcpubind={cpus} {run_bench('patched-balanced')}")
-    # cpus interleaved, 1 node, repl
-    sh("echo 3 > /proc/sys/vm/drop_caches")
-    sh(f"""(
-      echo 1 > /sys/kernel/debug/repl_pt/policy &&
-      numactl --physcpubind={cpus} {run_bench("patched-repl-balanced")};
-      echo 0 > /sys/kernel/debug/repl_pt/policy
-    )""")
+    # # cpus interleaved, 1 node, no repl
+    # cpus = get_interleaved_cpus_one_node()
+    # sh("echo 3 > /proc/sys/vm/drop_caches")
+    # sh(f"numactl --physcpubind={cpus} {run_bench('patched-balanced')}")
+    # # cpus interleaved, 1 node, repl
+    # sh("echo 3 > /proc/sys/vm/drop_caches")
+    # sh(f"""(
+    #   echo 1 > /sys/kernel/debug/repl_pt/policy &&
+    #   numactl --physcpubind={cpus} {run_bench("patched-repl-balanced")};
+    #   echo 0 > /sys/kernel/debug/repl_pt/policy
+    # )""")

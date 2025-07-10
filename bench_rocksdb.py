@@ -8,14 +8,13 @@ BUILD_DIR = os.path.join("rocksdb", "build")
 
 OUTPUT_DIR = os.path.abspath(config.RESULT_DIR_ROCKSDB)
 NUM_THREADS = config.NUM_THREADS
-COMPRESSION_TYPE = "none"
 DB_DIR = os.path.join("..", "db")
 WAL_DIR = os.path.join("..", "wal")
 NUM_KEYS = 90000000
 CACHE_SIZE = 6442450944
-DURATION = 900
+DURATION = 300
 
-LOAD_ENV = f"COMPRESSION_TYPE={COMPRESSION_TYPE} DB_DIR={DB_DIR} WAL_DIR={WAL_DIR} NUM_KEYS={NUM_KEYS} CACHE_SIZE={CACHE_SIZE}"
+LOAD_ENV = f"DB_DIR={DB_DIR} WAL_DIR={WAL_DIR} NUM_KEYS={NUM_KEYS} CACHE_SIZE={CACHE_SIZE}"
 BENCH_ENV = f"{LOAD_ENV} DURATION={DURATION} NUM_THREADS={NUM_THREADS}"
 BENCHMARK_SCRIPT = os.path.join("..", "tools", "benchmark.sh")
 
@@ -25,16 +24,16 @@ def init_output_dir(output_dir: str):
     os.makedirs(output_dir, exist_ok=True)
 
 
-def run_load(tag: str):
+def env_load(tag: str):
     output_dir = os.path.join(OUTPUT_DIR, tag)
     init_output_dir(output_dir)
-    return f"{LOAD_ENV} OUTPUT_DIR={output_dir} {BENCHMARK_SCRIPT}"
+    return f"{LOAD_ENV} OUTPUT_DIR={output_dir}"
 
 
-def run_bench(tag: str) -> str:
+def env_bench(tag: str) -> str:
     output_dir = os.path.join(OUTPUT_DIR, tag)
     init_output_dir(output_dir)
-    return f"{BENCH_ENV} OUTPUT_DIR={output_dir} {BENCHMARK_SCRIPT}"
+    return f"{BENCH_ENV} OUTPUT_DIR={output_dir}"
 
 
 def makedirs():
@@ -47,13 +46,22 @@ def run_bench_rocksdb():
     os.chdir(BUILD_DIR)
 
     # create db, load data
-    sh(f"{run_load('default')} bulkload")
+    sh(f"{env_load('bulkload')} {BENCHMARK_SCRIPT} bulkload")
 
-    # run readrandom, multireadrandom
+    # run
     sh("echo 3 > /proc/sys/vm/drop_caches")
-    sh(f"{run_bench('default')} readrandom --mmap_read=1")
+    sh(f"{env_bench('readrandom')} {BENCHMARK_SCRIPT} readrandom --mmap_read=1")
     sh(
-        f"{run_bench('default')} multireadrandom --mmap_read=1 --multiread_batched"
+        f"{env_bench('multireadrandom')} {BENCHMARK_SCRIPT} multireadrandom --mmap_read=1 --multiread_batched"
+    )
+
+    # worst case (mem in 1 node)
+    sh("echo 3 > /proc/sys/vm/drop_caches")
+    sh(
+        f"{env_bench('imbalanced-readrandom')} numactl --membind={0} {BENCHMARK_SCRIPT} readrandom --mmap_read=1"
+    )
+    sh(
+        f"{env_bench('imbalanced-multireadrandom')} numactl --membind={0} {BENCHMARK_SCRIPT} multireadrandom --mmap_read=1 --multiread_batched"
     )
 
 
@@ -62,13 +70,15 @@ def run_bench_rocksdb_repl():
     os.chdir(BUILD_DIR)
 
     # create db, load data
-    sh(f"{run_load('patched')} bulkload")
+    sh(f"{env_load('patched-bulkload')} {BENCHMARK_SCRIPT} bulkload")
 
-    # run readrandom, multireadrandom, no repl
+    # worst case (mem in 1 node)
     sh("echo 3 > /proc/sys/vm/drop_caches")
-    sh(f"{run_bench('patched')} readrandom --mmap_read=1")
     sh(
-        f"{run_bench('patched')} multireadrandom --mmap_read=1 --multiread_batched"
+        f"{env_bench('patched-imbalanced-readrandom')} numactl --membind={0} {BENCHMARK_SCRIPT} readrandom --mmap_read=1"
+    )
+    sh(
+        f"{env_bench('patched-imbalanced-multireadrandom')} numactl --membind={0} {BENCHMARK_SCRIPT} multireadrandom --mmap_read=1 --multiread_batched"
     )
 
     # run readrandom, multireadrandom, repl
@@ -77,7 +87,7 @@ def run_bench_rocksdb_repl():
     sh("echo 3 > /proc/sys/vm/drop_caches")
     sh(f"""(
       echo 1 > /sys/kernel/debug/repl_pt/policy &&
-      {run_bench("patched-repl")} readrandom --mmap_read=1 &&
-      {run_bench("patched-repl")} multireadrandom --mmap_read=1 --multiread_batched;
+      {env_bench("patched-repl-readrandom")} {BENCHMARK_SCRIPT} readrandom --mmap_read=1 &&
+      {env_bench("patched-repl-multireadrandom")} {BENCHMARK_SCRIPT} multireadrandom --mmap_read=1 --multiread_batched;
       echo 0 > /sys/kernel/debug/repl_pt/policy
     )""")
