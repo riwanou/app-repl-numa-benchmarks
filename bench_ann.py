@@ -33,6 +33,10 @@ def run_bench_ann():
     sh("echo 3 > /proc/sys/vm/drop_caches")
     sh(f"numactl --membind={0} {run_bench('imbalanced-memory')}")
 
+    # best case (interleaved)
+    sh("echo 3 > /proc/sys/vm/drop_caches")
+    sh(f"numactl --interleave=all {run_bench('interleaved-memory')}")
+
     # full local
     # sh("echo 3 > /proc/sys/vm/drop_caches")
     # sh(f"numactl --membind=0 --cpunodebind=0 {run_bench('local')}")
