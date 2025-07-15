@@ -8,9 +8,9 @@ from . import mod_faiss
 from . import mod_annoy
 from . import mod_usearch
 
-MIN_NB_RUNS = 3
+MIN_NB_RUNS = 10
 MIN_STD_TIME = 0.1
-MAX_BENCH_TIME = 180
+MAX_BENCH_TIME = 120
 
 CONFIG = {
     "glove-100-angular.hdf5": {

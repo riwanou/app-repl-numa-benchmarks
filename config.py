@@ -3,6 +3,7 @@ import os
 import re
 import cpuinfo
 import subprocess
+import tempfile
 
 NUM_THREADS = multiprocessing.cpu_count()
 CPU_INFO = cpuinfo.get_cpu_info()
@@ -15,6 +16,9 @@ PLATFORM = (
     + "_"
     + CPU_INFO.get("arch", "unknown-arch")
 )
+
+TMP_DIR = tempfile.gettempdir()
+TMP_DIR_ROCKSDB = os.path.join(TMP_DIR, "rocksdb")
 
 RESULT_DIR = "results"
 RESULT_DIR_ANN = os.path.join(RESULT_DIR, PLATFORM, "ann")

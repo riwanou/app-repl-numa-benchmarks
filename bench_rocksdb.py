@@ -11,14 +11,15 @@ BUILD_DIR = os.path.join("rocksdb", "build")
 RESULT_DIR = os.path.abspath(config.RESULT_DIR_ROCKSDB)
 CSV_PATH = os.path.join(RESULT_DIR, "results.csv")
 NUM_THREADS = config.NUM_THREADS
-DB_DIR = os.path.join("..", "db")
-WAL_DIR = os.path.join("..", "wal")
-NUM_KEYS = 6000000
+DB_DIR = os.path.join(config.TMP_DIR_ROCKSDB, "db")
+WAL_DIR = os.path.join(config.TMP_DIR_ROCKSDB, "wal")
+NUM_KEYS = 2000000
 CACHE_SIZE = 6442450944
-DURATION = 180
-STAT_INTERVAL_SECONDS = 30
+COMPRESSION_TYPE = "none"
+DURATION = 120
+STAT_INTERVAL_SECONDS = 15
 
-LOAD_ENV = f"DB_DIR={DB_DIR} WAL_DIR={WAL_DIR} NUM_KEYS={NUM_KEYS} CACHE_SIZE={CACHE_SIZE}"
+LOAD_ENV = f"DB_DIR={DB_DIR} WAL_DIR={WAL_DIR} NUM_KEYS={NUM_KEYS} CACHE_SIZE={CACHE_SIZE} COMPRESSION_TYPE={COMPRESSION_TYPE}"
 BENCH_ENV = f"{LOAD_ENV} DURATION={DURATION} STATS_INTERVAL_SECONDS={STAT_INTERVAL_SECONDS} NUM_THREADS={NUM_THREADS}"
 BENCHMARK_SCRIPT = os.path.join("..", "tools", "benchmark.sh")
 
@@ -91,8 +92,14 @@ def run(
         writer.writerows(final_rows)
 
 
-def run_bench_rocksdb():
+def prepare_dirs():
+    os.makedirs(DB_DIR, exist_ok=True)
+    os.makedirs(WAL_DIR, exist_ok=True)
     os.chdir(BUILD_DIR)
+
+
+def run_bench_rocksdb():
+    prepare_dirs()
 
     # create db, load data
     run("bulkload", "bulkload")
@@ -115,7 +122,7 @@ def run_bench_rocksdb():
 
 
 def run_bench_rocksdb_repl():
-    os.chdir(BUILD_DIR)
+    prepare_dirs()
 
     # create db, load data
     run("patched-bulkload", "bulkload")
