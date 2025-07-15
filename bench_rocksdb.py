@@ -1,93 +1,136 @@
 import os
+from typing import Literal
 import config
 import shutil
+import csv
 from config import sh
 
 # all path are from rocksdb/build
 BUILD_DIR = os.path.join("rocksdb", "build")
 
-OUTPUT_DIR = os.path.abspath(config.RESULT_DIR_ROCKSDB)
+RESULT_DIR = os.path.abspath(config.RESULT_DIR_ROCKSDB)
+CSV_PATH = os.path.join(RESULT_DIR, "results.csv")
 NUM_THREADS = config.NUM_THREADS
 DB_DIR = os.path.join("..", "db")
 WAL_DIR = os.path.join("..", "wal")
-NUM_KEYS = 90000000
+NUM_KEYS = 6000000
 CACHE_SIZE = 6442450944
-DURATION = 300
+DURATION = 180
+STAT_INTERVAL_SECONDS = 30
 
 LOAD_ENV = f"DB_DIR={DB_DIR} WAL_DIR={WAL_DIR} NUM_KEYS={NUM_KEYS} CACHE_SIZE={CACHE_SIZE}"
-BENCH_ENV = f"{LOAD_ENV} DURATION={DURATION} NUM_THREADS={NUM_THREADS}"
+BENCH_ENV = f"{LOAD_ENV} DURATION={DURATION} STATS_INTERVAL_SECONDS={STAT_INTERVAL_SECONDS} NUM_THREADS={NUM_THREADS}"
 BENCHMARK_SCRIPT = os.path.join("..", "tools", "benchmark.sh")
 
 
-def init_output_dir(output_dir: str):
+def decomment(csvfile):
+    for row in csvfile:
+        raw = row.split("#")[0].strip()
+        if raw:
+            yield raw
+
+
+def run(
+    tag: str,
+    variant: Literal["bulkload", "readrandom", "multireadrandom"],
+    numactl_invoc: str = "",
+    repl: bool = False,
+):
+    output_dir = os.path.join(RESULT_DIR, "outputs", tag)
+    output_option = f"OUTPUT_DIR={output_dir}"
+    report_path = os.path.join(output_dir, "report.tsv")
+
     shutil.rmtree(output_dir, ignore_errors=True)
     os.makedirs(output_dir, exist_ok=True)
 
+    repl_start = ""
+    repl_end = ""
+    if repl:
+        repl_start = "echo 1 > /sys/kernel/debug/repl_pt/policy &&"
+        repl_end = "echo 0 > /sys/kernel/debug/repl_pt/policy"
 
-def env_load(tag: str):
-    output_dir = os.path.join(OUTPUT_DIR, tag)
-    init_output_dir(output_dir)
-    return f"{LOAD_ENV} OUTPUT_DIR={output_dir}"
+    if variant == "bulkload":
+        sh(f"{LOAD_ENV} {output_option} {BENCHMARK_SCRIPT} bulkload")
+        return
 
+    if variant == "readrandom":
+        sh(
+            f"""
+            {repl_start}
+            {BENCH_ENV} {output_option} {numactl_invoc} {BENCHMARK_SCRIPT} readrandom --mmap_read=1;
+            {repl_end}
+            """
+        )
+    elif variant == "multireadrandom":
+        sh(
+            f"""
+            {repl_start}
+            {BENCH_ENV} {output_option} {numactl_invoc} {BENCHMARK_SCRIPT} multireadrandom --mmap_read=1 --multiread_batched;
+            {repl_end}
+            """
+        )
 
-def env_bench(tag: str) -> str:
-    output_dir = os.path.join(OUTPUT_DIR, tag)
-    init_output_dir(output_dir)
-    return f"{BENCH_ENV} OUTPUT_DIR={output_dir}"
+    with open(report_path, mode="r", newline="") as f:
+        reader = csv.DictReader(decomment(f), delimiter="\t")
+        rows = list(reader)
+        result = rows[0]
+        result["tag"] = tag
 
+    final_rows = []
+    if os.path.exists(CSV_PATH):
+        with open(CSV_PATH, mode="r", newline="") as f:
+            reader = csv.DictReader(f)
+            final_rows = list(reader)
 
-def makedirs():
-    os.makedirs(DB_DIR, exist_ok=True)
-    os.makedirs(WAL_DIR, exist_ok=True)
+    final_rows = [row for row in final_rows if row.get("tag") != tag]
+    final_rows.append(result)
+
+    with open(CSV_PATH, mode="w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=result.keys())
+        writer.writeheader()
+        writer.writerows(final_rows)
 
 
 def run_bench_rocksdb():
-    makedirs()
     os.chdir(BUILD_DIR)
 
     # create db, load data
-    sh(f"{env_load('bulkload')} {BENCHMARK_SCRIPT} bulkload")
+    run("bulkload", "bulkload")
 
     # run
     sh("echo 3 > /proc/sys/vm/drop_caches")
-    sh(f"{env_bench('readrandom')} {BENCHMARK_SCRIPT} readrandom --mmap_read=1")
-    sh(
-        f"{env_bench('multireadrandom')} {BENCHMARK_SCRIPT} multireadrandom --mmap_read=1 --multiread_batched"
-    )
+    run("multireadrandom", "multireadrandom")
 
-    # worst case (mem in 1 node)
+    # worst case
     sh("echo 3 > /proc/sys/vm/drop_caches")
-    sh(
-        f"{env_bench('imbalanced-readrandom')} numactl --membind={0} {BENCHMARK_SCRIPT} readrandom --mmap_read=1"
-    )
-    sh(
-        f"{env_bench('imbalanced-multireadrandom')} numactl --membind={0} {BENCHMARK_SCRIPT} multireadrandom --mmap_read=1 --multiread_batched"
+    run("imbalanced-multireadrandom", "multireadrandom", "numactl --membind=0")
+
+    # best case
+    sh("echo 3 > /proc/sys/vm/drop_caches")
+    run(
+        "interleaved-multireadrandom",
+        "multireadrandom",
+        "numactl --interleave=all",
     )
 
 
 def run_bench_rocksdb_repl():
-    makedirs()
     os.chdir(BUILD_DIR)
 
     # create db, load data
-    sh(f"{env_load('patched-bulkload')} {BENCHMARK_SCRIPT} bulkload")
+    run("patched-bulkload", "bulkload")
 
-    # worst case (mem in 1 node)
+    # best case
     sh("echo 3 > /proc/sys/vm/drop_caches")
-    sh(
-        f"{env_bench('patched-imbalanced-readrandom')} numactl --membind={0} {BENCHMARK_SCRIPT} readrandom --mmap_read=1"
-    )
-    sh(
-        f"{env_bench('patched-imbalanced-multireadrandom')} numactl --membind={0} {BENCHMARK_SCRIPT} multireadrandom --mmap_read=1 --multiread_batched"
+    run(
+        "patched-interleaved-multireadrandom",
+        "multireadrandom",
+        "numactl --interleave=all",
     )
 
-    # run readrandom, multireadrandom, repl
+    # multireadrandom repl
     sh("echo 1 > /sys/kernel/debug/repl_pt/clear_registered")
     sh("echo .sst > /sys/kernel/debug/repl_pt/registered")
+    # run
     sh("echo 3 > /proc/sys/vm/drop_caches")
-    sh(f"""(
-      echo 1 > /sys/kernel/debug/repl_pt/policy &&
-      {env_bench("patched-repl-readrandom")} {BENCHMARK_SCRIPT} readrandom --mmap_read=1 &&
-      {env_bench("patched-repl-multireadrandom")} {BENCHMARK_SCRIPT} multireadrandom --mmap_read=1 --multiread_batched;
-      echo 0 > /sys/kernel/debug/repl_pt/policy
-    )""")
+    run("patched-repl-multireadrandom", "multireadrandom", repl=True)
