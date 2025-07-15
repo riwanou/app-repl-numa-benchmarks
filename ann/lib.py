@@ -10,7 +10,7 @@ from . import mod_usearch
 
 MIN_NB_RUNS = 3
 MIN_STD_TIME = 0.1
-MAX_BENCH_TIME = 60
+MAX_BENCH_TIME = 180
 
 CONFIG = {
     "glove-100-angular.hdf5": {

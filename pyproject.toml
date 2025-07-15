@@ -11,5 +11,6 @@ dependencies = [
     "py-cpuinfo>=9.0.0",
     "requests>=2.32.4",
     "scikit-learn>=1.7.0",
+    "seaborn>=0.13.2",
     "usearch>=2.19.0",
 ]

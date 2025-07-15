@@ -3,6 +3,8 @@ build: build-rocksdb
 bench: bench-ann bench-rocksdb
 bench-repl: bench-ann-repl bench-rocksdb-repl
 
+plot: plot-ann
+
 build-rocksdb:
     #!/usr/bin/env bash
     set -euxo pipefail
@@ -23,4 +25,5 @@ bench-ann:
 bench-ann-repl:
     uv run run.py ann-repl
 
-
+plot-ann:
+    uv run run.py plot-ann

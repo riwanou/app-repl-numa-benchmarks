@@ -20,6 +20,9 @@ RESULT_DIR = "results"
 RESULT_DIR_ANN = os.path.join(RESULT_DIR, PLATFORM, "ann")
 RESULT_DIR_ROCKSDB = os.path.join(RESULT_DIR, PLATFORM, "rocksdb")
 
+PLOT_DIR = "plots"
+PLOT_DIR_ANN = os.path.join(PLOT_DIR, "ann")
+
 
 def sh(cmd, cwd=None):
     print(f"$ {cmd}")
