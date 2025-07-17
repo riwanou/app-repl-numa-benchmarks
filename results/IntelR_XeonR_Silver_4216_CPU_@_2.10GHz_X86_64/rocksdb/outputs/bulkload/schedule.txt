@@ -1,0 +1,2 @@
+Starting bulkload (ID: ) at mer. 16 juil. 2025 13:34:17 CEST
+Completed bulkload (ID: ) in 5 seconds
