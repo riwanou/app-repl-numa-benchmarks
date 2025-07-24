@@ -8,9 +8,7 @@ from . import mod_faiss
 from . import mod_annoy
 from . import mod_usearch
 
-MIN_NB_RUNS = 10
-MIN_STD_TIME = 0.1
-MAX_BENCH_TIME = 120
+NB_RUNS = 10
 
 CONFIG = {
     "glove-100-angular.hdf5": {
@@ -146,6 +144,46 @@ def save_bench(
         writer.writerows(data_rows)
 
 
+def save_bench_details(
+    result_dir: str,
+    dataset: str,
+    tag: str,
+    runner_name: str,
+    recalls,
+    total_times,
+    qpss,
+):
+    path = os.path.join(result_dir, f"{dataset}-details.csv")
+    header = ["runner_name", "tag", "run_id", "recall", "total_time", "qps"]
+
+    if os.path.isfile(path):
+        with open(path, mode="r", newline="") as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+            data_rows = rows[1:] if len(rows) > 1 else []
+            data_rows = [
+                row
+                for row in data_rows
+                if not (row[0] == runner_name and row[1] == tag)
+            ]
+    else:
+        data_rows = []
+
+    for i, (recall, total_time, qps) in enumerate(
+        zip(recalls, total_times, qpss), 1
+    ):
+        data_rows.append(
+            list(map(str, [runner_name, tag, i, recall, total_time, qps]))
+        )
+
+    data_rows.sort(key=lambda r: (r[0], r[1], int(r[2])))
+
+    with open(path, mode="w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(header)
+        writer.writerows(data_rows)
+
+
 def runner_bench(
     create_f,
     index_dir: str,
@@ -166,17 +204,16 @@ def runner_bench(
     k = neighbors.shape[1]
     total = neighbors.shape[0] * k
     n = test.shape[0]
+    mean_time = 0
+    std_time = 0
 
     recalls = []
     total_times = []
     qpss = []
 
     start_time = time.time()
-    nb_runs = 0
 
-    while True:
-        nb_runs += 1
-
+    for nb_runs in range(0, NB_RUNS):
         pred_vecs, total_time = runner.query_batch(test, k)
         hits = 0
 
@@ -197,12 +234,8 @@ def runner_bench(
         elapsed_time = time.time() - start_time
 
         print(
-            f"Run {nb_runs} (min {MIN_NB_RUNS}) [{tag}] elapsed {elapsed_time:.2f}s (max {MAX_BENCH_TIME}s) +- {std_time:.4f}s (min {MIN_STD_TIME:.4f})"
+            f"Run {nb_runs}/{NB_RUNS} [{tag}] elapsed {elapsed_time:.2f}s +- {std_time:.4f}s"
         )
-        if std_time <= MIN_STD_TIME and nb_runs >= MIN_NB_RUNS:
-            break
-        if elapsed_time >= MAX_BENCH_TIME:
-            break
 
     mean_recall = np.mean(recalls)
     mean_qps = np.mean(qpss)
@@ -213,12 +246,22 @@ def runner_bench(
         dataset,
         tag,
         runner_name,
-        nb_runs,
+        NB_RUNS,
         mean_recall,
         mean_time,
         std_time,
         mean_qps,
         std_qps,
+    )
+
+    save_bench_details(
+        result_dir,
+        dataset,
+        tag,
+        runner_name,
+        recalls,
+        total_times,
+        qpss,
     )
 
     print(

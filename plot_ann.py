@@ -54,9 +54,11 @@ def make_plot_ann():
         group["std_qps_pct"] = 100 * group["std_qps"] / default_mean
         return group
 
-    df_all_norm = (
-        df_all.groupby(["arch", "dataset", "runner_name"])
-        .apply(normalize_relative_to_default)
+    df_all_norm = pd.DataFrame(
+        df_all.groupby(["arch", "dataset", "runner_name"])[
+            df_all.columns.tolist()
+        ]
+        .apply(normalize_relative_to_default, include_groups=True)
         .reset_index(drop=True)
     )
 
@@ -117,24 +119,40 @@ def make_plot_ann():
                     + bar_width / 2
                     for pos in x
                 ]
-                ax.bar(
+                bars = ax.bar(
                     positions,
                     means,
                     yerr=stds,
                     width=bar_width,
                     label=tag_labels[tag],
-                    alpha=1.0,
                     capsize=2,
                     color=palette[i],
                     edgecolor="black",
                     linewidth=0.3,
                     error_kw=dict(lw=0.6, capthick=0.6),
                 )
+                for j, bar in enumerate(bars):
+                    ds = dataset_names[j]
+                    abs_row = pd.DataFrame(
+                        runner_data[
+                            (runner_data["dataset"] == ds)
+                            & (runner_data["tag"] == tag)
+                        ]
+                    )
+                    abs_qps = abs_row.iloc[0]["mean_qps"]
+                    ax.text(
+                        bar.get_x() + bar.get_width() / 2,
+                        bar.get_height() + (1 if bar.get_height() >= 0 else -1),
+                        f"{int(abs_qps)}",
+                        ha="center",
+                        va="bottom" if bar.get_height() >= 0 else "top",
+                        fontsize=5,
+                        rotation=0,
+                    )
 
             ax.axhline(
                 0, linestyle="--", color="gray", linewidth=0.4, alpha=0.7
             )
-
             sns.despine(ax=ax)
 
             ax.tick_params(axis="y", labelsize=8)
@@ -153,7 +171,9 @@ def make_plot_ann():
                 alpha=0.3,
             )
 
-        axes[0].set_ylabel("Performance improvement over Linux (%)")
+        axes[0].set_ylabel(
+            "Performance improvement over Linux (%)\n(mean queries per second, QPS)"
+        )
         axes[0].yaxis.label.set_size(10)
         for ax in axes:
             ax.yaxis.set_major_locator(MaxNLocator(nbins=7))
@@ -162,13 +182,11 @@ def make_plot_ann():
         legend = fig.legend(
             handles,
             labels,
-            title="Linux Version",
             fontsize=8,
             title_fontsize=9,
             loc="upper right",
             bbox_to_anchor=(1, 1),
-            fancybox=False,
-            edgecolor="black",
+            edgecolor="white",
             framealpha=1.0,
         )
         legend.get_frame().set_linewidth(0.4)
