@@ -26,6 +26,7 @@ RESULT_DIR_ROCKSDB = os.path.join(RESULT_DIR, PLATFORM, "rocksdb")
 
 PLOT_DIR = "plots"
 PLOT_DIR_ANN = os.path.join(PLOT_DIR, "ann")
+PLOT_DIR_ROCKSDB = os.path.join(PLOT_DIR, "rocksdb")
 
 
 def sh(cmd, cwd=None):

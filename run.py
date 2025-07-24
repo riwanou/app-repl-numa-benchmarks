@@ -2,6 +2,7 @@ import argparse
 import bench_ann
 import bench_rocksdb
 import plot_ann
+import plot_rocksdb
 
 
 parser = argparse.ArgumentParser()
@@ -13,6 +14,7 @@ parser.add_argument(
         "rocksdb",
         "rocksdb-repl",
         "plot-ann",
+        "plot-rocksdb",
     ],
     help="Variant to run",
 )
@@ -28,3 +30,5 @@ elif args.run == "rocksdb-repl":
     bench_rocksdb.run_bench_rocksdb_repl()
 elif args.run == "plot-ann":
     plot_ann.make_plot_ann()
+elif args.run == "plot-rocksdb":
+    plot_rocksdb.make_plot_rocksdb()

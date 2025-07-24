@@ -3,7 +3,7 @@ build: build-rocksdb
 bench: bench-ann bench-rocksdb
 bench-repl: bench-ann-repl bench-rocksdb-repl
 
-plot: plot-ann
+plot: plot-ann plot-rocksdb
 
 build-rocksdb:
     #!/usr/bin/env bash
@@ -27,3 +27,6 @@ bench-ann-repl:
 
 plot-ann:
     uv run run.py plot-ann
+
+plot-rocksdb:
+    uv run run.py plot-rocksdb
