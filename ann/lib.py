@@ -4,6 +4,7 @@ import h5py
 import numpy as np
 import csv
 import time
+from config import get_time
 from . import mod_faiss
 from . import mod_annoy
 from . import mod_usearch
@@ -88,6 +89,8 @@ def save_bench(
     tag: str,
     runner_name: str,
     nb_runs: int,
+    start_time: str,
+    end_time: str,
     mean_recall,
     mean_time,
     std_time,
@@ -104,6 +107,8 @@ def save_bench(
         "std_time",
         "mean_qps",
         "std_qps",
+        "start_time",
+        "end_time",
     ]
 
     if os.path.isfile(path):
@@ -131,6 +136,8 @@ def save_bench(
                 std_time,
                 mean_qps,
                 std_qps,
+                start_time,
+                end_time,
             ],
         )
     )
@@ -152,9 +159,20 @@ def save_bench_details(
     recalls,
     total_times,
     qpss,
+    run_start_times,
+    run_end_times,
 ):
     path = os.path.join(result_dir, f"{dataset}-details.csv")
-    header = ["runner_name", "tag", "run_id", "recall", "total_time", "qps"]
+    header = [
+        "runner_name",
+        "tag",
+        "run_id",
+        "recall",
+        "total_time",
+        "qps",
+        "start_time",
+        "end_time",
+    ]
 
     if os.path.isfile(path):
         with open(path, mode="r", newline="") as f:
@@ -169,11 +187,25 @@ def save_bench_details(
     else:
         data_rows = []
 
-    for i, (recall, total_time, qps) in enumerate(
-        zip(recalls, total_times, qpss), 1
+    for i, (recall, total_time, qps, run_start_time, run_end_time) in enumerate(
+        zip(recalls, total_times, qpss, run_start_times, run_end_times), 1
     ):
         data_rows.append(
-            list(map(str, [runner_name, tag, i, recall, total_time, qps]))
+            list(
+                map(
+                    str,
+                    [
+                        runner_name,
+                        tag,
+                        i,
+                        recall,
+                        total_time,
+                        qps,
+                        run_start_time,
+                        run_end_time,
+                    ],
+                )
+            )
         )
 
     data_rows.sort(key=lambda r: (r[0], r[1], int(r[2])))
@@ -210,11 +242,16 @@ def runner_bench(
     recalls = []
     total_times = []
     qpss = []
+    run_start_times = []
+    run_end_times = []
 
-    start_time = time.time()
+    begin = time.time()
+    start_time = get_time()
 
     for nb_runs in range(0, NB_RUNS):
+        run_start_time = get_time()
         pred_vecs, total_time = runner.query_batch(test, k)
+        run_end_time = get_time()
         hits = 0
 
         for i, pred_indices in enumerate(pred_vecs):
@@ -228,14 +265,18 @@ def runner_bench(
         recalls.append(recall)
         total_times.append(total_time)
         qpss.append(qps)
+        run_start_times.append(run_start_time)
+        run_end_times.append(run_end_time)
 
         mean_time = np.mean(total_times)
         std_time = np.std(total_times)
-        elapsed_time = time.time() - start_time
+        elapsed_time = time.time() - begin
 
         print(
             f"Run {nb_runs}/{NB_RUNS} [{tag}] elapsed {elapsed_time:.2f}s +- {std_time:.4f}s"
         )
+
+    end_time = get_time()
 
     mean_recall = np.mean(recalls)
     mean_qps = np.mean(qpss)
@@ -247,6 +288,8 @@ def runner_bench(
         tag,
         runner_name,
         NB_RUNS,
+        start_time,
+        end_time,
         mean_recall,
         mean_time,
         std_time,
@@ -262,6 +305,8 @@ def runner_bench(
         recalls,
         total_times,
         qpss,
+        run_start_times,
+        run_end_times,
     )
 
     print(

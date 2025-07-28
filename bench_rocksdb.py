@@ -3,7 +3,7 @@ from typing import Literal
 import config
 import shutil
 import csv
-from config import sh
+from config import sh, get_time
 
 # all path are from rocksdb/build
 BUILD_DIR = os.path.join("rocksdb", "build")
@@ -50,6 +50,8 @@ def run(
         repl_start = "echo 1 > /sys/kernel/debug/repl_pt/policy &&"
         repl_end = "echo 0 > /sys/kernel/debug/repl_pt/policy"
 
+    start_time = get_time()
+
     if variant == "bulkload":
         sh(f"{LOAD_ENV} {output_option} {BENCHMARK_SCRIPT} bulkload")
         return
@@ -71,11 +73,15 @@ def run(
             """
         )
 
+    end_time = get_time()
+
     with open(report_path, mode="r", newline="") as f:
         reader = csv.DictReader(decomment(f), delimiter="\t")
         rows = list(reader)
         result = rows[0]
         result["tag"] = tag
+        result["start_time"] = start_time
+        result["end_time"] = end_time
 
     final_rows = []
     if os.path.exists(CSV_PATH):

@@ -4,6 +4,7 @@ import re
 import cpuinfo
 import subprocess
 import tempfile
+import datetime
 
 NUM_THREADS = multiprocessing.cpu_count()
 CPU_INFO = cpuinfo.get_cpu_info()
@@ -28,7 +29,16 @@ PLOT_DIR = "plots"
 PLOT_DIR_ANN = os.path.join(PLOT_DIR, "ann")
 PLOT_DIR_ROCKSDB = os.path.join(PLOT_DIR, "rocksdb")
 
+MONITOR_DIR = os.path.join(RESULT_DIR, PLATFORM, "monitor")
+MONITOR_PCM = os.path.join(MONITOR_DIR, "pcm")
+MONITOR_PCM_MEMORY = os.path.join(MONITOR_DIR, "pcm_memory")
+MONITOR_MEM = os.path.join(MONITOR_DIR, "mem")
+
 
 def sh(cmd, cwd=None):
     print(f"$ {cmd}")
     subprocess.run(cmd, shell=True, check=True, cwd=cwd)
+
+
+def get_time():
+    return datetime.datetime.now().isoformat()
