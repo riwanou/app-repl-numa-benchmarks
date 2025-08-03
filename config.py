@@ -28,6 +28,7 @@ RESULT_DIR_ROCKSDB = os.path.join(RESULT_DIR, PLATFORM, "rocksdb")
 PLOT_DIR = "plots"
 PLOT_DIR_ANN = os.path.join(PLOT_DIR, "ann")
 PLOT_DIR_ROCKSDB = os.path.join(PLOT_DIR, "rocksdb")
+PLOT_DIR_MONITORING = os.path.join(PLOT_DIR, "monitoring")
 
 MONITOR_DIR = os.path.join(RESULT_DIR, PLATFORM, "monitor")
 MONITOR_PCM = os.path.join(MONITOR_DIR, "pcm")

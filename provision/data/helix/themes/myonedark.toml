@@ -1,0 +1,5 @@
+inherits = "onedark"
+"diagnostic.error" = { underline = { } }
+"diagnostic.warning" = { underline = { } }
+"diagnostic.info" = { underline = { } }
+"diagnostic.hint" = { underline = { } }

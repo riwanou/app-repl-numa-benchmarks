@@ -1,0 +1,15 @@
+qemu-system-x86_64 \
+  -enable-kvm \
+  -cpu host,+pmu,+ibs \
+  -m 384G \
+  -smp 64,sockets=2,cores=16,threads=2 \
+  -object memory-backend-ram,size=192G,id=mem0 \
+  -object memory-backend-ram,size=192G,id=mem1 \
+  -numa node,memdev=mem0,nodeid=0,cpus=0,cpus=2,cpus=4,cpus=6,cpus=8,cpus=10,cpus=12,cpus=14,cpus=16,cpus=18,cpus=20,cpus=22,cpus=24,cpus=26,cpus=28,cpus=30,cpus=32,cpus=34,cpus=36,cpus=38,cpus=40,cpus=42,cpus=44,cpus=46,cpus=48,cpus=50,cpus=52,cpus=54,cpus=56,cpus=58,cpus=60,cpus=62 \
+  -numa node,memdev=mem1,nodeid=1,cpus=1,cpus=3,cpus=5,cpus=7,cpus=9,cpus=11,cpus=13,cpus=15,cpus=17,cpus=19,cpus=21,cpus=23,cpus=25,cpus=27,cpus=29,cpus=31,cpus=33,cpus=35,cpus=37,cpus=39,cpus=41,cpus=43,cpus=45,cpus=47,cpus=49,cpus=51,cpus=53,cpus=55,cpus=57,cpus=59,cpus=61,cpus=63 \
+  -nographic \
+  -drive file=$IMAGE,format=qcow2,if=virtio \
+  -cdrom $SEED \
+  -netdev user,id=net0,hostfwd=tcp::2222-:22 \
+  -device virtio-net-pci,netdev=net0 \
+  -boot c

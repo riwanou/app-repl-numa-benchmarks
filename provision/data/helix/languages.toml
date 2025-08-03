@@ -1,0 +1,241 @@
+# ---------
+# LSPs
+# ---------
+
+# - Python lsp -
+
+[language-server.pyright]
+command = "pyright-langserver"
+args = ["--stdio"]
+
+[language-server.ruff]
+command = "ruff"
+args = ["server"]
+
+[language-server.ruff.config.settings]
+lineLength = 80
+
+# - Luau lsp -
+
+[language-server.luau-lsp]
+command = "/Users/coefficriwan/.config/helix/luau-lsp/build/luau-lsp"
+args = ["lsp", "--definitions=definition.d.lua"]
+
+# - Biome lsp -
+
+[language-server.biome]
+command = "biome"
+args = ["lsp-proxy"]
+
+# - EFM prettier lsp -
+
+[language-server.efm-lsp-prettier]
+command = "efm-langserver"
+
+[language-server.efm-lsp-prettier.config]
+documentFormatting = true
+
+[language-server.efm-lsp-prettier.config.languages]
+typescript = [{ formatCommand = "prettierd --stdin-filepath ${INPUT}", formatStdin = true }]
+javascript = [{ formatCommand = "prettierd --stdin-filepath ${INPUT}", formatStdin = true }]
+typescriptreact = [{ formatCommand = "prettierd --stdin-filepath ${INPUT}", formatStdin = true }]
+javascriptreact= [{ formatCommand = "prettierd --stdin-filepath ${INPUT}", formatStdin = true }]
+svelte= [{ formatCommand = "prettierd --stdin-filepath ${INPUT}", formatStdin = true }]
+
+# - ESlint -
+
+[language-server.eslint]
+args = ["--stdio"]
+command = "vscode-eslint-language-server"
+
+[language-server.eslint.config]
+validate = "on"
+experimental = { useFlatConfig = false }
+rulesCustomizations = []
+run = "onType"
+problems = { shortenToSingleLine = false }
+nodePath = ""
+
+[language-server.eslint.config.codeAction.showDocumentation]
+enable = true
+
+# - Typst -
+
+[language-server.tinymist]
+command = "tinymist"
+config = { exportPdf = "onType", outputPath = "$root/target/$dir/$name", formatterMode = "typstyle" }
+
+# - Tailwind -
+
+[language-server.tailwindcss-ls]
+args = ["--stdio"]
+command = "tailwindcss-language-server"
+
+# - Clang -
+
+[language-server.clangd]
+# config = { fallbackFlags = ["-std=c++17"] }
+config = { fallbackFlags = ["-x", "c"] }
+
+# - Rust analyzer -
+
+[language-server.rust-analyzer]
+config = { checkOnSave = { command = "clippy" }, cargo = { features = "all", targetDir = true } }
+
+# - Glasglow WGSL lsp
+
+[language-server.glasgow]
+command = "glasgow"
+# command = "/Users/coefficriwan/dev/rust/tests/bloup/glasgow/target/debug/glasgow"
+
+[language-server.wgsl-analyzer]
+command = "wgsl-analyzer"
+
+# ---------
+# Languages
+# --------
+
+# - Python -
+
+[[language]]
+name = "python"
+auto-format = true
+language-servers = ["ruff", "pyright"]
+
+# - Luau -
+[[language]]
+name = "luau"
+scope = "source.luau"
+injection-regex = "^luau$"
+file-types = ["luau"]
+comment-token = "--"
+indent = { tab-width = 2, unit = "  " }
+language-servers = ["luau-lsp"]
+formatter = { command = "stylua" , args = ["-"] }
+auto-format = true
+
+[[grammar]]
+name = "luau"
+source = { git = "https://github.com/polychromatist/tree-sitter-luau", rev = "main" }
+
+# - Rust -
+
+[[language]]
+name = "rust"
+text-width = 80
+
+# - WGSL -
+
+[[language]]
+name = "wgsl"
+auto-format = true
+text-width = 80
+language-servers = ["glasgow"]
+
+# - Golang -
+
+[[language]] 
+name = "go" 
+
+# - CPP -
+
+[[language]]
+name = "cpp"
+# auto-format = true
+
+# - C -
+
+[[language]]
+name = "c"
+# auto-format = true
+
+# - Typescript -
+
+[[language]]
+name = "typescript"
+auto-format = false
+language-servers = [
+ { name = "efm-lsp-prettier", only-features = ["format"] },
+ "eslint",
+ "typescript-language-server"
+]
+
+[[language]]
+name = "tsx"
+language-servers = [
+ { name = "efm-lsp-prettier", only-features = ["format"] },
+ "eslint",
+ "typescript-language-server"
+]
+
+# - Javascript -
+
+[[language]]
+name = "javascript"
+# auto-format = true
+language-servers = [
+ # { name = "efm-lsp-prettier", only-features = ["format"] },
+ # "eslint",
+ { name = "typescript-language-server", except-features = ["format"] },
+ "biome"
+]
+
+[[language]]
+name = "jsx"
+language-servers = [
+ { name = "efm-lsp-prettier", only-features = ["format"] },
+ "eslint",
+ "typescript-language-server"
+]
+
+# - JSON -
+
+[[language]]
+name = "json"
+auto-format = false
+
+# - CSS -
+
+[[language]]
+name = "css"
+formatter = { command = 'prettier', args = ["--parser", "css"] }
+auto-format = false
+
+# - Markdown -
+
+[[language]]
+name = "markdown"
+
+# - Svelte -
+
+[[language]]
+name = "svelte"
+auto-format = true
+language-servers = ["eslint", "svelteserver", "tailwindcss-ls"]
+
+# - Promela -
+
+[[language]]
+name = "promela"
+scope = "source.pml"
+file-types = ["pml"]
+comment-token = "//"
+roots = []
+indent = { tab-width = 2, unit = "  " }
+
+# - SMT - 
+
+[[language]]
+name = "scheme"
+file-types = ["smt", "scm", "sps", "sls", "sld"]
+
+
+# - Godot -
+
+[language-server.godot]
+command = "nc" 
+args = [ "127.0.0.1", "6005"]
+
+[[language]]
+name = "gdscript"
+language-servers = [ "godot" ]

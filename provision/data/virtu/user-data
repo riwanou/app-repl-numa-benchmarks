@@ -1,0 +1,10 @@
+#cloud-config
+users:
+  - name: root
+    ssh-authorized-keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF7BKQ+XDUPj1T4vppBYvOWb/jEtRuQ0aIJexJU1ka/M coefficriwan@Riwans-computer.local
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    lock_passwd: false
+disable_root: false
+ssh_pwauth: false

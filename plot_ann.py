@@ -1,4 +1,3 @@
-import ann.lib
 import os
 import config
 import matplotlib.pyplot as plt

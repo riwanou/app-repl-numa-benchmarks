@@ -30,3 +30,6 @@ plot-ann:
 
 plot-rocksdb:
     uv run run.py plot-rocksdb
+
+plot-monitoring:
+    uv run run.py plot-monitoring

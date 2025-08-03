@@ -1,0 +1,101 @@
+family := "tall"
+host := "tall10"
+config := "data/config/" + family + "-config"
+virtu_config := "virtu/qemu_config/" + family + "-qemu.sh" 
+workdir := "~"
+
+provision:
+    # provisioning
+    ssh {{host}} 'mkdir -p ~/.config'
+    scp data/helix_25.1.1-1_amd64.deb data/zenith_0.14.1-1_amd64.deb {{host}}:~/
+    scp -r data/helix {{host}}:~/.config/
+    # installation
+    ssh {{host}} 'bash -s' < ./install.sh
+
+[group('kernel')]
+kernel-patched:
+    ssh {{host}} '[ -d {{workdir}}/linux-repl-6.14.2 ] || \
+                  (ssh-keyscan github.com >> ~/.ssh/known_hosts && \
+                  git clone git@github.com:riwanou/linux-repl-6.14.2.git \
+                  {{workdir}}/linux-repl-6.14.2)'
+    if [ ! -f "{{config}}" ]; then \
+      echo "Error: Linux kernel config file {{config}} not found, please provide it."; \
+      exit 1; \
+    fi; \
+    scp {{config}} {{host}}:{{workdir}}/linux-repl-6.14.2/.config
+    scp {{config}} {{host}}:/boot/config-6.14.2+
+    ssh {{host}} 'cd {{workdir}}/linux-repl-6.14.2 && just build install kexec'
+
+[group('kernel')]
+kernel-baseline:
+    ssh {{host}} '[ -d {{workdir}}/linux-baseline-6.14.2 ] || \
+                  (ssh-keyscan github.com >> ~/.ssh/known_hosts && \
+                  git clone git@github.com:riwanou/linux-baseline-6.14.2.git \
+                  {{workdir}}/linux-baseline-6.14.2)'
+    if [ ! -f "{{config}}" ]; then \
+      echo "Error: Linux kernel config file {{config}} not found, please provide it."; \
+      exit 1; \
+    fi; \
+    scp {{config}} {{host}}:{{workdir}}/linux-baseline-6.14.2/.config
+    scp {{config}} {{host}}:/boot/config-6.14.2+
+    ssh {{host}} 'cd {{workdir}}/linux-baseline-6.14.2 && just build install kexec'
+
+[group('bench')]
+bench:
+    scp run_bench.sh {{host}}:{{workdir}}/run_bench.sh
+    ssh -tt {{host}} "cd {{workdir}} && chmod +x run_bench.sh && \
+                      ./run_bench.sh bench-all {{workdir}} 'cd {{workdir}}/app-repl-numa-benchmarks && just build-rocksdb && just bench'"
+
+[group('bench')]
+bench-repl:
+    scp run_bench.sh {{host}}:{{workdir}}/run_bench.sh
+    ssh -tt {{host}} "cd {{workdir}}/linux-repl-6.14.2 && just test && \
+                      cd {{workdir}} && chmod +x run_bench.sh && \
+                      ./run_bench.sh bench-all {{workdir}} 'cd {{workdir}}/app-repl-numa-benchmarks && just build-rocksdb && just bench-repl'"
+
+[group('bench')]
+bench-list:
+    ssh {{host}} "tmux list-sessions 2>/dev/null | grep '^bench' || true"
+
+[group('bench')]
+bench-fetch:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    mkdir -p results/{{host}}
+    mkdir -p results/{{host}}/monitor
+    platform=$(ssh {{host}} 'cd {{workdir}}/app-repl-numa-benchmarks && echo "from config import PLATFORM; print(PLATFORM)" | uv run -')
+    scp -r {{host}}:{{workdir}}/app-repl-numa-benchmarks/results/$platform/* results/{{host}}
+
+[group('bench')]
+bench-push:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    platform=$(ssh {{host}} 'cd {{workdir}}/app-repl-numa-benchmarks && echo "from config import PLATFORM; print(PLATFORM)" | uv run -')
+    ssh {{host}} "mkdir -p {{workdir}}/app-repl-numa-benchmarks/results/$platform"
+    scp -r results/{{host}}/* {{host}}:~/app-repl-numa-benchmarks/results/$$platform
+
+# virtualization
+
+virtu-provision:
+    scp -r data/virtu start_virtu.sh {{host}}:{{workdir}}/
+    ssh {{host}} "apt-get install -y \
+                  genisoimage qemu-system-x86 && \
+                  chmod +x start_virtu.sh"
+
+virtu-start-carrefour:
+    ssh -tt {{host}} "./start_virtu.sh {{workdir}} {{virtu_config}} \
+                          virtu/ubuntu14/meta-data \
+                          virtu/ubuntu14/ubuntu-14.04-server-cloudimg-amd64-disk1.img \
+                          virtu/seed_ubuntu14.iso"
+
+virtu-start-own:
+    ssh -tt {{host}} "./start_virtu.sh {{workdir}} {{virtu_config}} \
+                          virtu/debian12/meta-data \
+                          virtu/debian12/debian-12-generic-amd64.qcow2 \
+                          virtu/seed_debian12.iso"
+
+# carrefour
+
+kernel-carrefour:
+    scp -r setup_carrefour.sh {{host}}:~
+    ssh {{host}} "chmod +x setup_carrefour.sh && ./setup_carrefour.sh"
