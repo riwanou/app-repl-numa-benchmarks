@@ -1,0 +1,15 @@
+[global]
+group_reporting
+ioengine=mmap
+size=128m
+numjobs=$ncpus
+thread=1
+directory=/tmp
+
+[readwr-90]
+share_mmap=1
+repl=1
+rw=randrw
+random_distribution=zipf
+rwmixread=90
+rwmixwrite=10

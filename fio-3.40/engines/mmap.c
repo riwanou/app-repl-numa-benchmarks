@@ -59,7 +59,7 @@ static struct fio_option options[] = {
 		.name	= "repl",
 		.lname	= "Replication MMAP",
 		.type	= FIO_OPT_STR_SET,
-		.off1	= offsetof(struct mmap_options, share),
+		.off1	= offsetof(struct mmap_options, repl),
 		.help	= "Replicate the mmaped area in the differents NUMA nodes",
 		.category = FIO_OPT_C_ENGINE,
 		.group	= FIO_OPT_G_MMAP,
@@ -150,7 +150,7 @@ static struct shared_map_entry *alloc_entry(const char *jobname, void *mmap_ptr)
 
 static bool fio_mmap_call(struct thread_data *td, struct fio_file *f,
                           struct fio_mmap_data *fmd, size_t length,
-                          off_t off, int flags, int shared) {
+                          off_t off, int prot, int flags) {
   struct shared_map_entry *entry = NULL;
 	struct mmap_options *o = td->eo;
 
@@ -166,7 +166,7 @@ static bool fio_mmap_call(struct thread_data *td, struct fio_file *f,
   if (entry) {
     fmd->mmap_ptr = entry->mmap_ptr;
   } else {
-  	fmd->mmap_ptr = mmap(NULL, length, flags, shared, f->fd, off);
+  	fmd->mmap_ptr = mmap(NULL, length, prot, flags, f->fd, off);
   	if (fmd->mmap_ptr == MAP_FAILED) {
   		fmd->mmap_ptr = NULL;
   		td_verror(td, errno, "mmap");
@@ -194,19 +194,19 @@ static int fio_mmap_file(struct thread_data *td, struct fio_file *f,
 			 size_t length, off_t off)
 {
 	struct fio_mmap_data *fmd = FILE_ENG_DATA(f);
-	int flags = 0, shared = fio_mmap_get_shared(td);
+	int prot = 0, flags = fio_mmap_get_shared(td);
 
 	if (td_rw(td) && !td->o.verify_only)
-		flags = PROT_READ | PROT_WRITE;
+		prot = PROT_READ | PROT_WRITE;
 	else if (td_write(td) && !td->o.verify_only) {
-		flags = PROT_WRITE;
+		prot = PROT_WRITE;
 
 		if (td->o.verify != VERIFY_NONE)
-			flags |= PROT_READ;
+			prot |= PROT_READ;
 	} else
-		flags = PROT_READ;
+		prot = PROT_READ;
 
-	if (!fio_mmap_call(td, f, fmd, length, off, flags, shared))
+	if (!fio_mmap_call(td, f, fmd, length, off, prot, flags))
 	  goto err;
 
 	if (!fio_madvise_file(td, f, length))
