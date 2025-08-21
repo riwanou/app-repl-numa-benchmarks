@@ -27,13 +27,44 @@ struct fio_mmap_data {
 	off_t mmap_off;
 };
 
-#ifdef CONFIG_HAVE_THP
+#define MAP_REPL 0x8000000
+
+struct shared_map_entry {
+  char jobname[64];
+  void *mmap_ptr;
+};
+
+#define MAX_SHARED_MAPS 64
+static struct shared_map_entry shared_maps[MAX_SHARED_MAPS];
+static pthread_mutex_t shared_maps_lock = PTHREAD_MUTEX_INITIALIZER; 
+
 struct mmap_options {
 	void *pad;
+	unsigned int share;
+	unsigned int repl;
 	unsigned int thp;
 };
 
 static struct fio_option options[] = {
+	{
+		.name	= "share_mmap",
+		.lname	= "Share MMAP",
+		.type	= FIO_OPT_STR_SET,
+		.off1	= offsetof(struct mmap_options, share),
+		.help	= "Share mmap area between threads",
+		.category = FIO_OPT_C_ENGINE,
+		.group	= FIO_OPT_G_MMAP,
+	},
+	{
+		.name	= "repl",
+		.lname	= "Replication MMAP",
+		.type	= FIO_OPT_STR_SET,
+		.off1	= offsetof(struct mmap_options, share),
+		.help	= "Replicate the mmaped area in the differents NUMA nodes",
+		.category = FIO_OPT_C_ENGINE,
+		.group	= FIO_OPT_G_MMAP,
+	},
+#ifdef CONFIG_HAVE_THP
 	{
 		.name	= "thp",
 		.lname	= "Transparent Huge Pages",
@@ -43,11 +74,11 @@ static struct fio_option options[] = {
 		.category = FIO_OPT_C_ENGINE,
 		.group	= FIO_OPT_G_MMAP,
 	},
+#endif
 	{
 		.name = NULL,
 	},
 };
-#endif
 
 static bool fio_madvise_file(struct thread_data *td, struct fio_file *f,
 			     size_t length)
@@ -96,6 +127,69 @@ static int fio_mmap_get_shared(struct thread_data *td)
 }
 #endif
 
+static struct shared_map_entry *lookup_entry(const char *jobname) {
+    for (int i = 0; i < MAX_SHARED_MAPS; i++) {
+        if (shared_maps[i].mmap_ptr &&
+            strcmp(shared_maps[i].jobname, jobname) == 0)
+            return &shared_maps[i];
+    }
+    return NULL;
+}
+
+static struct shared_map_entry *alloc_entry(const char *jobname, void *mmap_ptr) {
+    for (int i = 0; i < MAX_SHARED_MAPS; i++) {
+        if (!shared_maps[i].mmap_ptr) {
+            struct shared_map_entry *e = &shared_maps[i];
+            strncpy(e->jobname, jobname, sizeof(e->jobname));
+            e->mmap_ptr = mmap_ptr;
+            return e;
+        }
+    }
+    return NULL;
+}
+
+static bool fio_mmap_call(struct thread_data *td, struct fio_file *f,
+                          struct fio_mmap_data *fmd, size_t length,
+                          off_t off, int flags, int shared) {
+  struct shared_map_entry *entry = NULL;
+	struct mmap_options *o = td->eo;
+
+	if (o->repl) {
+		flags |= MAP_REPL;
+	}
+
+  if (o->share) {
+    pthread_mutex_lock(&shared_maps_lock);
+    entry = lookup_entry(td->o.name);
+  }
+
+  if (entry) {
+    fmd->mmap_ptr = entry->mmap_ptr;
+  } else {
+  	fmd->mmap_ptr = mmap(NULL, length, flags, shared, f->fd, off);
+  	if (fmd->mmap_ptr == MAP_FAILED) {
+  		fmd->mmap_ptr = NULL;
+  		td_verror(td, errno, "mmap");
+  		goto err;
+  	}
+    
+  	if (o->share) {
+  	  entry = alloc_entry(td->o.name, fmd->mmap_ptr);
+  	  if (!entry)
+  	    goto err;
+  	}
+  }
+
+  if (o->share)
+    pthread_mutex_unlock(&shared_maps_lock);
+  return true;
+
+err:
+  if (o->share)
+    pthread_mutex_unlock(&shared_maps_lock);
+  return false;
+}
+
 static int fio_mmap_file(struct thread_data *td, struct fio_file *f,
 			 size_t length, off_t off)
 {
@@ -112,12 +206,8 @@ static int fio_mmap_file(struct thread_data *td, struct fio_file *f,
 	} else
 		flags = PROT_READ;
 
-	fmd->mmap_ptr = mmap(NULL, length, flags, shared, f->fd, off);
-	if (fmd->mmap_ptr == MAP_FAILED) {
-		fmd->mmap_ptr = NULL;
-		td_verror(td, errno, "mmap");
-		goto err;
-	}
+	if (!fio_mmap_call(td, f, fmd, length, off, flags, shared))
+	  goto err;
 
 	if (!fio_madvise_file(td, f, length))
 		goto err;
@@ -321,10 +411,8 @@ static struct ioengine_ops ioengine = {
 	.close_file	= fio_mmapio_close_file,
 	.get_file_size	= generic_get_file_size,
 	.flags		= FIO_SYNCIO | FIO_NOEXTEND,
-#ifdef CONFIG_HAVE_THP
 	.options	= options,
 	.option_struct_size = sizeof(struct mmap_options),
-#endif
 };
 
 static void fio_init fio_mmapio_register(void)
