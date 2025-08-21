@@ -81,10 +81,16 @@ def get_data(datasets) -> tuple[pd.DataFrame, pd.DataFrame]:
                     f"Warning: Details CSV {details_csv_path} not found for {dataset}"
                 )
 
-    df_main = pd.concat(data_main, ignore_index=True)
+    # df_main = pd.concat(data_main, ignore_index=True)
     df_details = pd.concat(data_details, ignore_index=True)
 
-    return df_main, df_details
+    agg_df = pd.DataFrame(
+        df_details[df_details["run_id"] != 1]
+        .groupby(["arch", "runner_name", "dataset", "tag"], as_index=False)
+        .agg(mean_qps=("qps", "mean"), std_qps=("qps", "std"))
+    )
+
+    return agg_df, df_details
 
 
 def normalize_data(df_main: pd.DataFrame) -> pd.DataFrame:
