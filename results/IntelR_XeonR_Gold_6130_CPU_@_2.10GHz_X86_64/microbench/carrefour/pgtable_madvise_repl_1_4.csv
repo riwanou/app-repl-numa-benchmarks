@@ -1,0 +1,11 @@
+round,elapsed_ms,tag
+0,0.133743,pgtable_repl
+1,0.129928,pgtable_repl
+2,0.129559,pgtable_repl
+3,0.130034,pgtable_repl
+4,0.129062,pgtable_repl
+0,0.050571,pgtable_norepl
+1,0.050873,pgtable_norepl
+2,0.050668,pgtable_norepl
+3,0.050615,pgtable_norepl
+4,0.051918,pgtable_norepl

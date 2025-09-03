@@ -1,0 +1,20 @@
+qemu-system-x86_64 \
+  -enable-kvm \
+  -cpu host,-kvm-asyncpf \
+  -m 760G \
+  -qmp unix:/tmp/qmp-sock,server,nowait \
+  -smp 128,sockets=4,cores=16,threads=2 \
+  -object memory-backend-ram,size=190G,host-nodes=0,policy=bind,id=mem0 \
+  -object memory-backend-ram,size=190G,host-nodes=1,policy=bind,id=mem1 \
+  -object memory-backend-ram,size=190G,host-nodes=2,policy=bind,id=mem2 \
+  -object memory-backend-ram,size=190G,host-nodes=3,policy=bind,id=mem3 \
+  -numa node,memdev=mem0,nodeid=0,cpus=0,cpus=4,cpus=8,cpus=12,cpus=16,cpus=20,cpus=24,cpus=28,cpus=32,cpus=36,cpus=40,cpus=44,cpus=48,cpus=52,cpus=56,cpus=60,cpus=64,cpus=68,cpus=72,cpus=76,cpus=80,cpus=84,cpus=88,cpus=92,cpus=96,cpus=100,cpus=104,cpus=108,cpus=112,cpus=116,cpus=120,cpus=124 \
+   -numa node,memdev=mem1,nodeid=1,cpus=1,cpus=5,cpus=9,cpus=13,cpus=17,cpus=21,cpus=25,cpus=29,cpus=33,cpus=37,cpus=41,cpus=45,cpus=49,cpus=53,cpus=57,cpus=61,cpus=65,cpus=69,cpus=73,cpus=77,cpus=81,cpus=85,cpus=89,cpus=93,cpus=97,cpus=101,cpus=105,cpus=109,cpus=113,cpus=117,cpus=121,cpus=125 \
+  -numa node,memdev=mem2,nodeid=2,cpus=2,cpus=6,cpus=10,cpus=14,cpus=18,cpus=22,cpus=26,cpus=30,cpus=34,cpus=38,cpus=42,cpus=46,cpus=50,cpus=54,cpus=58,cpus=62,cpus=66,cpus=70,cpus=74,cpus=78,cpus=82,cpus=86,cpus=90,cpus=94,cpus=98,cpus=102,cpus=106,cpus=110,cpus=114,cpus=118,cpus=122,cpus=126 \
+  -numa node,memdev=mem3,nodeid=3,cpus=3,cpus=7,cpus=11,cpus=15,cpus=19,cpus=23,cpus=27,cpus=31,cpus=35,cpus=39,cpus=43,cpus=47,cpus=51,cpus=55,cpus=59,cpus=63,cpus=67,cpus=71,cpus=75,cpus=79,cpus=83,cpus=87,cpus=91,cpus=95,cpus=99,cpus=103,cpus=107,cpus=111,cpus=115,cpus=119,cpus=123,cpus=127 \
+  -nographic \
+  -drive file=$IMAGE,format=qcow2,if=virtio \
+  -cdrom $SEED \
+  -netdev user,id=net0,hostfwd=tcp::2222-:22 \
+  -device virtio-net-pci,netdev=net0 \
+  -boot c

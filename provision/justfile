@@ -4,6 +4,7 @@ config := "data/config/" + family + "-config"
 virtu_config := "virtu/qemu_config/" + family + "-qemu.sh" 
 workdir := "~"
 
+[group('provision')]
 provision:
     # provisioning
     ssh {{host}} 'mkdir -p ~/.config'
@@ -108,26 +109,30 @@ bench-micro-own:
 
 # virtualization
 
+[group('provision')]
 virtu-provision:
     scp -r data/virtu start_virtu.sh qemu_pin {{host}}:{{workdir}}/
     ssh {{host}} "apt-get install -y \
                   genisoimage qemu-system-x86 && \
-                  chmod +x start_virtu.sh"
+                  chmod +x {{workdir}}/start_virtu.sh"
 
+[group('virtu')]
 virtu-start-carrefour:
-    ssh -tt {{host}} "./start_virtu.sh {{workdir}} {{virtu_config}} \
+    ssh -tt {{host}} "{{workdir}}/start_virtu.sh {{workdir}} {{virtu_config}} \
                           virtu/ubuntu14/meta-data \
                           virtu/ubuntu14/ubuntu-14.04-server-cloudimg-amd64-disk1.img \
                           virtu/seed_ubuntu14.iso"
 
+[group('virtu')]
 virtu-start-own:
-    ssh -tt {{host}} "./start_virtu.sh {{workdir}} {{virtu_config}} \
+    ssh -tt {{host}} "{{workdir}}/start_virtu.sh {{workdir}} {{virtu_config}} \
                           virtu/debian12/meta-data \
                           virtu/debian12/debian-12-generic-amd64.qcow2 \
                           virtu/seed_debian12.iso"
 
 # carrefour
 
+[group('kernel')]
 kernel-carrefour:
     scp -r setup_carrefour.sh {{host}}:~
     ssh {{host}} "chmod +x setup_carrefour.sh && ./setup_carrefour.sh"

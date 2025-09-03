@@ -1,0 +1,11 @@
+round,elapsed_ms,tag
+0,0.401312,alloc_repl
+1,0.464452,alloc_repl
+2,0.473167,alloc_repl
+3,0.472699,alloc_repl
+4,0.461101,alloc_repl
+5,0.461221,alloc_repl
+6,0.464214,alloc_repl
+7,0.465454,alloc_repl
+8,0.456388,alloc_repl
+9,0.464433,alloc_repl
