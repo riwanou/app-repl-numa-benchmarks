@@ -1,4 +1,4 @@
-build: build-rocksdb build-fio
+build: build-rocksdb build-fio build-micro
 
 bench: bench-ann bench-rocksdb
 bench-repl: bench-ann-repl bench-rocksdb-repl
@@ -12,6 +12,9 @@ build-rocksdb:
     cd rocksdb/build
     cmake -DCMAKE_BUILD_TYPE=Release -DFAIL_ON_WARNINGS=OFF -DWITH_ZSTD=ON ..
     make -j
+
+build-micro:
+    make -C microbench -j
 
 build-fio:
     make -C fio-3.40 -j
