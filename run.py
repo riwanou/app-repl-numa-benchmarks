@@ -1,6 +1,7 @@
 import argparse
 import bench_ann
 import bench_rocksdb
+import bench_micro
 import monitoring
 import plot_ann
 import plot_rocksdb
@@ -14,6 +15,8 @@ parser.add_argument(
         "ann-repl",
         "rocksdb",
         "rocksdb-repl",
+        "bench-pgtable-own",
+        "bench-pgtable-carrefour",
         "plot-ann",
         "plot-rocksdb",
         "plot-monitoring",
@@ -44,6 +47,10 @@ elif args.run == "rocksdb":
     bench_and_monitor(bench_rocksdb.run_bench_rocksdb, "rocksdb")
 elif args.run == "rocksdb-repl":
     bench_and_monitor(bench_rocksdb.run_bench_rocksdb_repl, "rocksdb-repl")
+elif args.run == "bench-pgtable-own":
+    bench_micro.run_bench_pgtable("mmap")
+elif args.run == "bench-pgtable-carrefour":
+    bench_micro.run_bench_pgtable("madvise")
 elif args.run == "plot-ann":
     plot_ann.make_plot_ann()
 elif args.run == "plot-rocksdb":

@@ -18,6 +18,9 @@ else
   genisoimage -output $seed_name -volid cidata -joliet -rock $user_data $meta_data
   chmod +x $virtu_config
 
+  echo "Start qemu cpu pinner"
+  uv --directory qemu_pin/ run main.py &
+
   echo "Creating new tmux session: $session_name"
   echo "Virtu config: $virtu_config"
   tmux new-session -d -s "$session_name" "IMAGE=${image_path} SEED=${seed_name} ./${virtu_config}"

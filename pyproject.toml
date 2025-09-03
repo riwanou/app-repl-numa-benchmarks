@@ -14,3 +14,8 @@ dependencies = [
     "seaborn>=0.13.2",
     "usearch>=2.19.0",
 ]
+
+[tool.uv.workspace]
+members = [
+    "provision/qemu_pin",
+]

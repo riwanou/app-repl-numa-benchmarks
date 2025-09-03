@@ -77,7 +77,7 @@ bench-push:
 # virtualization
 
 virtu-provision:
-    scp -r data/virtu start_virtu.sh {{host}}:{{workdir}}/
+    scp -r data/virtu start_virtu.sh qemu_pin {{host}}:{{workdir}}/
     ssh {{host}} "apt-get install -y \
                   genisoimage qemu-system-x86 && \
                   chmod +x start_virtu.sh"

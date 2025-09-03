@@ -24,6 +24,7 @@ TMP_DIR_ROCKSDB = os.path.join(TMP_DIR, "rocksdb")
 RESULT_DIR = "results"
 RESULT_DIR_ANN = os.path.join(RESULT_DIR, PLATFORM, "ann")
 RESULT_DIR_ROCKSDB = os.path.join(RESULT_DIR, PLATFORM, "rocksdb")
+RESULT_DIR_MICROBENCH = os.path.join(RESULT_DIR, PLATFORM, "microbench")
 
 PLOT_DIR = "plots"
 PLOT_DIR_ANN = os.path.join(PLOT_DIR, "ann")
