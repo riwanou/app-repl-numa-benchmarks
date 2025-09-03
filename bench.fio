@@ -5,11 +5,20 @@ size=128m
 numjobs=$ncpus
 thread=1
 directory=/tmp
+filename=/tmp/fio_readwrite
+time_based
+runtime=${RUNTIME}
 
-[readwr-90]
+[readwrite]
 share_mmap=1
 repl=1
 rw=randrw
-random_distribution=zipf
-rwmixread=90
-rwmixwrite=10
+random_distribution=${DISTRIB}
+rwmixread=${MIXREAD}
+rwmixwrite=${MIXWRITE}
+
+[read]
+share_mmap=1
+repl=1
+rw=randread
+random_distribution=${DISTRIB}

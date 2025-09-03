@@ -24,12 +24,14 @@ TMP_DIR_ROCKSDB = os.path.join(TMP_DIR, "rocksdb")
 RESULT_DIR = "results"
 RESULT_DIR_ANN = os.path.join(RESULT_DIR, PLATFORM, "ann")
 RESULT_DIR_ROCKSDB = os.path.join(RESULT_DIR, PLATFORM, "rocksdb")
+RESULT_DIR_FIO = os.path.join(RESULT_DIR, PLATFORM, "fio")
 RESULT_DIR_MICROBENCH = os.path.join(RESULT_DIR, PLATFORM, "microbench")
 
 PLOT_DIR = "plots"
 PLOT_DIR_ANN = os.path.join(PLOT_DIR, "ann")
 PLOT_DIR_ROCKSDB = os.path.join(PLOT_DIR, "rocksdb")
 PLOT_DIR_MONITORING = os.path.join(PLOT_DIR, "monitoring")
+PLOT_DIR_MICROBENCH = os.path.join(PLOT_DIR, "microbench")
 
 MONITOR_DIR = os.path.join(RESULT_DIR, PLATFORM, "monitor")
 MONITOR_PCM = os.path.join(MONITOR_DIR, "pcm")

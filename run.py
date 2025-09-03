@@ -1,6 +1,7 @@
 import argparse
 import bench_ann
 import bench_rocksdb
+import bench_fio
 import bench_micro
 import monitoring
 
@@ -12,6 +13,7 @@ parser.add_argument(
         "ann-repl",
         "rocksdb",
         "rocksdb-repl",
+        "fio",
         "bench-pgtable-own",
         "bench-pgtable-carrefour",
         "bench-alloc-own",
@@ -48,6 +50,8 @@ elif args.run == "rocksdb":
     bench_and_monitor(bench_rocksdb.run_bench_rocksdb, "rocksdb")
 elif args.run == "rocksdb-repl":
     bench_and_monitor(bench_rocksdb.run_bench_rocksdb_repl, "rocksdb-repl")
+elif args.run == "fio":
+    bench_and_monitor(bench_fio.run_bench_fio, "fio")
 elif args.run == "bench-pgtable-own":
     bench_micro.run_bench_pgtable("mmap")
 elif args.run == "bench-pgtable-carrefour":
