@@ -23,6 +23,7 @@ parser.add_argument(
         "plot-ann",
         "plot-rocksdb",
         "plot-monitoring",
+        "plot-microbench",
     ],
     help="Variant to run",
 )
@@ -76,3 +77,7 @@ elif args.run == "plot-monitoring":
     import plot_monitoring
 
     plot_monitoring.make_plot_monitoring()
+elif args.run == "plot-microbench":
+    import plot_microbench
+
+    plot_microbench.make_plot_microbench()
