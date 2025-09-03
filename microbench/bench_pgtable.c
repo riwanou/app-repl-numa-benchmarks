@@ -1,20 +1,17 @@
 #include "bench_common.h"
 
 static csv_logger_t *logger;
-static int i;
+static int round;
 
 static void *pgtable_worker(void *arg) {
-  int thread_id = *(int *)arg;
-  int socket_id = thread_id % nsockets;
-  int index_in_node = thread_id / nsockets;
-  int core_id = get_nthcore_in_numa_socket(socket_id, index_in_node);
+  unsigned int thread_id = *(unsigned int *)arg;
+  unsigned int socket_id = thread_id % nsockets;
+  unsigned int index_in_node = thread_id / nsockets;
+  unsigned int core_id = get_nthcore_in_numa_socket(socket_id, index_in_node);
   set_affinity(gettid(), core_id);
 
   touch_buffer(repl_enabled, (char *)array, size);
   pthread_barrier_wait(&barrier);
-
-  struct timespec start, end;
-  clock_gettime(CLOCK_MONOTONIC, &start);
 
   if (thread_id == 0) {
     struct timespec t_unmap_start, t_unmap_end;
@@ -26,7 +23,8 @@ static void *pgtable_worker(void *arg) {
     clock_gettime(CLOCK_MONOTONIC, &t_unmap_end);
     double unmap_elapsed = elapsed_time(t_unmap_start, t_unmap_end);
     printf("unmap elapsed: %.6f ms\n", unmap_elapsed);
-    csv_write(logger, i, unmap_elapsed, repl_enabled ? "repl" : "norepl");
+    csv_write(logger, round, unmap_elapsed,
+              repl_enabled ? "pgtable_repl" : "pgtable_norepl");
   }
 
   return NULL;
@@ -34,9 +32,9 @@ static void *pgtable_worker(void *arg) {
 
 int main(int argc, char **argv) {
   common_init(argc, argv);
-  logger = csv_init("pgtable", "elapsed_ms", repl_enabled);
-  
-  for (i = 0; i < NB_ROUNDS; i++) {
+  logger = csv_init("pgtable", "elapsed_ms");
+
+  for (round = 0; round < NB_ROUNDS; round++) {
     array = allocate_buffer_platform(repl_enabled, size);
     run_and_join_on_all_threads(pgtable_worker);
   }
@@ -44,7 +42,7 @@ int main(int argc, char **argv) {
   if (repl_enabled) {
     printf("> mmap without replication after replication\n");
     repl_enabled = 0;
-    for (i = 0; i < NB_ROUNDS; i++) {
+    for (round = 0; round < NB_ROUNDS; round++) {
       array = allocate_buffer_platform(repl_enabled, size);
       run_and_join_on_all_threads(pgtable_worker);
     }

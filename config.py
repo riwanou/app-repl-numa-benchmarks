@@ -39,7 +39,7 @@ MONITOR_MEM = os.path.join(MONITOR_DIR, "mem")
 
 def sh(cmd, cwd=None):
     print(f"$ {cmd}")
-    subprocess.run(cmd, shell=True, check=True, cwd=cwd)
+    subprocess.run(cmd, shell=True, check=True, cwd=cwd, executable="/bin/bash")
 
 
 def get_time():

@@ -31,16 +31,16 @@ size_t get_system_anon_kb(void) {
 }
 
 static void *mem_worker(void *arg) {
-  int thread_id = *(int *)arg;
-  int socket_id = thread_id % nsockets;
-  int index_in_node = thread_id / nsockets;
+  unsigned int thread_id = *(unsigned int *)arg;
+  unsigned int socket_id = thread_id % nsockets;
+  unsigned int index_in_node = thread_id / nsockets;
 
   if (nthreads == 1 && use_mmap && repl_enabled) {
     socket_id =
         mmap_main_alloc ? main_node_id() : (main_node_id() + 1) % nsockets;
   }
 
-  int core_id = get_nthcore_in_numa_socket(socket_id, index_in_node);
+  unsigned int core_id = get_nthcore_in_numa_socket(socket_id, index_in_node);
   set_affinity(gettid(), core_id);
 
   touch_buffer(repl_enabled, (char *)array, size);
@@ -54,8 +54,7 @@ int main(int argc, char **argv) {
   char *env = getenv("MMAP_MAIN_ALLOC");
   mmap_main_alloc = (env != NULL && atoi(env) == 1);
 
-  logger = csv_init("mem", "mem_used", repl_enabled);
-  size_t anon_before, anon_after, anon;
+  logger = csv_init(mmap_main_alloc ? "mem" : "mem_main", "mem_used");
   size_t system_before, system_after, system_mem;
 
   for (int i = 0; i < NB_ROUNDS; i++) {
@@ -69,7 +68,9 @@ int main(int argc, char **argv) {
 
     printf("system anon %zu\n", system_mem);
     munmap(array, size);
-    csv_write(logger, i, system_mem, "mem");
+    csv_write(logger, i, (double)system_mem,
+              repl_enabled ? (mmap_main_alloc ? "mem_main_repl" : "mem_repl")
+                           : (mmap_main_alloc ? "mem_main" : "mem"));
   }
 
   csv_close(logger);

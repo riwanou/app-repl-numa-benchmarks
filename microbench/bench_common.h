@@ -17,7 +17,7 @@
 #define ARRAY_NB_ENTRIES (1024UL * 1024UL * 32UL)
 #define NB_ROUNDS 5
 
-int *array;
+unsigned int *array;
 int repl_enabled;
 size_t size;
 pthread_barrier_t barrier;
@@ -33,9 +33,9 @@ pthread_barrier_t barrier;
 int use_mmap = 0;
 int use_madvise = 0;
 
-int nthreads = 0;
-int nprocs = 0;
-int nsockets = 0;
+unsigned int nthreads = 0;
+unsigned int nprocs = 0;
+unsigned int nsockets = 0;
 
 void print_help(const char *progname) {
   fprintf(stderr, "Usage: %s <mmap|madvise|none> [num_threads]\n", progname);
@@ -67,17 +67,17 @@ void parse_args(int argc, char *argv[]) {
       fprintf(stderr, "Invalid number of threads: %s\n", argv[2]);
       exit(EXIT_FAILURE);
     }
-    nthreads = (size_t)val;
+    nthreads = (unsigned int)val;
   } else {
-    nthreads = (size_t)sysconf(_SC_NPROCESSORS_ONLN);
+    nthreads = (unsigned int )sysconf(_SC_NPROCESSORS_ONLN);
   }
 }
 
 void init_platform_parse_args(int argc, char *argv[]) {
 
   parse_args(argc, argv);
-  nprocs = get_nprocs();
-  nsockets = numa_num_configured_nodes();
+  nprocs = (unsigned int)get_nprocs();
+  nsockets = (unsigned int)numa_num_configured_nodes();
   printf("Running with %d threads\n", nthreads);
 }
 
@@ -95,7 +95,7 @@ typedef struct {
   char path[512];
 } csv_logger_t;
 
-csv_logger_t *csv_init(const char *tag, const char *metric, int repl_enabled) {
+csv_logger_t *csv_init(const char *tag, const char *metric) {
   csv_logger_t *logger = malloc(sizeof(*logger));
   const char *env_dir = getenv("CSV_DIR");
   const char *csv_dir = env_dir ? env_dir : ".";
@@ -115,10 +115,10 @@ csv_logger_t *csv_init(const char *tag, const char *metric, int repl_enabled) {
   return logger;
 }
 
-void csv_write(csv_logger_t *logger, int round, double elapsed,
+void csv_write(csv_logger_t *logger, int round, double value,
                const char *tag) {
   if (logger && logger->fp) {
-    fprintf(logger->fp, "%d,%.6f,%s\n", round, elapsed, tag);
+    fprintf(logger->fp, "%d,%.6f,%s\n", round, value, tag);
     fflush(logger->fp);
   }
 }
@@ -131,28 +131,28 @@ void csv_close(csv_logger_t *logger) {
   }
 }
 
-void *allocate_buffer_platform(int repl, size_t size) {
-  void *array;
+void *allocate_buffer_platform(int repl, size_t buf_size) {
+  void *buf_array = NULL;
 
   if (use_mmap) {
     int flags = MAP_ANONYMOUS | MAP_PRIVATE;
     if (repl)
       flags |= MAP_REPL;
-    array = mmap(NULL, size, PROT_READ | PROT_WRITE, flags, -1, 0);
-    if (array == MAP_FAILED) {
+    buf_array = mmap(NULL, buf_size, PROT_READ | PROT_WRITE, flags, -1, 0);
+    if (buf_array == MAP_FAILED) {
       perror("mmap failed");
       exit(EXIT_FAILURE);
     }
   } else if (use_madvise) {
-    array = mmap(NULL, size, PROT_READ | PROT_WRITE,
-                 MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    buf_array = mmap(NULL, buf_size, PROT_READ | PROT_WRITE,
+                     MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
   }
 
-  return array;
+  return buf_array;
 }
 
-void touch_buffer(int repl, char *buffer, size_t size) {
-  for (int i = 0; i < size; i++) {
+void touch_buffer(int repl, char *buffer, size_t buf_size) {
+  for (size_t i = 0; i < buf_size; i++) {
     buffer[i] = (char)i;
   }
   if (use_madvise && repl) {
@@ -162,22 +162,22 @@ void touch_buffer(int repl, char *buffer, size_t size) {
 
 void run_and_join_on_all_threads(void *thread_fn(void *args)) {
   pthread_t *threads = malloc(sizeof(pthread_t) * nthreads);
-  int *thread_ids = malloc(sizeof(int) * nthreads);
+  unsigned int *thread_ids = malloc(sizeof(int) * nthreads);
   assert(threads && thread_ids);
 
-  for (int t = 0; t < nthreads; t++) {
+  for (unsigned int t = 0; t < nthreads; t++) {
     thread_ids[t] = t;
     int rc = pthread_create(&threads[t], NULL, thread_fn, &thread_ids[t]);
     assert(rc == 0);
   }
 
-  for (int t = 0; t < nthreads; t++) {
+  for (unsigned int t = 0; t < nthreads; t++) {
     pthread_join(threads[t], NULL);
   }
 }
 
-int main_node_id(void) {
-  int main_node_id = 0;
+unsigned int main_node_id(void) {
+  unsigned int main_node_id = 0;
   FILE *f = fopen("/sys/kernel/debug/repl_pt/main_node_id", "r");
   if (f) {
     fscanf(f, "%d", &main_node_id);
@@ -201,9 +201,9 @@ double elapsed_time(struct timespec start, struct timespec end) {
   return (double)sec + (double)nsec / 1e9;
 }
 
-pid_t gettid(void) { return syscall(__NR_gettid); }
+pid_t gettid(void) { return (pid_t)syscall(__NR_gettid); }
 
-void set_affinity(unsigned long tid, unsigned long core_id) {
+void set_affinity(pid_t tid, unsigned int core_id) {
   cpu_set_t mask;
   CPU_ZERO(&mask);
   CPU_SET(core_id, &mask);
@@ -214,12 +214,13 @@ void set_affinity(unsigned long tid, unsigned long core_id) {
   }
 }
 
-int get_nthcore_in_numa_socket(int socket, int index) {
+unsigned int get_nthcore_in_numa_socket(unsigned int socket,
+                                        unsigned int index) {
   struct bitmask *bm = numa_allocate_cpumask();
-  numa_node_to_cpus(socket, bm);
+  numa_node_to_cpus((int)socket, bm);
 
-  int count = 0;
-  for (int core = 0; core < nprocs; core++) {
+  unsigned int count = 0;
+  for (unsigned int core = 0; core < nprocs; core++) {
     if (numa_bitmask_isbitset(bm, core)) {
       if (count == index)
         return core;

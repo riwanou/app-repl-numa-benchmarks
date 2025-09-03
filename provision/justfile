@@ -63,16 +63,48 @@ bench-fetch:
     set -euxo pipefail
     mkdir -p results/{{host}}
     mkdir -p results/{{host}}/monitor
-    platform=$(ssh {{host}} 'cd {{workdir}}/app-repl-numa-benchmarks && echo "from config import PLATFORM; print(PLATFORM)" | uv run -')
+    platform=$(ssh {{host}} '
+        cd {{workdir}}/app-repl-numa-benchmarks && \
+        echo "from config import PLATFORM; print(PLATFORM)" | PATH=$HOME/.local/bin:$PATH  uv run -')
     scp -r {{host}}:{{workdir}}/app-repl-numa-benchmarks/results/$platform/* results/{{host}}
 
 [group('bench')]
 bench-push:
     #!/usr/bin/env bash
     set -euxo pipefail
-    platform=$(ssh {{host}} 'cd {{workdir}}/app-repl-numa-benchmarks && echo "from config import PLATFORM; print(PLATFORM)" | uv run -')
+    platform=$(ssh {{host}} 'cd {{workdir}}/app-repl-numa-benchmarks &&  echo "from config import PLATFORM; print(PLATFORM)" | uv run -')
     ssh {{host}} "mkdir -p {{workdir}}/app-repl-numa-benchmarks/results/$platform"
     scp -r results/{{host}}/* {{host}}:~/app-repl-numa-benchmarks/results/$$platform
+
+# micro benchmark
+
+[group('bench-micro')]
+bench-micro-carrefour:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    ssh -tt {{host}} "cd {{workdir}} && \
+                      [ -d app-repl-numa-benchmarks ] || git clone https://github.com/riwanou/app-repl-numa-benchmarks.git && \
+                      curl -LsSf https://astral.sh/uv/install.sh | sh && \
+                      export PATH=\$HOME/.local/bin:\$PATH && \
+                      cd {{workdir}}/app-repl-numa-benchmarks && \
+                      make -C microbench && \
+                      uv run run.py bench-pgtable-carrefour && \
+                      uv run run.py bench-alloc-carrefour && \
+                      uv run run.py bench-mem-carrefour"
+
+[group('bench-micro')]
+bench-micro-own:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    ssh -tt {{host}} "cd {{workdir}}/linux-repl-6.14.2 && \
+                      [ -d /sys/kernel/debug/repl_pt ] || just test && \
+                      cd {{workdir}} && \
+                      [ -d app-repl-numa-benchmarks ] || git clone https://github.com/riwanou/app-repl-numa-benchmarks.git && \
+                      cd {{workdir}}/app-repl-numa-benchmarks && \
+                      just build-micro && \
+                      uv run run.py bench-pgtable-own && \
+                      uv run run.py bench-alloc-own && \
+                      uv run run.py bench-mem-own"
 
 # virtualization
 
