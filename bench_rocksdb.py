@@ -151,42 +151,22 @@ def run_bench_rocksdb():
 
 def run_bench_rocksdb_repl():
     prepare_dirs()
+    benches = ["readrandom", "multireadrandom", "fwdrange", "readwhilewriting"]
 
     # create db, load data
     run("patched-bulkload", "bulkload")
 
     # best case
-    sh("echo 3 > /proc/sys/vm/drop_caches")
-    run(
-        "patched-interleaved-multireadrandom",
-        "multireadrandom",
-        "numactl --interleave=all",
-    )
+    for bench in benches:
+        sh("echo 3 > /proc/sys/vm/drop_caches")
+        run(
+            f"patched-interleaved-{bench}",
+            bench,
+            "numactl --interleave=all",
+        )
 
-    sh("echo 3 > /proc/sys/vm/drop_caches")
-    run(
-        "patched-interleaved-fwdrange",
-        "fwdrange",
-        "numactl --interleave=all",
-    )
+        sh("echo 1 > /sys/kernel/debug/repl_pt/clear_registered")
+        sh("echo .sst > /sys/kernel/debug/repl_pt/registered")
 
-    sh("echo 3 > /proc/sys/vm/drop_caches")
-    run(
-        "patched-interleaved-readwhilewriting",
-        "readwhilewriting",
-        "numactl --interleave=all",
-    )
-
-    # multireadrandom repl
-    sh("echo 1 > /sys/kernel/debug/repl_pt/clear_registered")
-    sh("echo .sst > /sys/kernel/debug/repl_pt/registered")
-
-    # run
-    sh("echo 3 > /proc/sys/vm/drop_caches")
-    run("patched-repl-multireadrandom", "multireadrandom", repl=True)
-
-    sh("echo 3 > /proc/sys/vm/drop_caches")
-    run("patched-repl-fwdrange", "fwdrange", repl=True)
-
-    sh("echo 3 > /proc/sys/vm/drop_caches")
-    run("patched-repl-readwhilewriting", "readwhilewriting", repl=True)
+        sh("echo 3 > /proc/sys/vm/drop_caches")
+        run(f"patched-repl-{bench}", bench, repl=True)
