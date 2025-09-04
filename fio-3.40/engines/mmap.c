@@ -28,6 +28,7 @@ struct fio_mmap_data {
 };
 
 #define MAP_REPL 0x8000000
+#define MMAP_SHARE_GLOBAL 1
 
 struct shared_map_entry {
   char jobname[64];
@@ -128,24 +129,39 @@ static int fio_mmap_get_shared(struct thread_data *td)
 #endif
 
 static struct shared_map_entry *lookup_entry(const char *jobname) {
-    for (int i = 0; i < MAX_SHARED_MAPS; i++) {
-        if (shared_maps[i].mmap_ptr &&
-            strcmp(shared_maps[i].jobname, jobname) == 0)
-            return &shared_maps[i];
+	if (MMAP_SHARE_GLOBAL) {
+	  if (shared_maps[0].mmap_ptr) {
+	  	return &shared_maps[0];
     }
     return NULL;
+	}
+
+  for (int i = 0; i < MAX_SHARED_MAPS; i++) {
+      if (shared_maps[i].mmap_ptr &&
+          strcmp(shared_maps[i].jobname, jobname) == 0)
+          return &shared_maps[i];
+  }
+
+  return NULL;
 }
 
 static struct shared_map_entry *alloc_entry(const char *jobname, void *mmap_ptr) {
-    for (int i = 0; i < MAX_SHARED_MAPS; i++) {
-        if (!shared_maps[i].mmap_ptr) {
-            struct shared_map_entry *e = &shared_maps[i];
-            strncpy(e->jobname, jobname, sizeof(e->jobname));
-            e->mmap_ptr = mmap_ptr;
-            return e;
-        }
-    }
-    return NULL;
+  if (MMAP_SHARE_GLOBAL) {
+    struct shared_map_entry *e = &shared_maps[0];
+    e->mmap_ptr = mmap_ptr;
+    return e;
+  }
+
+  for (int i = 0; i < MAX_SHARED_MAPS; i++) {
+      if (!shared_maps[i].mmap_ptr) {
+          struct shared_map_entry *e = &shared_maps[i];
+          strncpy(e->jobname, jobname, sizeof(e->jobname));
+          e->mmap_ptr = mmap_ptr;
+          return e;
+      }
+  }
+
+  return NULL;
 }
 
 static bool fio_mmap_call(struct thread_data *td, struct fio_file *f,
@@ -162,6 +178,10 @@ static bool fio_mmap_call(struct thread_data *td, struct fio_file *f,
     pthread_mutex_lock(&shared_maps_lock);
     entry = lookup_entry(td->o.name);
   }
+
+	if (MMAP_SHARE_GLOBAL) {
+		prot = PROT_READ | PROT_WRITE;
+	}
 
   if (entry) {
     fmd->mmap_ptr = entry->mmap_ptr;
@@ -410,7 +430,7 @@ static struct ioengine_ops ioengine = {
 	.open_file	= fio_mmapio_open_file,
 	.close_file	= fio_mmapio_close_file,
 	.get_file_size	= generic_get_file_size,
-	.flags		= FIO_SYNCIO | FIO_NOEXTEND,
+	.flags		= FIO_SYNCIO | FIO_NOEXTEND | FIO_RO_NEEDS_RW_OPEN,
 	.options	= options,
 	.option_struct_size = sizeof(struct mmap_options),
 };
