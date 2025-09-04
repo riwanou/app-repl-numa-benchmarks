@@ -11,20 +11,34 @@ RESULT_DIR = config.RESULT_DIR
 def make_plot_rocksdb():
     os.makedirs(config.PLOT_DIR_ROCKSDB, exist_ok=True)
 
-    methods = ["multireadrandom"]
+    methods = [
+        "readrandom",
+        "multireadrandom",
+        "fwdrange",
+        "revrange",
+        "readwhilewriting",
+        "overwrite",
+        # "fwdrangewhilewriting",
+        # "revrangewhilewriting",
+    ]
     tags_order = [
-        "imbalanced",
-        "interleaved",
+        # "imbalanced",
+        # "interleaved",
+        "patched-interleaved",
         "patched-repl",
     ]
     tag_labels = {
-        "imbalanced": "Imbalanced",
-        "interleaved": "Interleaved",
+        # "imbalanced": "Imbalanced",
+        # "interleaved": "Interleaved",
+        "patched-interleaved": "Interleaved",
         "patched-repl": "Replication",
     }
 
     all_data = []
-    for arch in os.listdir(RESULT_DIR):
+    # arch = "IntelR_XeonR_Silver_4216_CPU_@_2.10GHz_X86_64"
+    arch = "IntelR_XeonR_Gold_6130_CPU_@_2.10GHz_X86_64"
+    # for arch in os.listdir(RESULT_DIR):
+    for arch in [arch]:
         arch_dir = os.path.join(RESULT_DIR, arch, "rocksdb")
         if not os.path.isdir(arch_dir):
             continue
@@ -40,8 +54,9 @@ def make_plot_rocksdb():
     df_all = pd.concat(all_data, ignore_index=True)
 
     def normalize_relative_to_default(group):
-        method = group.iloc[0]["test"].rsplit(".", 1)[0]
-        default_row = group[group["tag"] == method]
+        method = group.iloc[0]["test"].rsplit(".", 2)[0]
+        # default_row = group[group["tag"] == f"{method}"]
+        default_row = group[group["tag"] == f"patched-interleaved-{method}"]
         if default_row.empty:
             return group
 
@@ -69,8 +84,8 @@ def make_plot_rocksdb():
         fig, ax = plt.subplots(
             nrows=1,
             ncols=1,
-            figsize=(3, 3),
-            sharey=True,
+            figsize=(12, 3),
+            sharey=False,
         )
 
         bar_width = 0.2
@@ -140,7 +155,7 @@ def make_plot_rocksdb():
             fontsize=8,
             title_fontsize=9,
             loc="upper right",
-            bbox_to_anchor=(0.7, 1.0),
+            bbox_to_anchor=(1.0, 1.0),
             edgecolor="white",
             framealpha=1.0,
         )

@@ -17,8 +17,6 @@ pattern = re.compile(
 
 def make_plot_microbench():
     os.makedirs(config.PLOT_DIR_MICROBENCH, exist_ok=True)
-    arch = "IntelR_XeonR_Silver_4216_CPU_@_2.10GHz_X86_64"
-
     for arch in os.listdir(RESULT_DIR):
         microbench_dir = os.path.join(RESULT_DIR, arch, "microbench")
         if not os.path.isdir(microbench_dir):

@@ -22,6 +22,7 @@ parser.add_argument(
         "bench-mem-carrefour",
         "plot-ann",
         "plot-rocksdb",
+        "plot-fio",
         "plot-monitoring",
         "plot-microbench",
     ],
@@ -73,6 +74,10 @@ elif args.run == "plot-rocksdb":
     import plot_rocksdb
 
     plot_rocksdb.make_plot_rocksdb()
+elif args.run == "plot-fio":
+    import plot_fio
+
+    plot_fio.make_plot_fio()
 elif args.run == "plot-monitoring":
     import plot_monitoring
 

@@ -30,6 +30,7 @@ RESULT_DIR_MICROBENCH = os.path.join(RESULT_DIR, PLATFORM, "microbench")
 PLOT_DIR = "plots"
 PLOT_DIR_ANN = os.path.join(PLOT_DIR, "ann")
 PLOT_DIR_ROCKSDB = os.path.join(PLOT_DIR, "rocksdb")
+PLOT_DIR_FIO = os.path.join(PLOT_DIR, "fio")
 PLOT_DIR_MONITORING = os.path.join(PLOT_DIR, "monitoring")
 PLOT_DIR_MICROBENCH = os.path.join(PLOT_DIR, "microbench")
 
