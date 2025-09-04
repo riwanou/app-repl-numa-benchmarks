@@ -1,7 +1,7 @@
 import os
 from config import sh, RESULT_DIR_FIO
 
-RUNTIME = 45
+RUNTIME = 30
 
 
 def run_repl(cmd: str) -> str:
@@ -13,25 +13,24 @@ def run_repl(cmd: str) -> str:
 
 
 def run_bench(
-    section: str,
     tag: str,
     repl_enabled: bool,
-    mixread=90,
-    mixwrite=0,
+    readjobs,
+    writejobs,
     distrib="random",
 ) -> str:
     os.makedirs(RESULT_DIR_FIO, exist_ok=True)
     json_path = os.path.join(RESULT_DIR_FIO, f"{tag}.json")
 
     cmd = f"""RUNTIME={RUNTIME} \
-        MIXREAD={mixread} \
-        MIXWRITE={mixwrite} \
+        READJOBS={readjobs} \
+        WRITEJOBS={writejobs} \
         DISTRIB={distrib} \
         ./fio-3.40/fio \
         --output-format=json \
+        {"--section=readers" if writejobs == 0 else ""} \
         bench.fio \
-        --output={json_path} \
-        --section={section}"""
+        --output={json_path}"""
 
     if repl_enabled:
         return run_repl(cmd)
@@ -39,18 +38,21 @@ def run_bench(
         return cmd
 
 
-def run_bench_readwrite(mixread, mixwrite):
-    base_tag = f"readwrite_{mixread}_{mixwrite}"
+def run_bench_readwrite(distrib, total_jobs, read_ratio, write_ratio):
+    base_tag = f"readwrite_{distrib}_{read_ratio}_{write_ratio}"
+
+    num_readers = round(total_jobs * read_ratio / 100)
+    num_writers = total_jobs - num_readers
 
     sh("echo 3 > /proc/sys/vm/drop_caches")
     sh(
         f"{
             run_bench(
-                section='readwrite',
                 tag=base_tag,
                 repl_enabled=False,
-                mixread=mixread,
-                mixwrite=mixwrite,
+                readjobs=num_readers,
+                writejobs=num_writers,
+                distrib=distrib,
             )
         }"
     )
@@ -59,24 +61,33 @@ def run_bench_readwrite(mixread, mixwrite):
     sh(
         f"{
             run_bench(
-                section='readwrite',
                 tag=f'{base_tag}_repl',
                 repl_enabled=True,
-                mixread=mixread,
-                mixwrite=mixwrite,
+                readjobs=num_readers,
+                writejobs=num_writers,
+                distrib=distrib,
             )
         }"
     )
+
+
+def run_bench_fio_distrib(distrib):
+    total_jobs = os.cpu_count()
+
+    # random read write
+    run_bench_readwrite(distrib, total_jobs, read_ratio=100, write_ratio=0)
+    run_bench_readwrite(distrib, total_jobs, read_ratio=95, write_ratio=5)
+    run_bench_readwrite(distrib, total_jobs, read_ratio=90, write_ratio=10)
+    run_bench_readwrite(distrib, total_jobs, read_ratio=80, write_ratio=20)
+    run_bench_readwrite(distrib, total_jobs, read_ratio=70, write_ratio=30)
+    run_bench_readwrite(distrib, total_jobs, read_ratio=60, write_ratio=40)
+    run_bench_readwrite(distrib, total_jobs, read_ratio=50, write_ratio=50)
+    run_bench_readwrite(distrib, total_jobs, read_ratio=40, write_ratio=60)
+    run_bench_readwrite(distrib, total_jobs, read_ratio=30, write_ratio=70)
+    run_bench_readwrite(distrib, total_jobs, read_ratio=20, write_ratio=80)
+    run_bench_readwrite(distrib, total_jobs, read_ratio=10, write_ratio=90)
 
 
 def run_bench_fio():
-    # random read
-    sh("echo 3 > /proc/sys/vm/drop_caches")
-    sh(f"{run_bench(section='read', tag='read', repl_enabled=False)}")
-    sh("echo 3 > /proc/sys/vm/drop_caches")
-    sh(f"{run_bench(section='read', tag='read_repl', repl_enabled=True)}")
-
-    # random read write
-    run_bench_readwrite(mixread=95, mixwrite=5)
-    run_bench_readwrite(mixread=90, mixwrite=10)
-    run_bench_readwrite(mixread=85, mixwrite=15)
+    run_bench_fio_distrib("random")
+    # run_bench_fio_distrib("zipf")

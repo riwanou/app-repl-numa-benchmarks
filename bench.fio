@@ -8,17 +8,15 @@ directory=/tmp
 filename=/tmp/fio_readwrite
 time_based
 runtime=${RUNTIME}
-
-[readwrite]
 share_mmap=1
 repl=1
-rw=randrw
+
+[writers]
+rw=randwrite
 random_distribution=${DISTRIB}
-rwmixread=${MIXREAD}
-rwmixwrite=${MIXWRITE}
+numjobs=${WRITEJOBS}
 
-[read]
-share_mmap=1
-repl=1
+[readers]
 rw=randread
 random_distribution=${DISTRIB}
+numjobs=${READJOBS}
