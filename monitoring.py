@@ -2,6 +2,7 @@ import subprocess
 import signal
 import os
 import ctypes.util
+import shutil
 from config import MONITOR_DIR, MONITOR_MEM, MONITOR_PCM, MONITOR_PCM_MEMORY, sh
 
 INTERVAL = 1
@@ -20,6 +21,16 @@ def set_pdeathsig():
     libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
     if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL) != 0:
         raise OSError(ctypes.get_errno(), "SET_PDEATHSIG")
+
+
+def safe_copy(src, dst):
+    try:
+        shutil.copy(src, dst)
+        print(f"[OK] Copied {src} → {dst}")
+    except FileNotFoundError:
+        print(f"[WARN] File not found, skipping: {src}")
+    except Exception as e:
+        print(f"[ERROR] Failed to copy {src} → {dst}: {e}")
 
 
 class Monitoring:
@@ -68,9 +79,9 @@ class Monitoring:
         )
 
     def mv_output_files(self):
-        os.rename(tmp_csv(MONITOR_PCM), label_csv(MONITOR_PCM, self.label))
-        os.rename(
+        safe_copy(tmp_csv(MONITOR_PCM), label_csv(MONITOR_PCM, self.label))
+        safe_copy(
             tmp_csv(MONITOR_PCM_MEMORY),
             label_csv(MONITOR_PCM_MEMORY, self.label),
         )
-        os.rename(tmp_csv(MONITOR_MEM), label_csv(MONITOR_MEM, self.label))
+        safe_copy(tmp_csv(MONITOR_MEM), label_csv(MONITOR_MEM, self.label))
