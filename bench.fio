@@ -1,8 +1,7 @@
 [global]
 group_reporting
 ioengine=mmap
-size=128m
-numjobs=$ncpus
+size=512m
 thread=1
 directory=/tmp
 filename=/tmp/fio_readwrite

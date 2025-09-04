@@ -15,6 +15,7 @@ DB_DIR = os.path.join(config.TMP_DIR_ROCKSDB, "db")
 WAL_DIR = os.path.join(config.TMP_DIR_ROCKSDB, "wal")
 NUM_KEYS = 2000000
 CACHE_SIZE = 6442450944
+MB_WRITE_PER_SEC = 2
 COMPRESSION_TYPE = "none"
 DURATION = 120
 STAT_INTERVAL_SECONDS = 15
@@ -22,6 +23,17 @@ STAT_INTERVAL_SECONDS = 15
 LOAD_ENV = f"DB_DIR={DB_DIR} WAL_DIR={WAL_DIR} NUM_KEYS={NUM_KEYS} CACHE_SIZE={CACHE_SIZE} COMPRESSION_TYPE={COMPRESSION_TYPE}"
 BENCH_ENV = f"{LOAD_ENV} DURATION={DURATION} STATS_INTERVAL_SECONDS={STAT_INTERVAL_SECONDS} NUM_THREADS={NUM_THREADS}"
 BENCHMARK_SCRIPT = os.path.join("..", "tools", "benchmark.sh")
+
+BENCHES = [
+    "readrandom",
+    "multireadrandom",
+    "fwdrange",
+    "revrange",
+    "overwrite",
+    "readwhilewriting",
+    "fwdrangewhilewriting",
+    "revrangewhilewriting",
+]
 
 
 def decomment(csvfile):
@@ -33,13 +45,7 @@ def decomment(csvfile):
 
 def run(
     tag: str,
-    variant: Literal[
-        "bulkload",
-        "readrandom",
-        "multireadrandom",
-        "fwdrange",
-        "readwhilewriting",
-    ],
+    variant: str,
     numactl_invoc: str = "",
     repl: bool = False,
 ):
@@ -86,11 +92,43 @@ def run(
             {repl_end}
             """
         )
+    elif variant == "revrange":
+        sh(
+            f"""
+            {repl_start}
+            {BENCH_ENV} {output_option} {numactl_invoc} {BENCHMARK_SCRIPT} revrange --mmap_read=1;
+            {repl_end}
+            """
+        )
+    elif variant == "overwrite":
+        sh(
+            f"""
+            {repl_start}
+            {BENCH_ENV} {output_option} {numactl_invoc} {BENCHMARK_SCRIPT} overwrite --mmap_read=1;
+            {repl_end}
+            """
+        )
     elif variant == "readwhilewriting":
         sh(
             f"""
             {repl_start}
-            {BENCH_ENV} MB_WRITE_PER_SEC=1 {output_option} {numactl_invoc} {BENCHMARK_SCRIPT} readwhilewriting --mmap_read=1;
+            {BENCH_ENV} MB_WRITE_PER_SEC={MB_WRITE_PER_SEC} {output_option} {numactl_invoc} {BENCHMARK_SCRIPT} readwhilewriting --mmap_read=1;
+            {repl_end}
+            """
+        )
+    elif variant == "fwdrangewhilewriting":
+        sh(
+            f"""
+            {repl_start}
+            {BENCH_ENV} MB_WRITE_PER_SEC={MB_WRITE_PER_SEC} {output_option} {numactl_invoc} {BENCHMARK_SCRIPT} fwdrangewhilewriting --mmap_read=1;
+            {repl_end}
+            """
+        )
+    elif variant == "revrangewhilewriting":
+        sh(
+            f"""
+            {repl_start}
+            {BENCH_ENV} MB_WRITE_PER_SEC={MB_WRITE_PER_SEC} {output_option} {numactl_invoc} {BENCHMARK_SCRIPT} revrangewhilewriting --mmap_read=1;
             {repl_end}
             """
         )
@@ -132,32 +170,39 @@ def run_bench_rocksdb():
     # create db, load data
     run("bulkload", "bulkload")
 
-    # run
-    sh("echo 3 > /proc/sys/vm/drop_caches")
-    run("multireadrandom", "multireadrandom")
+    for bench in BENCHES:
+        # default
+        sh("echo 3 > /proc/sys/vm/drop_caches")
+        run(
+            f"{bench}",
+            bench,
+        )
 
-    # worst case
-    sh("echo 3 > /proc/sys/vm/drop_caches")
-    run("imbalanced-multireadrandom", "multireadrandom", "numactl --membind=0")
+        # worst case
+        sh("echo 3 > /proc/sys/vm/drop_caches")
+        run(
+            f"imbalanced-{bench}",
+            bench,
+            "numactl --membind=0",
+        )
 
-    # best case
-    sh("echo 3 > /proc/sys/vm/drop_caches")
-    run(
-        "interleaved-multireadrandom",
-        "multireadrandom",
-        "numactl --interleave=all",
-    )
+        # best case
+        sh("echo 3 > /proc/sys/vm/drop_caches")
+        run(
+            f"interleaved-{bench}",
+            bench,
+            "numactl --interleave=all",
+        )
 
 
 def run_bench_rocksdb_repl():
     prepare_dirs()
-    benches = ["readrandom", "multireadrandom", "fwdrange", "readwhilewriting"]
 
     # create db, load data
     run("patched-bulkload", "bulkload")
 
-    # best case
-    for bench in benches:
+    for bench in BENCHES:
+        # best case
         sh("echo 3 > /proc/sys/vm/drop_caches")
         run(
             f"patched-interleaved-{bench}",
@@ -165,6 +210,7 @@ def run_bench_rocksdb_repl():
             "numactl --interleave=all",
         )
 
+        # repl
         sh("echo 1 > /sys/kernel/debug/repl_pt/clear_registered")
         sh("echo .sst > /sys/kernel/debug/repl_pt/registered")
 
