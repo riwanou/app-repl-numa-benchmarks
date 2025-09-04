@@ -25,7 +25,7 @@ kernel-patched:
     fi; \
     scp {{config}} {{host}}:{{workdir}}/linux-repl-6.14.2/.config
     scp {{config}} {{host}}:/boot/config-6.14.2+
-    ssh {{host}} 'cd {{workdir}}/linux-repl-6.14.2 && just build install kexec'
+    ssh {{host}} 'cd {{workdir}}/linux-repl-6.14.2 && just build && cp my_modules/repl_pt.ko ~ && just install kexec'
 
 [group('kernel')]
 kernel-baseline:
@@ -39,20 +39,20 @@ kernel-baseline:
     fi; \
     scp {{config}} {{host}}:{{workdir}}/linux-baseline-6.14.2/.config
     scp {{config}} {{host}}:/boot/config-6.14.2+
-    ssh {{host}} 'cd {{workdir}}/linux-baseline-6.14.2 && just build install kexec'
+    ssh {{host}} 'cd {{workdir}}/linux-baseline-6.14.2 && just build && cp my_modules/repl_pt.ko ~ && just install kexec'
 
 [group('bench')]
 bench:
     scp run_bench.sh {{host}}:{{workdir}}/run_bench.sh
     ssh -tt {{host}} "cd {{workdir}} && chmod +x run_bench.sh && \
-                      ./run_bench.sh bench-all {{workdir}} 'cd {{workdir}}/app-repl-numa-benchmarks && just build-rocksdb && just bench'"
+                      ./run_bench.sh bench-all {{workdir}} 'cd {{workdir}}/app-repl-numa-benchmarks && uv sync --all-extras && just build && just bench'"
 
 [group('bench')]
 bench-repl:
     scp run_bench.sh {{host}}:{{workdir}}/run_bench.sh
-    ssh -tt {{host}} "cd {{workdir}}/linux-repl-6.14.2 && just test && \
+    ssh -tt {{host}} "[ -d /sys/kernel/debug/repl_pt ] || (cd {{workdir}}/linux-repl-6.14.2 && just test) && \
                       cd {{workdir}} && chmod +x run_bench.sh && \
-                      ./run_bench.sh bench-all {{workdir}} 'cd {{workdir}}/app-repl-numa-benchmarks && just build-rocksdb && just bench-repl'"
+                      ./run_bench.sh bench-all {{workdir}} 'cd {{workdir}}/app-repl-numa-benchmarks && uv sync --all-extras && just build && just bench-repl'"
 
 [group('bench')]
 bench-list:

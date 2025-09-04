@@ -33,7 +33,13 @@ def decomment(csvfile):
 
 def run(
     tag: str,
-    variant: Literal["bulkload", "readrandom", "multireadrandom"],
+    variant: Literal[
+        "bulkload",
+        "readrandom",
+        "multireadrandom",
+        "fwdrange",
+        "readwhilewriting",
+    ],
     numactl_invoc: str = "",
     repl: bool = False,
 ):
@@ -69,6 +75,22 @@ def run(
             f"""
             {repl_start}
             {BENCH_ENV} {output_option} {numactl_invoc} {BENCHMARK_SCRIPT} multireadrandom --mmap_read=1 --multiread_batched;
+            {repl_end}
+            """
+        )
+    elif variant == "fwdrange":
+        sh(
+            f"""
+            {repl_start}
+            {BENCH_ENV} {output_option} {numactl_invoc} {BENCHMARK_SCRIPT} fwdrange --mmap_read=1;
+            {repl_end}
+            """
+        )
+    elif variant == "readwhilewriting":
+        sh(
+            f"""
+            {repl_start}
+            {BENCH_ENV} MB_WRITE_PER_SEC=1 {output_option} {numactl_invoc} {BENCHMARK_SCRIPT} readwhilewriting --mmap_read=1;
             {repl_end}
             """
         )
@@ -141,9 +163,30 @@ def run_bench_rocksdb_repl():
         "numactl --interleave=all",
     )
 
+    sh("echo 3 > /proc/sys/vm/drop_caches")
+    run(
+        "patched-interleaved-fwdrange",
+        "fwdrange",
+        "numactl --interleave=all",
+    )
+
+    sh("echo 3 > /proc/sys/vm/drop_caches")
+    run(
+        "patched-interleaved-readwhilewriting",
+        "readwhilewriting",
+        "numactl --interleave=all",
+    )
+
     # multireadrandom repl
     sh("echo 1 > /sys/kernel/debug/repl_pt/clear_registered")
     sh("echo .sst > /sys/kernel/debug/repl_pt/registered")
+
     # run
     sh("echo 3 > /proc/sys/vm/drop_caches")
     run("patched-repl-multireadrandom", "multireadrandom", repl=True)
+
+    sh("echo 3 > /proc/sys/vm/drop_caches")
+    run("patched-repl-fwdrange", "fwdrange", repl=True)
+
+    sh("echo 3 > /proc/sys/vm/drop_caches")
+    run("patched-repl-readwhilewriting", "readwhilewriting", repl=True)
