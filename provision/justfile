@@ -39,7 +39,7 @@ kernel-baseline:
     fi; \
     scp {{config}} {{host}}:{{workdir}}/linux-baseline-6.14.2/.config
     scp {{config}} {{host}}:/boot/config-6.14.2+
-    ssh {{host}} 'cd {{workdir}}/linux-baseline-6.14.2 && just build && cp my_modules/repl_pt.ko ~ && just install kexec'
+    ssh {{host}} 'cd {{workdir}}/linux-baseline-6.14.2 && just build && just install kexec'
 
 [group('bench')]
 bench:

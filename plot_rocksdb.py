@@ -22,23 +22,19 @@ def make_plot_rocksdb():
         # "revrangewhilewriting",
     ]
     tags_order = [
-        # "imbalanced",
-        # "interleaved",
-        "patched-interleaved",
+        "imbalanced",
+        "interleaved",
         "patched-repl",
     ]
     tag_labels = {
-        # "imbalanced": "Imbalanced",
-        # "interleaved": "Interleaved",
-        "patched-interleaved": "Interleaved",
+        "imbalanced": "Imbalanced",
+        "interleaved": "Interleaved",
         "patched-repl": "Replication",
     }
 
     all_data = []
-    # arch = "IntelR_XeonR_Silver_4216_CPU_@_2.10GHz_X86_64"
     arch = "IntelR_XeonR_Gold_6130_CPU_@_2.10GHz_X86_64"
-    # for arch in os.listdir(RESULT_DIR):
-    for arch in [arch]:
+    for arch in os.listdir(RESULT_DIR):
         arch_dir = os.path.join(RESULT_DIR, arch, "rocksdb")
         if not os.path.isdir(arch_dir):
             continue
@@ -55,8 +51,7 @@ def make_plot_rocksdb():
 
     def normalize_relative_to_default(group):
         method = group.iloc[0]["test"].rsplit(".", 2)[0]
-        # default_row = group[group["tag"] == f"{method}"]
-        default_row = group[group["tag"] == f"patched-interleaved-{method}"]
+        default_row = group[group["tag"] == f"{method}"]
         if default_row.empty:
             return group
 
