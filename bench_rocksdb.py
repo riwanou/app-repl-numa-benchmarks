@@ -167,6 +167,9 @@ def prepare_dirs():
 def run_bench_rocksdb():
     prepare_dirs()
 
+    # disable numa balancing
+    sh("echo 0 > /proc/sys/kernel/numa_balancing")
+
     # create db, load data
     run("bulkload", "bulkload")
 
@@ -193,6 +196,15 @@ def run_bench_rocksdb():
             bench,
             "numactl --interleave=all",
         )
+
+        # a case
+        sh("echo 1 > /proc/sys/kernel/numa_balancing")
+        sh("echo 3 > /proc/sys/vm/drop_caches")
+        run(
+            f"{bench}",
+            bench,
+        )
+        sh("echo 0 > /proc/sys/kernel/numa_balancing")
 
 
 def run_bench_rocksdb_repl():

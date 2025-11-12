@@ -25,6 +25,9 @@ def run_bench(tag: str) -> str:
 
 
 def run_bench_ann():
+    # disable numa balancing
+    sh("echo 0 > /proc/sys/kernel/numa_balancing")
+
     # all cores
     sh("echo 3 > /proc/sys/vm/drop_caches")
     sh(f"{run_bench('default')}")
@@ -36,6 +39,12 @@ def run_bench_ann():
     # best case (interleaved)
     sh("echo 3 > /proc/sys/vm/drop_caches")
     sh(f"numactl --interleave=all {run_bench('interleaved-memory')}")
+
+    # a case (numa balancing)
+    sh("echo 1 > /proc/sys/kernel/numa_balancing")
+    sh("echo 3 > /proc/sys/vm/drop_caches")
+    sh(f"{run_bench('numa-balancing')}")
+    sh("echo 0 > /proc/sys/kernel/numa_balancing")
 
     # full local
     # sh("echo 3 > /proc/sys/vm/drop_caches")
