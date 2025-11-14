@@ -13,10 +13,16 @@ DATASETS = [
 ]
 # DATASETS = ann.lib.DATASETS
 
-TAGS_ORDER = ["imbalanced-memory", "interleaved-memory", "patched-repl"]
+TAGS_ORDER = [
+    "imbalanced-memory",
+    "interleaved-memory",
+    "numa-balancing",
+    "patched-repl",
+]
 TAG_LABELS = {
     "imbalanced-memory": "Imbalanced",
     "interleaved-memory": "Interleaved",
+    "numa-balancing": "NumaBalancing",
     "patched-repl": "Replication",
 }
 
@@ -219,7 +225,7 @@ def plot_main(df_main: pd.DataFrame):
             fontsize=8,
             title_fontsize=9,
             loc="upper right",
-            bbox_to_anchor=(1, 1),
+            bbox_to_anchor=(0.8, 1),
             edgecolor="white",
             framealpha=1.0,
         )

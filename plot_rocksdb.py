@@ -24,11 +24,13 @@ def make_plot_rocksdb():
     tags_order = [
         "imbalanced",
         "interleaved",
+        "numa-balancing",
         "patched-repl",
     ]
     tag_labels = {
         "imbalanced": "Imbalanced",
         "interleaved": "Interleaved",
+        "numa-balancing": "NumaBalancing",
         "patched-repl": "Replication",
     }
 

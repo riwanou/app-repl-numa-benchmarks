@@ -21,12 +21,22 @@ pattern = re.compile(
 
 def make_plot_fio():
     os.makedirs(config.PLOT_DIR_FIO, exist_ok=True)
-    arch = "IntelR_XeonR_Silver_4216_CPU_@_2.10GHz_X86_64"
 
+    # for arch in os.listdir(config.RESULT_DIR):
+    #     arch_dir = os.path.join(RESULT_DIR, arch)
+    #     if not os.path.isdir(arch_dir):
+    #         continue
+    #     make_plot_fio_arch(arch)
+
+    make_plot_fio_arch("IntelR_XeonR_Silver_4216_CPU_@_2.10GHz_X86_64")
+
+
+def make_plot_fio_arch(arch):
     combined_df = get_data(arch)
     combined_df = combined_df.sort_values(
         by=["tag", "read_bw_gb"], ascending=False
     ).reset_index(drop=True)
+    print(combined_df)
 
     plot_fio(
         arch,
@@ -63,6 +73,9 @@ def get_data(arch: str) -> pd.DataFrame:
         writeratio = match["writeratio"]
         is_repl = match["repl"] is not None
 
+        if distrib == "zipf":
+            continue
+
         path = os.path.join(dir, fname)
         with open(path, "r") as f:
             json_data = json.load(f)
@@ -98,7 +111,7 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
 
     read_ratios = sorted(df["readratio"].unique())
     x = np.arange(len(read_ratios))
-    width = 0.2
+    width = 0.25
 
     df_repl = df[df["tag"] == "repl"].set_index("readratio")
     df_normal = df[df["tag"] == ""].set_index("readratio")
@@ -113,7 +126,7 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
     ]
 
     fig, ax = plt.subplots(
-        figsize=(12, 6),
+        figsize=(8, 4),
     )
 
     palette = sns.color_palette("Blues", n_colors=2)
