@@ -201,7 +201,7 @@ def run_bench_rocksdb():
         sh("echo 1 > /proc/sys/kernel/numa_balancing")
         sh("echo 3 > /proc/sys/vm/drop_caches")
         run(
-            f"{bench}",
+            f"balancing-{bench}",
             bench,
         )
         sh("echo 0 > /proc/sys/kernel/numa_balancing")
