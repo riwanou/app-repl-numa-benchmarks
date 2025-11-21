@@ -228,3 +228,9 @@ def run_bench_rocksdb_repl():
 
         sh("echo 3 > /proc/sys/vm/drop_caches")
         run(f"patched-repl-{bench}", bench, repl=True)
+
+        # with unreplication on write pressure
+        sh("echo 1 > /sys/kernel/debug/repl_pt/write_unreplication")
+        sh("echo 3 > /proc/sys/vm/drop_caches")
+        run(f"patched-repl-unrepl-{bench}", bench, repl=True)
+        sh("echo 0 > /sys/kernel/debug/repl_pt/write_unreplication")
