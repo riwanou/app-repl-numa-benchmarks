@@ -78,6 +78,16 @@ def run_bench_ann_repl():
       echo 0 > /sys/kernel/debug/repl_pt/policy
     )""")
 
+    # with unrepl on write
+    sh("echo 1 > /sys/kernel/debug/repl_pt/write_unreplication")
+    sh("echo 3 > /proc/sys/vm/drop_caches")
+    sh(f"""(
+      echo 1 > /sys/kernel/debug/repl_pt/policy &&
+      {run_bench("patched-repl-unrepl")};
+      echo 0 > /sys/kernel/debug/repl_pt/policy
+    )""")
+    sh("echo 0 > /sys/kernel/debug/repl_pt/write_unreplication")
+
     # # cpus interleaved, 1 node, no repl
     # cpus = get_interleaved_cpus_one_node()
     # sh("echo 3 > /proc/sys/vm/drop_caches")
