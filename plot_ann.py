@@ -9,7 +9,7 @@ import matplotlib.patches as mpatches
 RESULT_DIR = config.RESULT_DIR
 DATASETS = [
     "glove-100-angular.hdf5",
-    "sift-128-euclidean.hdf5",
+    # "sift-128-euclidean.hdf5",
     "gist-960-euclidean.hdf5",
 ]
 # DATASETS = ann.lib.DATASETS
