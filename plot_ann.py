@@ -9,21 +9,24 @@ import matplotlib.patches as mpatches
 RESULT_DIR = config.RESULT_DIR
 DATASETS = [
     "glove-100-angular.hdf5",
+    "sift-128-euclidean.hdf5",
     "gist-960-euclidean.hdf5",
 ]
 # DATASETS = ann.lib.DATASETS
 
 TAGS_ORDER = [
-    "imbalanced-memory",
+    # "imbalanced-memory",
     "interleaved-memory",
     "numa-balancing",
     "patched-repl",
+    "patched-repl-unrepl",
 ]
 TAG_LABELS = {
-    "imbalanced-memory": "Imbalanced",
+    # "imbalanced-memory": "Imbalanced",
     "interleaved-memory": "Interleaved",
     "numa-balancing": "NumaBalancing",
     "patched-repl": "Replication",
+    "patched-repl-unrepl": "ReplicationDynamic",
 }
 
 RUNNER_NAMES = ["faiss", "annoy", "usearch"]
@@ -225,7 +228,7 @@ def plot_main(df_main: pd.DataFrame):
             fontsize=8,
             title_fontsize=9,
             loc="upper right",
-            bbox_to_anchor=(0.8, 1),
+            bbox_to_anchor=(0.9, 1),
             edgecolor="white",
             framealpha=1.0,
         )

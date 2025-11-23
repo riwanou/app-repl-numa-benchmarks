@@ -1,22 +1,34 @@
 import multiprocessing
 import os
 import re
-import cpuinfo
 import subprocess
 import tempfile
 import datetime
 
-NUM_THREADS = multiprocessing.cpu_count()
-CPU_INFO = cpuinfo.get_cpu_info()
-PLATFORM = (
-    re.sub(
+
+def get_safe_platform_string():
+    arch = os.uname().machine.upper()
+    brand_raw = "unknown-cpu"
+    try:
+        with open("/proc/cpuinfo", "r") as f:
+            for line in f:
+                if "model name" in line:
+                    brand_raw = line.split(":", 1)[1].strip()
+                    break
+    except Exception as e:
+        print(f"Warning: Could not read CPU info from /proc. Error: {e}")
+
+    platform_name = re.sub(
         r"\s+",
         "_",
-        re.sub(r"[()]", "", CPU_INFO.get("brand_raw", "unknown-cpu")).strip(),
+        re.sub(r"[()]", "", brand_raw).strip(),
     )
-    + "_"
-    + CPU_INFO.get("arch", "unknown-arch")
-)
+
+    return f"{platform_name}_{arch}"
+
+
+NUM_THREADS = multiprocessing.cpu_count()
+PLATFORM = get_safe_platform_string()
 
 TMP_DIR = tempfile.gettempdir()
 TMP_DIR_ROCKSDB = os.path.join(TMP_DIR, "rocksdb")
