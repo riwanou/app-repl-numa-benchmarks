@@ -1,5 +1,4 @@
 import os
-from typing import Literal
 import config
 import shutil
 import csv
@@ -13,11 +12,11 @@ CSV_PATH = os.path.join(RESULT_DIR, "results.csv")
 NUM_THREADS = config.NUM_THREADS
 DB_DIR = os.path.join(config.TMP_DIR_ROCKSDB, "db")
 WAL_DIR = os.path.join(config.TMP_DIR_ROCKSDB, "wal")
-NUM_KEYS = 2000000
-CACHE_SIZE = 6442450944
+NUM_KEYS = 4_000_000
+CACHE_SIZE = 16 * 1000 * 1000 * 1000  # 16 GB
 MB_WRITE_PER_SEC = 2
 COMPRESSION_TYPE = "none"
-DURATION = 120
+DURATION = 180
 STAT_INTERVAL_SECONDS = 15
 
 LOAD_ENV = f"DB_DIR={DB_DIR} WAL_DIR={WAL_DIR} NUM_KEYS={NUM_KEYS} CACHE_SIZE={CACHE_SIZE} COMPRESSION_TYPE={COMPRESSION_TYPE}"
@@ -170,12 +169,10 @@ def run_bench_rocksdb():
     # disable numa balancing
     sh("echo 0 > /proc/sys/kernel/numa_balancing")
 
-    # create db, load data
-    run("bulkload", "bulkload")
-
     for bench in BENCHES:
         # default
         sh("echo 3 > /proc/sys/vm/drop_caches")
+        run("bulkload", "bulkload")
         run(
             f"{bench}",
             bench,
@@ -183,6 +180,7 @@ def run_bench_rocksdb():
 
         # worst case
         sh("echo 3 > /proc/sys/vm/drop_caches")
+        run("bulkload", "bulkload")
         run(
             f"imbalanced-{bench}",
             bench,
@@ -191,6 +189,7 @@ def run_bench_rocksdb():
 
         # best case
         sh("echo 3 > /proc/sys/vm/drop_caches")
+        run("bulkload", "bulkload")
         run(
             f"interleaved-{bench}",
             bench,
@@ -200,6 +199,7 @@ def run_bench_rocksdb():
         # a case
         sh("echo 1 > /proc/sys/kernel/numa_balancing")
         sh("echo 3 > /proc/sys/vm/drop_caches")
+        run("bulkload", "bulkload")
         run(
             f"balancing-{bench}",
             bench,
@@ -211,26 +211,32 @@ def run_bench_rocksdb_repl():
     prepare_dirs()
 
     # create db, load data
-    run("patched-bulkload", "bulkload")
 
     for bench in BENCHES:
-        # best case
-        sh("echo 3 > /proc/sys/vm/drop_caches")
-        run(
-            f"patched-interleaved-{bench}",
-            bench,
-            "numactl --interleave=all",
-        )
+        # best case, debug purpose
+        # sh("echo 3 > /proc/sys/vm/drop_caches")
+        # run(
+        #     f"patched-interleaved-{bench}",
+        #     bench,
+        #     "numactl --interleave=all",
+        # )
 
-        # repl
+        # with normal replication
+        sh("echo 3 > /proc/sys/vm/drop_caches")
+        run("patched-bulkload", "bulkload")
+
         sh("echo 1 > /sys/kernel/debug/repl_pt/clear_registered")
         sh("echo .sst > /sys/kernel/debug/repl_pt/registered")
-
-        sh("echo 3 > /proc/sys/vm/drop_caches")
         run(f"patched-repl-{bench}", bench, repl=True)
 
         # with unreplication on write pressure
-        sh("echo 1 > /sys/kernel/debug/repl_pt/write_unreplication")
         sh("echo 3 > /proc/sys/vm/drop_caches")
+        run("patched-bulkload", "bulkload")
+
+        sh("echo 1 > /sys/kernel/debug/repl_pt/write_unreplication")
+        sh("echo 2 > /sys/kernel/debug/repl_pt/wave_threshold_pressure")
+        sh("echo 4 > /sys/kernel/debug/repl_pt/unreplicate_treshold")
+        sh("echo 1000 > /sys/kernel/debug/repl_pt/wave_cooldown_ms")
+        sh("echo 12000 > /sys/kernel/debug/repl_pt/damping_inactivity_ms")
         run(f"patched-repl-unrepl-{bench}", bench, repl=True)
         sh("echo 0 > /sys/kernel/debug/repl_pt/write_unreplication")
