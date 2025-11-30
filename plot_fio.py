@@ -15,7 +15,9 @@ pattern = re.compile(
     r"_(?P<distrib>\w+)"  # random, zipf
     r"_(?P<readratio>\d+)"  # number of reader jobs
     r"_(?P<writeratio>\d+)"  # number of writer jobs
-    r"(?P<repl>_repl)?\.json$"
+    r"(?P<repl>_repl)?"  # matches "_repl" if present
+    r"(?P<unrepl>_unrepl)?"  # matches "_unrepl" if present
+    r"\.json$"  # exactly one .json at the end
 )
 
 
@@ -72,11 +74,14 @@ def get_data(arch: str) -> pd.DataFrame:
         readratio = match["readratio"]
         writeratio = match["writeratio"]
         is_repl = match["repl"] is not None
+        is_unrepl = match["unrepl"] is not None
 
-        if distrib == "zipf":
+        if distrib != "zipf":
             continue
 
         path = os.path.join(dir, fname)
+        if os.path.getsize(path) == 0:
+            continue
         with open(path, "r") as f:
             json_data = json.load(f)
 
@@ -87,6 +92,13 @@ def get_data(arch: str) -> pd.DataFrame:
             read_bw_gb = job.get("read", {}).get("bw_bytes", 0) / 1000_000_000
             write_bw_gb = job.get("write", {}).get("bw_bytes", 0) / 1000_000_000
 
+        tag = ""
+        if is_repl:
+            tag = "repl"
+        if is_unrepl:
+            tag = "unrepl"
+        print(tag)
+
         df = pd.DataFrame(
             [
                 {
@@ -95,7 +107,7 @@ def get_data(arch: str) -> pd.DataFrame:
                     "read_bw_gb": read_bw_gb,
                     "write_bw_gb": write_bw_gb,
                     "benchmark": f"{benchmark}_{distrib}",
-                    "tag": f"{'repl' if is_repl else ''}",
+                    "tag": tag,
                 }
             ]
         )
@@ -114,6 +126,7 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
     width = 0.25
 
     df_repl = df[df["tag"] == "repl"].set_index("readratio")
+    df_unrepl = df[df["tag"] == "unrepl"].set_index("readratio")
     df_normal = df[df["tag"] == ""].set_index("readratio")
 
     read_bw_normal = [
@@ -122,6 +135,10 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
     ]
     read_bw_repl = [
         df_repl.loc[r, value_col] if r in df_repl.index else 0
+        for r in read_ratios
+    ]
+    read_bw_unrepl = [
+        df_unrepl.loc[r, value_col] if r in df_unrepl.index else 0
         for r in read_ratios
     ]
 
@@ -149,6 +166,17 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
         read_bw_repl,
         width,
         label="Replication",
+        capsize=3,
+        color=palette[1],
+        edgecolor="black",
+        linewidth=0.3,
+        zorder=2,
+    )
+    ax.bar(
+        x + 0.5 * width,
+        read_bw_unrepl,
+        width,
+        label="UnReplication",
         capsize=3,
         color=palette[1],
         edgecolor="black",

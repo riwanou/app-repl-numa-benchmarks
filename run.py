@@ -14,6 +14,7 @@ parser.add_argument(
         "rocksdb",
         "rocksdb-repl",
         "fio",
+        "fio-repl",
         "bench-pgtable-own",
         "bench-pgtable-carrefour",
         "bench-alloc-own",

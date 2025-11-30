@@ -26,14 +26,14 @@ def make_plot_rocksdb():
         "interleaved",
         "balancing",
         "patched-repl",
-        "patched-repl-unrepl",
+        # "patched-repl-unrepl",
     ]
     tag_labels = {
         # "imbalanced": "Imbalanced",
         "interleaved": "Interleaved",
         "balancing": "NumaBalancing",
         "patched-repl": "Replication",
-        "patched-repl-unrepl": "ReplicationDynamic",
+        # "patched-repl-unrepl": "ReplicationDynamic",
     }
 
     all_data = []
@@ -153,8 +153,8 @@ def make_plot_rocksdb():
             labels,
             fontsize=8,
             title_fontsize=9,
-            loc="lower left",
-            bbox_to_anchor=(0.08, 0.13),
+            loc="upper right",
+            bbox_to_anchor=(1.0, 1.0),
             edgecolor="white",
             framealpha=1.0,
         )

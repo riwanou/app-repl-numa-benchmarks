@@ -1,7 +1,7 @@
 import os
 from config import sh, RESULT_DIR_FIO
 
-RUNTIME = 120
+RUNTIME = 180
 
 
 def run_repl(cmd: str) -> str:

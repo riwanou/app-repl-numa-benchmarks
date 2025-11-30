@@ -19,14 +19,14 @@ TAGS_ORDER = [
     "interleaved-memory",
     "numa-balancing",
     "patched-repl",
-    "patched-repl-unrepl",
+    # "patched-repl-unrepl",
 ]
 TAG_LABELS = {
     # "imbalanced-memory": "Imbalanced",
     "interleaved-memory": "Interleaved",
     "numa-balancing": "NumaBalancing",
     "patched-repl": "Replication",
-    "patched-repl-unrepl": "ReplicationDynamic",
+    # "patched-repl-unrepl": "ReplicationDynamic",
 }
 
 RUNNER_NAMES = ["faiss", "annoy", "usearch"]
