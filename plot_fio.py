@@ -31,6 +31,7 @@ def make_plot_fio():
     #     make_plot_fio_arch(arch)
 
     make_plot_fio_arch("IntelR_XeonR_Silver_4216_CPU_@_2.10GHz_X86_64")
+    make_plot_fio_arch("INTELR_XEONR_PLATINUM_8568Y+_X86_64")
 
 
 def make_plot_fio_arch(arch):
@@ -97,7 +98,6 @@ def get_data(arch: str) -> pd.DataFrame:
             tag = "repl"
         if is_unrepl:
             tag = "unrepl"
-        print(tag)
 
         df = pd.DataFrame(
             [

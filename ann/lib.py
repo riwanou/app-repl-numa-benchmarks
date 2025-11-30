@@ -10,6 +10,7 @@ from . import mod_annoy
 from . import mod_usearch
 
 NB_RUNS = 30
+MAX_TIME = 300
 
 CONFIG = {
     "glove-100-angular.hdf5": {
@@ -275,6 +276,9 @@ def runner_bench(
         print(
             f"Run {nb_runs}/{NB_RUNS} [{tag}] elapsed {elapsed_time:.2f}s mean {mean_time:.2f}s +- {std_time:.4f}s"
         )
+
+        if elapsed_time > MAX_TIME:
+            break
 
     end_time = get_time()
 

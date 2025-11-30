@@ -17,8 +17,8 @@ static void *pgtable_worker(void *arg) {
     struct timespec t_unmap_start, t_unmap_end;
     clock_gettime(CLOCK_MONOTONIC, &t_unmap_start);
 
-    for (size_t i = 0; i < size; i += PAGE_SIZE)
-      munmap((char *)array + i, PAGE_SIZE);
+    for (size_t i = 0; i < size; i += PAGE_SIZE * 4)
+      munmap((char *)array + i, PAGE_SIZE * 4);
 
     clock_gettime(CLOCK_MONOTONIC, &t_unmap_end);
     double unmap_elapsed = elapsed_time(t_unmap_start, t_unmap_end);

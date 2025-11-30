@@ -15,14 +15,14 @@ DATASETS = [
 # DATASETS = ann.lib.DATASETS
 
 TAGS_ORDER = [
-    # "imbalanced-memory",
+    "imbalanced-memory",
     "interleaved-memory",
     "numa-balancing",
     "patched-repl",
     # "patched-repl-unrepl",
 ]
 TAG_LABELS = {
-    # "imbalanced-memory": "Imbalanced",
+    "imbalanced-memory": "Imbalanced",
     "interleaved-memory": "Interleaved",
     "numa-balancing": "NumaBalancing",
     "patched-repl": "Replication",
