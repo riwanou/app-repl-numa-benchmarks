@@ -273,7 +273,7 @@ def runner_bench(
         elapsed_time = time.time() - begin
 
         print(
-            f"Run {nb_runs}/{NB_RUNS} [{tag}] elapsed {elapsed_time:.2f}s +- {std_time:.4f}s"
+            f"Run {nb_runs}/{NB_RUNS} [{tag}] elapsed {elapsed_time:.2f}s mean {mean_time:.2f}s +- {std_time:.4f}s"
         )
 
     end_time = get_time()

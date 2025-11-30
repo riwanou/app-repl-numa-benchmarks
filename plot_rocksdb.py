@@ -16,10 +16,10 @@ def make_plot_rocksdb():
         "multireadrandom",
         "fwdrange",
         "revrange",
-        "readwhilewriting",
         "overwrite",
-        # "fwdrangewhilewriting",
-        # "revrangewhilewriting",
+        "readwhilewriting",
+        "fwdrangewhilewriting",
+        "revrangewhilewriting",
     ]
     tags_order = [
         # "imbalanced",
@@ -153,8 +153,8 @@ def make_plot_rocksdb():
             labels,
             fontsize=8,
             title_fontsize=9,
-            loc="upper right",
-            bbox_to_anchor=(1.0, 1.0),
+            loc="lower left",
+            bbox_to_anchor=(0.08, 0.13),
             edgecolor="white",
             framealpha=1.0,
         )
