@@ -1,6 +1,6 @@
 build: build-rocksdb build-fio build-micro
 
-bench: bench-ann bench-rocksdb
+bench: bench-ann bench-rocksdb bench-fio
 bench-repl: bench-ann-repl bench-rocksdb-repl bench-fio-repl
 
 plot: plot-ann plot-rocksdb
@@ -31,14 +31,20 @@ bench-ann:
 bench-ann-repl:
     uv run run.py ann-repl
 
-bench-fio-repl:
+bench-fio:
     uv run run.py fio
+
+bench-fio-repl:
+    uv run run.py fio-repl
 
 plot-ann:
     uv run run.py plot-ann
 
 plot-rocksdb:
     uv run run.py plot-rocksdb
+
+plot-fio:
+    uv run run.py plot-fio
 
 plot-monitoring:
     uv run run.py plot-monitoring

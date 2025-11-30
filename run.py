@@ -54,6 +54,8 @@ elif args.run == "rocksdb-repl":
     bench_and_monitor(bench_rocksdb.run_bench_rocksdb_repl, "rocksdb-repl")
 elif args.run == "fio":
     bench_and_monitor(bench_fio.run_bench_fio, "fio")
+elif args.run == "fio-repl":
+    bench_and_monitor(bench_fio.run_bench_fio_repl, "fio")
 elif args.run == "bench-pgtable-own":
     bench_micro.run_bench_pgtable("mmap")
 elif args.run == "bench-pgtable-carrefour":

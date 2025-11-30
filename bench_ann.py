@@ -62,14 +62,15 @@ def run_bench_ann():
 
 def run_bench_ann_repl():
     # worst case (mem in 1 node)
-    sh("echo 3 > /proc/sys/vm/drop_caches")
-    sh(f"numactl --membind={0} {run_bench('patched-imbalanced-memory')}")
+    # sh("echo 3 > /proc/sys/vm/drop_caches")
+    # sh(f"numactl --membind={0} {run_bench('patched-imbalanced-memory')}")
 
     # baseline patched, all cores, repl
     sh("echo 1 > /sys/kernel/debug/repl_pt/clear_registered")
     sh("echo .ivf > /sys/kernel/debug/repl_pt/registered")
     sh("echo .ann > /sys/kernel/debug/repl_pt/registered")
     sh("echo .usearch > /sys/kernel/debug/repl_pt/registered")
+
     # run
     sh("echo 3 > /proc/sys/vm/drop_caches")
     sh(f"""(
@@ -79,23 +80,12 @@ def run_bench_ann_repl():
     )""")
 
     # with unrepl on write
-    sh("echo 1 > /sys/kernel/debug/repl_pt/write_unreplication")
-    sh("echo 3 > /proc/sys/vm/drop_caches")
-    sh(f"""(
-      echo 1 > /sys/kernel/debug/repl_pt/policy &&
-      {run_bench("patched-repl-unrepl")};
-      echo 0 > /sys/kernel/debug/repl_pt/policy
-    )""")
-    sh("echo 0 > /sys/kernel/debug/repl_pt/write_unreplication")
-
-    # # cpus interleaved, 1 node, no repl
-    # cpus = get_interleaved_cpus_one_node()
-    # sh("echo 3 > /proc/sys/vm/drop_caches")
-    # sh(f"numactl --physcpubind={cpus} {run_bench('patched-balanced')}")
-    # # cpus interleaved, 1 node, repl
+    # but there is no write so not needed..
+    # sh("echo 1 > /sys/kernel/debug/repl_pt/write_unreplication")
     # sh("echo 3 > /proc/sys/vm/drop_caches")
     # sh(f"""(
     #   echo 1 > /sys/kernel/debug/repl_pt/policy &&
-    #   numactl --physcpubind={cpus} {run_bench("patched-repl-balanced")};
+    #   {run_bench("patched-repl-unrepl")};
     #   echo 0 > /sys/kernel/debug/repl_pt/policy
     # )""")
+    # sh("echo 0 > /sys/kernel/debug/repl_pt/write_unreplication")

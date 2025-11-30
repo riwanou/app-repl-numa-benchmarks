@@ -12,12 +12,12 @@ CSV_PATH = os.path.join(RESULT_DIR, "results.csv")
 NUM_THREADS = config.NUM_THREADS
 DB_DIR = os.path.join(config.TMP_DIR_ROCKSDB, "db")
 WAL_DIR = os.path.join(config.TMP_DIR_ROCKSDB, "wal")
-NUM_KEYS = 4_000_000
-CACHE_SIZE = 16 * 1000 * 1000 * 1000  # 16 GB
+NUM_KEYS = 8_000_000
+CACHE_SIZE = 32 * 1000 * 1000 * 1000  # 32 GB
 MB_WRITE_PER_SEC = 2
 COMPRESSION_TYPE = "none"
-DURATION = 180
-STAT_INTERVAL_SECONDS = 15
+DURATION = 300
+STAT_INTERVAL_SECONDS = 30
 
 LOAD_ENV = f"DB_DIR={DB_DIR} WAL_DIR={WAL_DIR} NUM_KEYS={NUM_KEYS} CACHE_SIZE={CACHE_SIZE} COMPRESSION_TYPE={COMPRESSION_TYPE}"
 BENCH_ENV = f"{LOAD_ENV} DURATION={DURATION} STATS_INTERVAL_SECONDS={STAT_INTERVAL_SECONDS} NUM_THREADS={NUM_THREADS}"
@@ -230,13 +230,10 @@ def run_bench_rocksdb_repl():
         run(f"patched-repl-{bench}", bench, repl=True)
 
         # with unreplication on write pressure
-        sh("echo 3 > /proc/sys/vm/drop_caches")
-        run("patched-bulkload", "bulkload")
+        # but there is no write so not needed
+        # sh("echo 3 > /proc/sys/vm/drop_caches")
+        # run("patched-bulkload", "bulkload")
 
-        sh("echo 1 > /sys/kernel/debug/repl_pt/write_unreplication")
-        sh("echo 2 > /sys/kernel/debug/repl_pt/wave_threshold_pressure")
-        sh("echo 4 > /sys/kernel/debug/repl_pt/unreplicate_treshold")
-        sh("echo 1000 > /sys/kernel/debug/repl_pt/wave_cooldown_ms")
-        sh("echo 12000 > /sys/kernel/debug/repl_pt/damping_inactivity_ms")
-        run(f"patched-repl-unrepl-{bench}", bench, repl=True)
-        sh("echo 0 > /sys/kernel/debug/repl_pt/write_unreplication")
+        # sh("echo 1 > /sys/kernel/debug/repl_pt/write_unreplication")
+        # run(f"patched-repl-unrepl-{bench}", bench, repl=True)
+        # sh("echo 0 > /sys/kernel/debug/repl_pt/write_unreplication")

@@ -9,13 +9,13 @@ from . import mod_faiss
 from . import mod_annoy
 from . import mod_usearch
 
-NB_RUNS = 10
+NB_RUNS = 30
 
 CONFIG = {
     "glove-100-angular.hdf5": {
-        "faiss": {"nlist": 100, "nprobe": 20},
-        "annoy": {"trees": 100, "search_k": 200_000},
-        "usearch": {"e_search": 4000},
+        "faiss": {"nlist": 100, "nprobe": 39},
+        "annoy": {"trees": 100, "search_k": 250_000},
+        "usearch": {"e_search": 5000},
     },
     "sift-128-euclidean.hdf5": {
         "faiss": {"nlist": 100, "nprobe": 10},
@@ -23,9 +23,9 @@ CONFIG = {
         "usearch": {"e_search": 256},
     },
     "gist-960-euclidean.hdf5": {
-        "faiss": {"nlist": 100, "nprobe": 10},
+        "faiss": {"nlist": 100, "nprobe": 18},
         "annoy": {"trees": 100, "search_k": 500_000},
-        "usearch": {"e_search": 3000},
+        "usearch": {"e_search": 2500},
     },
 }
 

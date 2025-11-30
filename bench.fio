@@ -1,7 +1,7 @@
 [global]
 group_reporting
 ioengine=mmap
-size=216m
+size=768m
 thread=1
 directory=/tmp
 filename=/tmp/fio_readwrite

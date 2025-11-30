@@ -50,7 +50,7 @@ class Monitoring:
     def stop(self):
         for proc in [self.pcm_proc, self.pcm_memory_proc, self.mem_proc]:
             if proc:
-                proc.send_signal(signal.SIGINT)
+                proc.terminate()
 
     def start_pcm(self):
         return subprocess.Popen(

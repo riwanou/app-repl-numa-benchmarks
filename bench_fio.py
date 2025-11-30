@@ -1,7 +1,7 @@
 import os
 from config import sh, RESULT_DIR_FIO
 
-RUNTIME = 30
+RUNTIME = 120
 
 
 def run_repl(cmd: str) -> str:
@@ -38,12 +38,8 @@ def run_bench(
         return cmd
 
 
-def run_bench_readwrite(distrib, total_jobs, read_ratio, write_ratio):
-    base_tag = f"readwrite_{distrib}_{read_ratio}_{write_ratio}"
-
-    num_readers = round(total_jobs * read_ratio / 100)
-    num_writers = total_jobs - num_readers
-
+def run_bench_readwrite(distrib, base_tag, num_readers, num_writers):
+    # baseline
     sh("echo 3 > /proc/sys/vm/drop_caches")
     sh(
         f"{
@@ -57,6 +53,9 @@ def run_bench_readwrite(distrib, total_jobs, read_ratio, write_ratio):
         }"
     )
 
+
+def run_bench_readwrite_repl(distrib, base_tag, num_readers, num_writers):
+    # replication
     sh("echo 3 > /proc/sys/vm/drop_caches")
     sh(
         f"{
@@ -70,24 +69,80 @@ def run_bench_readwrite(distrib, total_jobs, read_ratio, write_ratio):
         }"
     )
 
+    # unreplication
+    sh("echo 1 > /sys/kernel/debug/repl_pt/write_unreplication")
+    sh("echo 3 > /proc/sys/vm/drop_caches")
+    sh(
+        f"{
+            run_bench(
+                tag=f'{base_tag}_unrepl',
+                repl_enabled=True,
+                readjobs=num_readers,
+                writejobs=num_writers,
+                distrib=distrib,
+            )
+        }"
+    )
+    sh("echo 0 > /sys/kernel/debug/repl_pt/write_unreplication")
 
-def run_bench_fio_distrib(distrib):
+
+def run_bench_readwrite_fio(repl, distrib, total_jobs, read_ratio, write_ratio):
+    base_tag = f"readwrite_{distrib}_{read_ratio}_{write_ratio}"
+    num_readers = round(total_jobs * read_ratio / 100)
+    num_writers = total_jobs - num_readers
+
+    if repl:
+        run_bench_readwrite_repl(distrib, base_tag, num_readers, num_writers)
+    else:
+        run_bench_readwrite(distrib, base_tag, num_readers, num_writers)
+
+
+def run_bench_fio_distrib(distrib, repl=False):
     total_jobs = os.cpu_count()
 
     # random read write
-    run_bench_readwrite(distrib, total_jobs, read_ratio=100, write_ratio=0)
-    run_bench_readwrite(distrib, total_jobs, read_ratio=95, write_ratio=5)
-    run_bench_readwrite(distrib, total_jobs, read_ratio=90, write_ratio=10)
-    run_bench_readwrite(distrib, total_jobs, read_ratio=80, write_ratio=20)
-    run_bench_readwrite(distrib, total_jobs, read_ratio=70, write_ratio=30)
-    run_bench_readwrite(distrib, total_jobs, read_ratio=60, write_ratio=40)
-    run_bench_readwrite(distrib, total_jobs, read_ratio=50, write_ratio=50)
-    run_bench_readwrite(distrib, total_jobs, read_ratio=40, write_ratio=60)
-    run_bench_readwrite(distrib, total_jobs, read_ratio=30, write_ratio=70)
-    run_bench_readwrite(distrib, total_jobs, read_ratio=20, write_ratio=80)
-    run_bench_readwrite(distrib, total_jobs, read_ratio=10, write_ratio=90)
+    run_bench_readwrite_fio(
+        repl, distrib, total_jobs, read_ratio=100, write_ratio=0
+    )
+    run_bench_readwrite_fio(
+        repl, distrib, total_jobs, read_ratio=95, write_ratio=5
+    )
+    run_bench_readwrite_fio(
+        repl, distrib, total_jobs, read_ratio=90, write_ratio=10
+    )
+    run_bench_readwrite_fio(
+        repl, distrib, total_jobs, read_ratio=85, write_ratio=15
+    )
+    run_bench_readwrite_fio(
+        repl, distrib, total_jobs, read_ratio=80, write_ratio=20
+    )
+    run_bench_readwrite_fio(
+        repl, distrib, total_jobs, read_ratio=70, write_ratio=30
+    )
+    run_bench_readwrite_fio(
+        repl, distrib, total_jobs, read_ratio=60, write_ratio=40
+    )
+    run_bench_readwrite_fio(
+        repl, distrib, total_jobs, read_ratio=50, write_ratio=50
+    )
+    run_bench_readwrite_fio(
+        repl, distrib, total_jobs, read_ratio=40, write_ratio=60
+    )
+    run_bench_readwrite_fio(
+        repl, distrib, total_jobs, read_ratio=30, write_ratio=70
+    )
+    run_bench_readwrite_fio(
+        repl, distrib, total_jobs, read_ratio=20, write_ratio=80
+    )
+    run_bench_readwrite_fio(
+        repl, distrib, total_jobs, read_ratio=10, write_ratio=90
+    )
 
 
 def run_bench_fio():
-    run_bench_fio_distrib("random")
-    # run_bench_fio_distrib("zipf")
+    # run_bench_fio_distrib("random")
+    run_bench_fio_distrib("zipf")
+
+
+def run_bench_fio_repl():
+    run_bench_fio_distrib("zipf", repl=True)
