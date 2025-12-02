@@ -8,15 +8,13 @@ import matplotlib.gridspec as gridspec
 RESULT_DIR = config.RESULT_DIR
 
 TIME_WINDOWS = {
-    "ann": [],
-    "ann-repl": [],
-    "rocksdb-repl": [
-        ("2025-09-04T13:45:12.607589", "2025-09-04T13:47:14.062101"),
-        ("2025-09-04T13:51:18.489159", "2025-09-04T13:53:20.251285"),
-    ],
-    "tmp": [
-        ("2025-09-04T13:45:12.489159", "2025-09-04T13:53:20.251285"),
-    ],
+    "ann": [("2025-11-30T19:03:26.237831", "2025-11-30T19:04:05.718766")],
+    "ann-repl": [("2025-12-01T01:10:02.109631", "2025-12-01T01:10:23.984930")],
+    # "rocksdb": [("2025-11-23T20:53:08.628380", "2025-12-01T01:53:22.633492")],
+    # "tmp": [("2025-12-01T01:10:47.574730", "2025-12-01T01:53:22.633492")],
+    # "tmp": [
+    #     # ("2025-09-04T13:45:12.489159", "2025-09-04T13:53:20.251285"),
+    # ],
 }
 
 
@@ -62,6 +60,9 @@ def get_data(variant: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     data_mem = []
 
     for arch in os.listdir(RESULT_DIR):
+        if arch != "IntelR_XeonR_Silver_4216_CPU_@_2.10GHz_X86_64":
+            continue
+
         arch_dir = os.path.join(RESULT_DIR, arch, "monitor")
         if not os.path.isdir(arch_dir):
             continue
@@ -136,6 +137,7 @@ def plot_pcm(df, variant: str):
             colors=palette,
             edgecolor="none",
         )
+        ax0.set_ylim(0, 100)
         ax0.set_title("Memory Locality Node 0")
         ax0.set_ylabel("Memory Bandwidth (GB)")
         ax0.legend(edgecolor="white", framealpha=1.0, loc="upper right")
@@ -152,6 +154,7 @@ def plot_pcm(df, variant: str):
             colors=palette,
             edgecolor="none",
         )
+        ax.set_ylim(0, 100)
         ax.set_title("Memory Locality Node 1")
         ax.set_ylabel("Memory Bandwidth (GB)")
         ax.legend(edgecolor="white", framealpha=1.0, loc="upper right")

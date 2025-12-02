@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 from matplotlib.ticker import MaxNLocator
+import numpy as np
 import matplotlib.patches as mpatches
 
 RESULT_DIR = config.RESULT_DIR
@@ -130,8 +131,150 @@ def normalize_data(df_main: pd.DataFrame) -> pd.DataFrame:
 
 
 def plot_main(df_main: pd.DataFrame):
+    sns.set_style("ticks")
+    sns.set_context("paper")
+
+    plt.rcParams.update({"font.family": "serif", "font.serif": "DejaVu Serif"})
+
+    for arch in pd.Series(df_main["arch"]).unique():
+        df_arch = df_main[df_main["arch"] == arch]
+
+        fig, axes = plt.subplots(
+            nrows=1,
+            ncols=N_RUNNERS,
+            figsize=(3.3, 1.2),
+            sharey=True,
+            gridspec_kw={"wspace": 0.05},
+        )
+        if N_RUNNERS == 1:
+            axes = [axes]
+
+        # --- Only slightly reduced bar width ---
+        bar_width = 0.095
+        bar_gap = 0.0
+
+        n_bars = len(TAGS_ORDER)
+        group_width = n_bars * bar_width + (n_bars - 1) * bar_gap
+        x = np.arange(N_DATASETS) * 0.48
+
+        palette = sns.color_palette("Blues", n_colors=4)
+        hatches = ["OOO", "////", "...", "xxxx"]
+
+        for idx in range(N_RUNNERS):
+            runner = RUNNER_NAMES[idx]
+            ax = axes[idx]
+            df_runner = df_arch[df_arch["runner_name"] == runner]
+
+            for i, tag in enumerate(TAGS_ORDER):
+                means = []
+                stds = []
+                for ds in DATASET_NAMES:
+                    row = df_runner[
+                        (df_runner["dataset"] == ds) & (df_runner["tag"] == tag)
+                    ]
+                    if len(row) > 0:
+                        means.append(row.iloc[0]["mean_qps"])
+                        stds.append(row.iloc[0]["std_qps"])
+                    else:
+                        means.append(0)
+                        stds.append(0)
+
+                positions = [
+                    pos
+                    - group_width / 2
+                    + i * (bar_width + bar_gap)
+                    + bar_width / 2
+                    for pos in x
+                ]
+
+                ax.bar(
+                    positions,
+                    means,
+                    # yerr=stds,
+                    width=bar_width,
+                    label=TAG_LABELS[tag],
+                    capsize=1.0,
+                    linewidth=0.25,
+                    # error_kw=dict(lw=0.7, capthick=0.7),
+                    color=palette[i],
+                    hatch=hatches[i],
+                    edgecolor=palette[i],
+                )
+
+                # ax.bar(
+                #     positions,
+                #     means,
+                #     width=bar_width,
+                #     color="none",
+                #     hatch=hatches[i],
+                #     edgecolor="darkblue",
+                #     linewidth=0,
+                #     alpha=0.55,
+                # )
+
+            sns.despine(ax=ax)
+            ax.axhline(
+                0, linestyle="--", color="gray", linewidth=0.3, alpha=0.25
+            )
+
+            ax.tick_params(axis="y", labelsize=6, length=2)
+            ax.tick_params(axis="x", labelsize=6, length=2)
+
+            ax.set_xticks(list(x))
+            d = [s.replace(" ", "-") for s in DATASET_NAMES]
+            ax.set_xticklabels(
+                d,
+                fontsize=7,
+                rotation=25,
+            )
+
+            axes[0].yaxis.set_major_locator(MaxNLocator(nbins=8))
+
+            ax.set_title(
+                runner.capitalize(),
+                fontsize=7,
+            )
+
+            if idx != 0:
+                ax.tick_params(left=False)
+                ax.spines["left"].set_visible(False)
+
+        axes[0].set_ylabel(
+            "Improvement over Linux (%) \n (mean QPS)",
+            fontsize=7,
+        )
+
+        # legend unchanged
+        # handles, labels = axes[0].get_legend_handles_labels()
+        # legend = fig.legend(
+        #     handles,
+        #     labels,
+        #     fontsize=6,
+        #     loc="upper right",
+        #     bbox_to_anchor=(0.93, 1),
+        #     edgecolor="white",
+        #     framealpha=1.0,
+        # )
+        # legend.get_frame().set_linewidth(0.3)
+
+        # fig.tight_layout(pad=0)
+        path = os.path.join(config.PLOT_DIR_ANN, arch)
+        plt.savefig(f"{path}.svg", bbox_inches="tight", pad_inches=0, dpi=300)
+        plt.close(fig)
+
+
+def plot_main2(df_main: pd.DataFrame):
     sns.set_style(style="ticks")
     sns.set_context("paper")
+
+    plt.rcParams.update(
+        {
+            "font.size": 7,
+            "font.family": "serif",
+            "axes.linewidth": 0.7,
+            "figure.dpi": 300,
+        }
+    )
 
     for arch in pd.Series(df_main["arch"]).unique():
         df_arch = pd.DataFrame(df_main[df_main["arch"] == arch])
@@ -150,7 +293,9 @@ def plot_main(df_main: pd.DataFrame):
         n_bars = len(TAGS_ORDER)
         group_width = n_bars * bar_width + (n_bars - 1) * bar_gap
         x = range(N_DATASETS)
+
         palette = sns.color_palette("Blues", n_colors=len(TAGS_ORDER))
+        hatches = ["///", "\\\\\\", "xxx"]
 
         for idx in range(N_RUNNERS):
             runner = RUNNER_NAMES[idx]
@@ -188,8 +333,9 @@ def plot_main(df_main: pd.DataFrame):
                     yerr=stds,
                     width=bar_width,
                     label=TAG_LABELS[tag],
-                    capsize=2,
+                    capsize=1.5,
                     color=palette[i],
+                    hatch=hatches[i % 3],
                     edgecolor="black",
                     linewidth=0.3,
                     error_kw=dict(lw=0.6, capthick=0.6),
@@ -197,7 +343,7 @@ def plot_main(df_main: pd.DataFrame):
 
             sns.despine(ax=ax)
             ax.axhline(
-                0, linestyle="--", color="gray", linewidth=0.4, alpha=0.7
+                0, linestyle="--", color="gray", linewidth=0.35, alpha=0.25
             )
             ax.tick_params(axis="y", labelsize=8)
             ax.set_xticks(x)
@@ -215,7 +361,8 @@ def plot_main(df_main: pd.DataFrame):
             )
 
         axes[0].set_ylabel(
-            "Performance improvement over Linux (%)\n(mean queries per second, QPS)"
+            "Performance improvement over Linux (%)\n(mean queries per second, QPS)",
+            fontsize=7.5,
         )
         axes[0].yaxis.label.set_size(10)
         for ax in axes:

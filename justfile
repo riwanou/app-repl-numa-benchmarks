@@ -80,5 +80,8 @@ plot-rocksdb:
 plot-fio:
     uv run run.py plot-fio
 
+plot-microbench:
+    uv run run.py plot-microbench
+
 plot-monitoring:
     uv run run.py plot-monitoring

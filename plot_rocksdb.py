@@ -1,8 +1,10 @@
 import os
 import config
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
 import seaborn as sns
 import pandas as pd
+import numpy as np
 
 
 RESULT_DIR = config.RESULT_DIR
@@ -20,6 +22,16 @@ def make_plot_rocksdb():
         "readwhilewriting",
         "fwdrangewhilewriting",
         "revrangewhilewriting",
+    ]
+    methods_labels = [
+        "read",
+        "mread",
+        "fscan",
+        "rscan",
+        "overwrite",
+        "read-write",
+        "fscan-write",
+        "rscan-write",
     ]
     tags_order = [
         "imbalanced",
@@ -79,20 +91,26 @@ def make_plot_rocksdb():
     for arch in df_all_norm["arch"].unique():
         arch_data = pd.DataFrame(df_all_norm[df_all_norm["arch"] == arch])
 
+        plt.rcParams.update(
+            {"font.family": "serif", "font.serif": "DejaVu Serif"}
+        )
+
         n_methods = len(methods)
         fig, ax = plt.subplots(
             nrows=1,
             ncols=1,
-            figsize=(12, 3),
-            sharey=False,
+            figsize=(3.3, 1.2),
+            sharey=True,
         )
 
-        bar_width = 0.2
-        bar_gap = 0.03
+        bar_width = 0.11
+        bar_gap = 0.0
         n_bars = len(tags_order)
         group_width = n_bars * bar_width + (n_bars - 1) * bar_gap
-        x = range(n_methods)
-        palette = sns.color_palette("Blues", n_colors=len(tags_order))
+        x = np.arange(n_methods) * 0.63
+
+        palette = sns.color_palette("Blues", n_colors=4)
+        hatches = ["OOO", "////", "...", "xxxx"]
 
         for i, tag in enumerate(tags_order):
             means = []
@@ -118,48 +136,49 @@ def make_plot_rocksdb():
                 means,
                 width=bar_width,
                 label=tag_labels[tag],
-                capsize=2,
+                capsize=1,
                 color=palette[i],
-                edgecolor="black",
-                linewidth=0.3,
+                hatch=hatches[i],
+                edgecolor=palette[i],
+                linewidth=0.25,
             )
 
-        ax.axhline(0, linestyle="--", color="gray", linewidth=0.4, alpha=0.7)
+            # ax.bar(
+            #     positions,
+            #     means,
+            #     width=bar_width,
+            #     color="none",
+            #     hatch=hatches[i],
+            #     edgecolor="darkblue",
+            #     linewidth=0,
+            #     alpha=0.55,
+            # )
+
         sns.despine(ax=ax)
+        ax.axhline(0, linestyle="--", color="gray", linewidth=0.3, alpha=0.25)
 
-        ax.tick_params(axis="y", labelsize=8)
+        ax.tick_params(axis="y", labelsize=6, length=2)
+        ax.tick_params(axis="x", labelsize=6, length=2)
+
         ax.set_xticks(x)
-        ax.tick_params(direction="in", axis="x", labelsize=9)
-        ax.set_xticklabels(methods)
+        ax.set_xticklabels(methods_labels, fontsize=7, rotation=25)
 
-        ax.set_axisbelow(True)
-        ax.grid(
-            axis="y",
-            which="major",
-            linestyle="--",
-            linewidth=0.4,
-            color="gray",
-            alpha=0.3,
-        )
+        ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
+        ax.set_ylabel("Improvement over Linux (%) \n (mean MB/s)", fontsize=7)
 
-        ax.set_ylabel(
-            "Performance improvement over Linux (%)\n(measured in MB/s)"
-        )
-        ax.yaxis.label.set_size(10)
+        # handles, labels = ax.get_legend_handles_labels()
+        # legend = fig.legend(
+        #     handles,
+        #     labels,
+        #     fontsize=8,
+        #     title_fontsize=9,
+        #     loc="upper right",
+        #     bbox_to_anchor=(1.0, 1.0),
+        #     edgecolor="white",
+        #     framealpha=1.0,
+        # )
+        # legend.get_frame().set_linewidth(0.4)
 
-        handles, labels = ax.get_legend_handles_labels()
-        legend = fig.legend(
-            handles,
-            labels,
-            fontsize=8,
-            title_fontsize=9,
-            loc="upper right",
-            bbox_to_anchor=(1.0, 1.0),
-            edgecolor="white",
-            framealpha=1.0,
-        )
-        legend.get_frame().set_linewidth(0.4)
-
-        fig.tight_layout()
-        path = os.path.join(config.PLOT_DIR_ROCKSDB, f"{arch}.png")
-        plt.savefig(path, dpi=300)
+        fig.tight_layout(pad=0)
+        path = os.path.join(config.PLOT_DIR_ROCKSDB, f"{arch}.svg")
+        plt.savefig(path, bbox_inches="tight", pad_inches=0, dpi=300)

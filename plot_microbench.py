@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
 import seaborn as sns
 import pandas as pd
+import numpy as np
 import re
 
 RESULT_DIR = config.RESULT_DIR
@@ -18,6 +19,9 @@ pattern = re.compile(
 def make_plot_microbench():
     os.makedirs(config.PLOT_DIR_MICROBENCH, exist_ok=True)
     for arch in os.listdir(RESULT_DIR):
+        if arch != "IntelR_XeonR_Gold_6130_CPU_@_2.10GHz_X86_64":
+            continue
+
         microbench_dir = os.path.join(RESULT_DIR, arch, "microbench")
         if not os.path.isdir(microbench_dir):
             continue
@@ -28,8 +32,8 @@ def make_plot_microbench_arch(arch: str):
     combined_df = get_data(arch)
 
     elapsed_y_label = [
-        "Normalized time in ms\n(Our solution)",
-        "Normalized time in ms\n(Carrefour)",
+        "SPaRe",
+        "Carrefour",
     ]
 
     df_pg = combined_df[combined_df["benchmark"] == "pgtable"]
@@ -151,14 +155,18 @@ def plot_microbench(
     n_threads = len(threads)
     methods = ["mmap", "madvise"]
 
+    plt.rcParams.update({"font.family": "serif", "font.serif": "DejaVu Serif"})
+
     fig, axes = plt.subplots(
         nrows=len(methods),
         ncols=n_threads,
-        figsize=(2.5 * n_threads, 4),
+        figsize=(3.2, 1.2),
         sharey="row",
+        gridspec_kw={"wspace": 0.05, "hspace": 0.85},
     )
 
     palette = sns.color_palette("Blues", n_colors=3)
+
     sns.set_style("ticks")
     sns.set_context("paper")
 
@@ -190,21 +198,25 @@ def plot_microbench(
             agg = agg.reindex(tags, fill_value=0)
             ntags = 0
 
+            xpos = np.arange(len(tags))
+            bar_width = 0.22
+
             for i, tag in enumerate(tags):
                 height = agg.loc[tag, mean_col]
                 yerr_val = agg.loc[tag, std_col]
                 ntags += 1
 
                 bar = ax.bar(
-                    tag,
+                    xpos[i],
                     height,
-                    yerr=yerr_val,
+                    width=1.0,
+                    # yerr=yerr_val,
                     label=tag_labels.get(tag, tag),
-                    capsize=3,
+                    capsize=1.0,
                     color=palette[i],
-                    edgecolor="black",
-                    linewidth=0.3,
-                    error_kw=dict(lw=0.6, capthick=0.6),
+                    edgecolor=palette[i],
+                    linewidth=0.25,
+                    # error_kw=dict(lw=0.6, capthick=0.6),
                     zorder=2,
                 )
 
@@ -212,10 +224,10 @@ def plot_microbench(
                     ax.text(
                         bar[0].get_x() + bar[0].get_width() / 2,
                         height + 0.02,
-                        f"x{height:.2f}",
+                        f"x{height:.1f}",
                         ha="center",
                         va="bottom",
-                        fontsize=8,
+                        fontsize=6,
                         color="black",
                         zorder=3,
                     )
@@ -229,41 +241,46 @@ def plot_microbench(
 
             ax.set_xticks([])
             ax.set_xlabel("")
-            ax.grid(
-                axis="y",
-                which="major",
-                linestyle="--",
-                linewidth=0.4,
-                color="gray",
-                alpha=0.3,
-                zorder=1,
-            )
+            # ax.grid(
+            #     axis="y",
+            #     which="major",
+            #     linestyle="--",
+            #     linewidth=0.4,
+            #     color="gray",
+            #     alpha=0.3,
+            #     zorder=1,
+            # )
 
             xpos = 0.5 if ntags == 2 else 1
             ax.set_xticks([xpos])
-            ax.set_xticklabels([str(t)], fontsize=tick_fontsize)
 
-            ax.yaxis.set_major_locator(mtick.MaxNLocator(nbins=3))
+            ax.tick_params(axis="y", labelsize=6, length=2)
+            ax.tick_params(axis="x", labelsize=6, length=2)
+
+            ax.set_xticklabels([str(t)], fontsize=7)
+
+            ax.yaxis.set_major_locator(mtick.MaxNLocator(nbins=4))
             ax.yaxis.set_major_formatter(mtick.FormatStrFormatter("%.1f"))
 
     for midx, ylabel in enumerate(ylabels):
-        axes[midx][0].set_ylabel(ylabel, fontsize=y_fontsize)
+        axes[midx][0].set_ylabel(ylabel, fontsize=7)
+        axes[midx][0].yaxis.set_label_coords(-0.50, 0.5)  # align vertically
 
-    handles, labels = axes[0][0].get_legend_handles_labels()
-    legend = fig.legend(
-        handles,
-        labels,
-        fontsize=8,
-        loc="upper center",
-        bbox_to_anchor=(0.5, 1.0),
-        edgecolor="white",
-        framealpha=1.0,
-        ncol=len(handles),
-        frameon=False,
-    )
-    legend.get_frame().set_linewidth(0.4)
+    # handles, labels = axes[0][0].get_legend_handles_labels()
+    # legend = fig.legend(
+    #     handles,
+    #     labels,
+    #     fontsize=8,
+    #     loc="upper center",
+    #     bbox_to_anchor=(0.5, 1.0),
+    #     edgecolor="white",
+    #     framealpha=1.0,
+    #     ncol=len(handles),
+    #     frameon=False,
+    # )
+    # legend.get_frame().set_linewidth(0.4)
 
     fig.tight_layout()
     plt.subplots_adjust(top=0.9)
     path = os.path.join(config.PLOT_DIR_MICROBENCH, arch)
-    plt.savefig(f"{path}_{title}.png", bbox_inches="tight", dpi=300)
+    plt.savefig(f"{path}_{title}.svg", bbox_inches="tight", dpi=300)
