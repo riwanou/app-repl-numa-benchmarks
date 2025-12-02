@@ -24,4 +24,4 @@
 # job_id - User-provided job ID
 # githash - git hash at which db_bench was compiled
 ops_sec	mb_sec	lsm_sz	blob_sz	c_wgb	w_amp	c_mbps	c_wsecs	c_csecs	b_rgb	b_wgb	usec_op	p50	p99	p99.9	p99.99	pmax	uptime	stall%	Nstall	u_cpu	s_cpu	rss	test	date	version	job_id	githash
-14722245	3727.7	517MB	0GB	0.0	NA	0.0	0	0	0	0	8.7	85.6	165	184	3519	70711	120	0.0		14.2	0.8	0.5	multireadrandom.t128	2025-07-16T16:55:58	10.5.0		11a259a5f0
+8894636	2252.5	2GB	0GB	0.0	NA	0.0	0	0	0	0	14.4	139.7	314	375	619	17854	300	0.0		37.3	0.8	2.0	multireadrandom.t128	2025-12-3T00:00:50	10.5.0		11a259a5f0

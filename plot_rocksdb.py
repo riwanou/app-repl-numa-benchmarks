@@ -35,15 +35,17 @@ def make_plot_rocksdb():
     ]
     tags_order = [
         "imbalanced",
+        "",
         "interleaved",
-        "balancing",
+        # "balancing",
         "patched-repl",
         # "patched-repl-unrepl",
     ]
     tag_labels = {
         "imbalanced": "Imbalanced",
+        "": "Default",
         "interleaved": "Interleaved",
-        "balancing": "NumaBalancing",
+        # "balancing": "NumaBalancing",
         "patched-repl": "Replication",
         # "patched-repl-unrepl": "ReplicationDynamic",
     }
@@ -67,7 +69,7 @@ def make_plot_rocksdb():
 
     def normalize_relative_to_default(group):
         method = group.iloc[0]["test"].rsplit(".", 2)[0]
-        default_row = group[group["tag"] == f"{method}"]
+        default_row = group[group["tag"] == f"balancing-{method}"]
         if default_row.empty:
             return group
 
@@ -116,6 +118,8 @@ def make_plot_rocksdb():
             means = []
             for method in methods:
                 expected_tag = f"{tag}-{method}"
+                if tag == "":
+                    expected_tag = f"{method}"
                 row = pd.DataFrame(
                     arch_data[(arch_data["tag"] == expected_tag)]
                 )
@@ -170,7 +174,7 @@ def make_plot_rocksdb():
         # legend = fig.legend(
         #     handles,
         #     labels,
-        #     fontsize=8,
+        #     fontsize=4,
         #     title_fontsize=9,
         #     loc="upper right",
         #     bbox_to_anchor=(1.0, 1.0),
@@ -181,4 +185,6 @@ def make_plot_rocksdb():
 
         fig.tight_layout(pad=0)
         path = os.path.join(config.PLOT_DIR_ROCKSDB, f"{arch}.svg")
+        plt.savefig(path, bbox_inches="tight", pad_inches=0, dpi=300)
+        path = os.path.join(config.PLOT_DIR_ROCKSDB, f"{arch}.png")
         plt.savefig(path, bbox_inches="tight", pad_inches=0, dpi=300)

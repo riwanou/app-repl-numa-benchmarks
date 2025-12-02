@@ -38,5 +38,9 @@ def run_bench_llama():
 
 
 def run_bench_llama_repl():
+    sh("echo 1 > /sys/kernel/debug/repl_pt/clear_registered")
+    sh(
+        "echo Llama-3.1-Tulu-3-8B-Q8_0.gguf > /sys/kernel/debug/repl_pt/registered"
+    )
     sh("echo 3 > /proc/sys/vm/drop_caches")
     sh(f"{run_bench(tag='repl', repl_enabled=True)}")

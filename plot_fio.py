@@ -31,6 +31,7 @@ def make_plot_fio():
     #     make_plot_fio_arch(arch)
 
     make_plot_fio_arch("IntelR_XeonR_Silver_4216_CPU_@_2.10GHz_X86_64")
+    make_plot_fio_arch("IntelR_XeonR_Gold_6130_CPU_@_2.10GHz_X86_64")
     make_plot_fio_arch("INTELR_XEONR_PLATINUM_8568Y+_X86_64")
 
 
@@ -225,4 +226,7 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
     path = os.path.join(config.PLOT_DIR_FIO, arch)
     plt.savefig(
         f"{path}_{title}.svg", bbox_inches="tight", pad_inches=0, dpi=300
+    )
+    plt.savefig(
+        f"{path}_{title}.png", bbox_inches="tight", pad_inches=0, dpi=300
     )

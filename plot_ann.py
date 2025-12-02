@@ -16,16 +16,18 @@ DATASETS = [
 # DATASETS = ann.lib.DATASETS
 
 TAGS_ORDER = [
+    "default",
     "imbalanced-memory",
     "interleaved-memory",
-    "numa-balancing",
+    # "numa-balancing",
     "patched-repl",
     # "patched-repl-unrepl",
 ]
 TAG_LABELS = {
+    "default": "Default",
     "imbalanced-memory": "Imbalanced",
     "interleaved-memory": "Interleaved",
-    "numa-balancing": "NumaBalancing",
+    # "numa-balancing": "NumaBalancing",
     "patched-repl": "Replication",
     # "patched-repl-unrepl": "ReplicationDynamic",
 }
@@ -71,7 +73,7 @@ def get_data(datasets) -> tuple[pd.DataFrame, pd.DataFrame]:
 
             if os.path.exists(main_csv_path):
                 df = pd.read_csv(main_csv_path)
-                df = df[df["tag"].isin(TAGS_ORDER + ["default"])]
+                df = df[df["tag"].isin(TAGS_ORDER + ["numa-balancing"])]
                 df["dataset"] = ds_name(dataset)
                 df["arch"] = arch
                 data_main.append(df)
@@ -82,7 +84,7 @@ def get_data(datasets) -> tuple[pd.DataFrame, pd.DataFrame]:
 
             if os.path.exists(details_csv_path):
                 df = pd.read_csv(details_csv_path)
-                df = df[df["tag"].isin(TAGS_ORDER + ["default"])]
+                df = df[df["tag"].isin(TAGS_ORDER + ["numa-balancing"])]
                 df["dataset"] = ds_name(dataset)
                 df["arch"] = arch
                 data_details.append(df)
@@ -107,7 +109,7 @@ def normalize_data(df_main: pd.DataFrame) -> pd.DataFrame:
     """Normalize ANN benchmark data relative to default linux kernel variant"""
 
     def normalize_relative_to_default(group):
-        default_row = group[group["tag"] == "default"]
+        default_row = group[group["tag"] == "numa-balancing"]
         default_mean = default_row["mean_qps"].values[0]
         group["mean_qps_copy"] = group["mean_qps"].copy()
 
@@ -260,6 +262,7 @@ def plot_main(df_main: pd.DataFrame):
         # fig.tight_layout(pad=0)
         path = os.path.join(config.PLOT_DIR_ANN, arch)
         plt.savefig(f"{path}.svg", bbox_inches="tight", pad_inches=0, dpi=300)
+        plt.savefig(f"{path}.png", bbox_inches="tight", pad_inches=0, dpi=300)
         plt.close(fig)
 
 

@@ -1,6 +1,6 @@
 round,elapsed_ms,tag
-0,0.358652,alloc
-1,0.369944,alloc
-2,0.367358,alloc
-3,0.368076,alloc
-4,0.363967,alloc
+0,0.335981,alloc
+1,0.328702,alloc
+2,0.342073,alloc
+3,0.334531,alloc
+4,0.332166,alloc

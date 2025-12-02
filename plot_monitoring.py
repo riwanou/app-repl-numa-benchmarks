@@ -49,9 +49,9 @@ def make_plot_monitoring():
 
 def plot(variant: str):
     df_pcm, df_pcm_memory, df_mem = get_data(variant)
-    plot_pcm(df_pcm, variant)
-    plot_pcm_memory(df_pcm_memory, variant)
-    plot_mem(df_mem, variant)
+    # plot_pcm(df_pcm, variant)
+    # plot_pcm_memory(df_pcm_memory, variant)
+    # plot_mem(df_mem, variant)
 
 
 def get_data(variant: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -99,7 +99,65 @@ def get_data(variant: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         pd.concat(data_mem, ignore_index=True) if data_mem else pd.DataFrame()
     )
 
+    show_interesting_data(
+        variant,
+        df_pcm,
+        df_pcm_memory,
+        df_mem,
+    )
+
     return df_pcm, df_pcm_memory, df_mem
+
+
+def extract_variant_data(df, variant, arch, pcm=True, tag1="", tag2=""):
+    df_arch = pd.DataFrame(df[df["arch"] == arch])
+    if pcm:
+        df_arch["time_dt"] = pd.to_datetime(
+            df_arch[(tag1, "Date")].astype(str)
+            + " "
+            + df_arch[(tag2, "Time")].astype(str)
+        )
+    else:
+        df_arch["time_dt"] = pd.to_datetime(df_arch["time"])
+    time_windows = get_variant_time_windows(variant)
+    if time_windows:
+        df_arch = filter_by_time_windows(df_arch, time_windows, "time_dt")
+
+    return df_arch
+
+
+def show_interesting_data(variant, df_pcm, df_pcm_memory, df_mem):
+    if variant != "ann" and variant != "ann-repl":
+        return
+
+    arch = "IntelR_XeonR_Silver_4216_CPU_@_2.10GHz_X86_64"
+    df_pcm = extract_variant_data(
+        df_pcm, variant, arch, True, "System", "System"
+    )
+    df_pcm_memory = extract_variant_data(
+        df_pcm_memory,
+        variant,
+        arch,
+        True,
+        "Unnamed: 0_level_0",
+        "Unnamed: 1_level_0",
+    )
+    df_mem = extract_variant_data(df_mem, variant, arch, False)
+
+    print("----")
+    print(variant)
+
+    print(
+        f"Memory Locality (GB): [Node 0] local {df_pcm[('Socket 0', 'LMB')].mean() / 1024:.2f} | remote {df_pcm[('Socket 0', 'RMB')].mean() / 1024:.2f}"
+    )
+    print(
+        f"Memory Locality (GB): [Node 1] local {df_pcm[('Socket 1', 'LMB')].mean() / 1024:.2f} | remote {df_pcm[('Socket 1', 'RMB')].mean() / 1024:.2f}"
+    )
+    print(
+        f"LLC Read Miss Latency (ns): {df_pcm[('System', 'LLCRDMISSLAT (ns)')].mean():.2f}",
+    )
+
+    print("----")
 
 
 def plot_pcm(df, variant: str):

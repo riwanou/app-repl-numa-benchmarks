@@ -3,7 +3,7 @@ build: build-rocksdb build-fio build-llama build-micro
 bench: bench-ann bench-rocksdb bench-llama bench-fio
 bench-repl: bench-ann-repl bench-rocksdb-repl bench-llama-repl bench-fio-repl
 
-plot: plot-ann plot-rocksdb plot-fio
+plot: plot-ann plot-rocksdb plot-fio plot-microbench
 
 build-rocksdb:
     #!/usr/bin/env bash

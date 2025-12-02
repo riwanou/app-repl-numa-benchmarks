@@ -284,3 +284,4 @@ def plot_microbench(
     plt.subplots_adjust(top=0.9)
     path = os.path.join(config.PLOT_DIR_MICROBENCH, arch)
     plt.savefig(f"{path}_{title}.svg", bbox_inches="tight", dpi=300)
+    plt.savefig(f"{path}_{title}.png", bbox_inches="tight", dpi=300)
