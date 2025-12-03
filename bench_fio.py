@@ -40,6 +40,7 @@ def run_bench(
 
 def run_bench_readwrite(distrib, base_tag, num_readers, num_writers):
     # baseline
+    sh("echo 1 > /proc/sys/kernel/numa_balancing")
     sh("echo 3 > /proc/sys/vm/drop_caches")
     sh(
         f"{
@@ -52,6 +53,7 @@ def run_bench_readwrite(distrib, base_tag, num_readers, num_writers):
             )
         }"
     )
+    sh("echo 0 > /proc/sys/kernel/numa_balancing")
 
 
 def run_bench_readwrite_repl(distrib, base_tag, num_readers, num_writers):
@@ -140,9 +142,10 @@ def run_bench_fio_distrib(distrib, repl=False):
 
 
 def run_bench_fio():
-    # run_bench_fio_distrib("random")
-    run_bench_fio_distrib("zipf")
+    run_bench_fio_distrib("random")
+    # run_bench_fio_distrib("zipf")
 
 
 def run_bench_fio_repl():
-    run_bench_fio_distrib("zipf", repl=True)
+    run_bench_fio_distrib("random", repl=True)
+    # run_bench_fio_distrib("zipf", repl=True)

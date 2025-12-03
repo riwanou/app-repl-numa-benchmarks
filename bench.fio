@@ -9,6 +9,7 @@ time_based
 runtime=${RUNTIME}
 share_mmap=1
 repl=1
+norandommap=1
 
 [writers]
 rw=randwrite
