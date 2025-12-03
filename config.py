@@ -5,6 +5,10 @@ import subprocess
 import tempfile
 import datetime
 
+LINUX_COLOR = "RdPu"
+CARREFOUR_COLOR = "Reds"
+SPARE_COLOR = "Blues"
+
 
 def get_safe_platform_string():
     arch = os.uname().machine.upper()

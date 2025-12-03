@@ -49,6 +49,14 @@ def make_plot_rocksdb():
         "patched-repl": "Replication",
         # "patched-repl-unrepl": "ReplicationDynamic",
     }
+    linux = sns.color_palette(config.LINUX_COLOR, n_colors=4)
+    spare = sns.color_palette(config.SPARE_COLOR, n_colors=2)
+    palettes = {
+        "imbalanced": linux[0],
+        "": linux[1],
+        "interleaved": linux[2],
+        "patched-repl": spare[0],
+    }
 
     all_data = []
     arch = "IntelR_XeonR_Gold_6130_CPU_@_2.10GHz_X86_64"
@@ -111,9 +119,6 @@ def make_plot_rocksdb():
         group_width = n_bars * bar_width + (n_bars - 1) * bar_gap
         x = np.arange(n_methods) * 0.63
 
-        palette = sns.color_palette("Blues", n_colors=4)
-        hatches = ["OOO", "////", "...", "xxxx"]
-
         for i, tag in enumerate(tags_order):
             means = []
             for method in methods:
@@ -141,9 +146,8 @@ def make_plot_rocksdb():
                 width=bar_width,
                 label=tag_labels[tag],
                 capsize=1,
-                color=palette[i],
-                hatch=hatches[i],
-                edgecolor=palette[i],
+                color=palettes[tag],
+                edgecolor=palettes[tag],
                 linewidth=0.25,
             )
 

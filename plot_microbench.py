@@ -31,49 +31,16 @@ def make_plot_microbench():
 def make_plot_microbench_arch(arch: str):
     combined_df = get_data(arch)
 
-    elapsed_y_label = [
-        "SPaRe",
-        "Carrefour",
-    ]
-
     df_pg = combined_df[combined_df["benchmark"] == "pgtable"]
-    tag_labels_pg = {
-        "pgtable_norepl_default": "NoRepl",
-        "pgtable_repl_repl": "Repl",
-        "pgtable_norepl_repl": "NoReplAfter",
-    }
-    tags_pg = [
-        "pgtable_norepl_default",
-        "pgtable_repl_repl",
-        "pgtable_norepl_repl",
-    ]
-    plot_microbench(
+    plot_microbench_sync(
         arch,
-        "pgtable",
         df_pg,
-        "elapsed_ms",
-        tag_labels_pg,
-        tags_pg,
-        ylabels=elapsed_y_label,
     )
 
     df_alloc = combined_df[combined_df["benchmark"] == "alloc"]
-    tag_labels_alloc = {
-        "alloc_default": "Default",
-        "alloc_repl_repl": "Replication",
-    }
-    tags_alloc = [
-        "alloc_default",
-        "alloc_repl_repl",
-    ]
-    plot_microbench(
+    plot_microbench_alloc(
         arch,
-        "alloc",
         df_alloc,
-        "elapsed_ms",
-        tag_labels_alloc,
-        tags_alloc,
-        ylabels=elapsed_y_label,
     )
 
     df_mem = combined_df[combined_df["benchmark"] == "mem"]
@@ -135,17 +102,10 @@ def get_data(arch: str) -> pd.DataFrame:
     return combined_df
 
 
-def plot_microbench(
+def plot_microbench_sync(
     arch,
-    title,
     df_param,
-    value_col,
-    tag_labels,
-    tags,
-    ylabels,
     showText=True,
-    y_fontsize=10,
-    tick_fontsize=8,
 ):
     df = df_param.copy()
     df["threads"] = df["threads"].astype(int)
@@ -153,19 +113,27 @@ def plot_microbench(
 
     threads = sorted(df["threads"].unique())
     n_threads = len(threads)
-    methods = ["mmap", "madvise"]
+    methods = ["madvise", "mmap"]
 
     plt.rcParams.update({"font.family": "serif", "font.serif": "DejaVu Serif"})
+
+    tags = [
+        "pgtable_norepl_repl",
+        "pgtable_repl_repl",
+    ]
 
     fig, axes = plt.subplots(
         nrows=len(methods),
         ncols=n_threads,
         figsize=(3.2, 1.2),
         sharey="row",
-        gridspec_kw={"wspace": 0.05, "hspace": 0.85},
+        gridspec_kw={"wspace": 0.05, "hspace": 0.45},
     )
 
-    palette = sns.color_palette("Blues", n_colors=3)
+    palettes = [
+        sns.color_palette(config.CARREFOUR_COLOR, n_colors=2),
+        sns.color_palette(config.SPARE_COLOR, n_colors=2),
+    ]
 
     sns.set_style("ticks")
     sns.set_context("paper")
@@ -175,48 +143,41 @@ def plot_microbench(
     if n_threads == 1:
         axes = [[ax] for ax in axes]
 
-    for midx, method in enumerate(methods):
-        df_m = df[df["method"] == method]
-
+    for midx, tag in enumerate(tags):
         for tidx, t in enumerate(threads):
             ax = axes[midx][tidx]
-            df_t = df_m[df_m["threads"] == t]
+            df_t0 = df[df["threads"] == t]
 
-            if df_t.empty:
+            if df_t0.empty:
                 ax.axis("off")
                 continue
 
-            agg = df_t.groupby("unique_tag")[value_col].agg(["mean", "std"])
-            mean_col = "mean_norm"
-            std_col = "std_norm"
+            for i, method in enumerate(methods):
+                df_t = df_t0[df_t0["method"] == method]
 
-            default_val = agg.loc[tags[0], "mean"]
-            agg["mean_norm"] = agg["mean"] / default_val
-            std_raw = df_t.groupby("unique_tag")["elapsed_ms"].std()
-            agg["std_norm"] = std_raw / default_val
+                agg = df_t.groupby("unique_tag")["elapsed_ms"].agg(
+                    ["mean", "std"]
+                )
+                mean_col = "mean_norm"
 
-            agg = agg.reindex(tags, fill_value=0)
-            ntags = 0
+                default_val = agg.loc["pgtable_norepl_default", "mean"]
+                agg["mean_norm"] = agg["mean"] / default_val
 
-            xpos = np.arange(len(tags))
-            bar_width = 0.22
+                agg = agg.reindex(tags, fill_value=0)
+                ntags = 0
 
-            for i, tag in enumerate(tags):
+                xpos = np.arange(len(tags))
                 height = agg.loc[tag, mean_col]
-                yerr_val = agg.loc[tag, std_col]
                 ntags += 1
 
                 bar = ax.bar(
                     xpos[i],
                     height,
                     width=1.0,
-                    # yerr=yerr_val,
-                    label=tag_labels.get(tag, tag),
                     capsize=1.0,
-                    color=palette[i],
-                    edgecolor=palette[i],
+                    color=palettes[i],
+                    edgecolor=palettes[i],
                     linewidth=0.25,
-                    # error_kw=dict(lw=0.6, capthick=0.6),
                     zorder=2,
                 )
 
@@ -239,32 +200,23 @@ def plot_microbench(
                     left=False,
                 )
 
-            ax.set_xticks([])
-            ax.set_xlabel("")
-            # ax.grid(
-            #     axis="y",
-            #     which="major",
-            #     linestyle="--",
-            #     linewidth=0.4,
-            #     color="gray",
-            #     alpha=0.3,
-            #     zorder=1,
-            # )
-
-            xpos = 0.5 if ntags == 2 else 1
-            ax.set_xticks([xpos])
-
+            ax.set_xticks([0.5])
             ax.tick_params(axis="y", labelsize=6, length=2)
-            ax.tick_params(axis="x", labelsize=6, length=2)
+            ax.set_xticklabels(
+                [f"{str(t)} node{'s' if t > 1 else ''}"], fontsize=6
+            )
 
-            ax.set_xticklabels([str(t)], fontsize=7)
+            if midx == 0:
+                ax.set_xticks([])
+                ax.set_xticklabels([])
 
-            ax.yaxis.set_major_locator(mtick.MaxNLocator(nbins=4))
+            ax.yaxis.set_major_locator(mtick.MaxNLocator(nbins=3))
             ax.yaxis.set_major_formatter(mtick.FormatStrFormatter("%.1f"))
 
-    for midx, ylabel in enumerate(ylabels):
-        axes[midx][0].set_ylabel(ylabel, fontsize=7)
-        axes[midx][0].yaxis.set_label_coords(-0.50, 0.5)  # align vertically
+    axes[0][0].set_ylabel("not repl", fontsize=7)
+    axes[0][0].yaxis.set_label_coords(-0.50, 0.5)  # align vertically
+    axes[1][0].set_ylabel("repl", fontsize=7)
+    axes[1][0].yaxis.set_label_coords(-0.50, 0.5)  # align vertically
 
     # handles, labels = axes[0][0].get_legend_handles_labels()
     # legend = fig.legend(
@@ -280,8 +232,329 @@ def plot_microbench(
     # )
     # legend.get_frame().set_linewidth(0.4)
 
+    plt.subplots_adjust(top=0.9)
+    path = os.path.join(config.PLOT_DIR_MICROBENCH, arch)
+    plt.savefig(
+        f"{path}_pgtable.svg", bbox_inches="tight", pad_inches=0, dpi=300
+    )
+    plt.savefig(
+        f"{path}_pgtable.png", bbox_inches="tight", pad_inches=0, dpi=300
+    )
+
+
+# def plot_microbench_sync(
+#     arch,
+#     df_param,
+#     showText=True,
+# ):
+#     ylabels = [
+#         "SPaRe",
+#         "Carrefour",
+#     ]
+
+#     tags = [
+#         "pgtable_norepl_default",
+#         "pgtable_repl_repl",
+#         "pgtable_norepl_repl",
+#     ]
+
+#     tag_labels = {
+#         "pgtable_norepl_default": "NoRepl",
+#         "pgtable_repl_repl": "Repl",
+#         "pgtable_norepl_repl": "NoReplAfter",
+#     }
+
+#     df = df_param.copy()
+#     df["threads"] = df["threads"].astype(int)
+#     df["unique_tag"] = df["tag"] + "_" + df["method_tag"]
+
+#     threads = sorted(df["threads"].unique())
+#     n_threads = len(threads)
+#     methods = ["madvise", "mmap"]
+
+#     plt.rcParams.update({"font.family": "serif", "font.serif": "DejaVu Serif"})
+
+#     fig, axes = plt.subplots(
+#         ncols=n_threads,
+#         figsize=(3.2, 1.2),
+#         sharey=True,
+#         gridspec_kw={"wspace": 0.05},
+#     )
+
+#     palettes = [
+#         sns.color_palette("RdPu", n_colors=1),
+#         sns.color_palette("Blues", n_colors=1),
+#     ]
+#     hatches = ["xxxxxxx", "......"]
+
+#     sns.set_style("ticks")
+#     sns.set_context("paper")
+#     plt.rcParams["hatch.linewidth"] = 0.4
+
+#     if len(methods) == 1:
+#         axes = [axes]
+
+#     for tidx, t in enumerate(threads):
+#         ax = axes[tidx]
+#         df_t0 = df[df["threads"] == t]
+
+#         if df_t0.empty:
+#             ax.axis("off")
+#             continue
+
+#         for i, method in enumerate(methods):
+#             df_t = df_t0[df_t0["method"] == method]
+
+#             agg = df_t.groupby("unique_tag")["elapsed_ms"].agg(["mean", "std"])
+#             mean_col = "mean_norm"
+
+#             default_val = agg.loc[tags[0], "mean"]
+#             agg["mean_norm"] = agg["mean"] / default_val
+#             std_raw = df_t.groupby("unique_tag")["elapsed_ms"].std()
+#             agg["std_norm"] = std_raw / default_val
+
+#             agg = agg.reindex(tags, fill_value=0)
+#             ntags = 0
+#             bar_width = 0.2
+#             gap = 0.05
+
+#             group_center = [-(bar_width + gap / 2), (bar_width + gap / 2)]
+
+#             for ti, tag in enumerate(
+#                 ["pgtable_repl_repl", "pgtable_norepl_repl"]
+#             ):
+#                 height = agg.loc[tag, mean_col]
+#                 ntags += 1
+
+#                 group_offset = (ti - 0.5) * bar_width
+#                 x = group_center[i] + group_offset
+
+#                 if ti == 0:
+#                     bar = ax.bar(
+#                         x,
+#                         height,
+#                         width=bar_width,
+#                         label=tag_labels.get(tag, tag),
+#                         capsize=1.0,
+#                         linewidth=0.25,
+#                         color=palettes[i],
+#                         edgecolor=palettes[i],
+#                         zorder=1.0,
+#                     )
+#                 else:
+#                     bar = ax.bar(
+#                         x,
+#                         height,
+#                         width=bar_width,
+#                         label=tag_labels.get(tag, tag),
+#                         capsize=1.0,
+#                         linewidth=0.25,
+#                         facecolor="none",
+#                         hatch=hatches[0],
+#                         color=palettes[i],
+#                         edgecolor=palettes[i],
+#                         zorder=1.0,
+#                     )
+
+#                 if showText:
+#                     ax.text(
+#                         bar[0].get_x() + bar[0].get_width() / 2,
+#                         height + 0.02,
+#                         f"x{height:.1f}",
+#                         ha="center",
+#                         va="bottom",
+#                         fontsize=4,
+#                         fontweight="bold",
+#                         color="black",
+#                         zorder=3,
+#                     )
+
+#         sns.despine(ax=ax, left=tidx != 0)
+#         if tidx != 0:
+#             ax.tick_params(
+#                 labelleft=False,
+#                 left=False,
+#             )
+
+#         ax.set_xticks([0])
+
+#         ax.tick_params(axis="y", labelsize=6, length=2)
+#         ax.tick_params(axis="x", labelsize=6, length=2)
+#         ax.set_xticklabels([f"{str(t)} node{'s' if t > 1 else ''}"], fontsize=7)
+
+#         ax.yaxis.set_major_locator(mtick.MaxNLocator(nbins=4))
+#         ax.yaxis.set_major_formatter(mtick.FormatStrFormatter("%.1f"))
+
+#     # for midx, ylabel in enumerate(ylabels):
+#     #     axes[midx][0].set_ylabel(ylabel, fontsize=7)
+#     #     axes[midx][0].yaxis.set_label_coords(-0.50, 0.5)  # align vertically
+
+#     # handles, labels = axes[0][0].get_legend_handles_labels()
+#     # legend = fig.legend(
+#     #     handles,
+#     #     labels,
+#     #     fontsize=8,
+#     #     loc="upper center",
+#     #     bbox_to_anchor=(0.5, 1.0),
+#     #     edgecolor="white",
+#     #     framealpha=1.0,
+#     #     ncol=len(handles),
+#     #     frameon=False,
+#     # )
+#     # legend.get_frame().set_linewidth(0.4)
+
+#     fig.tight_layout()
+#     plt.subplots_adjust(top=0.9)
+#     path = os.path.join(config.PLOT_DIR_MICROBENCH, arch)
+#     plt.savefig(f"{path}_pgtable.svg", bbox_inches="tight", dpi=300)
+#     plt.savefig(f"{path}_pgtable.png", bbox_inches="tight", dpi=300)
+
+
+def plot_microbench_alloc(
+    arch,
+    df_param,
+    showText=True,
+):
+    tags = [
+        "alloc_default",
+        "alloc_repl_repl",
+    ]
+
+    tag_labels = {
+        "alloc_default": "Default",
+        "alloc_repl_repl": "Replication",
+    }
+
+    df = df_param.copy()
+    df["threads"] = df["threads"].astype(int)
+    df["unique_tag"] = df["tag"] + "_" + df["method_tag"]
+
+    threads = sorted(df["threads"].unique())
+    n_threads = len(threads)
+    methods = ["madvise", "mmap"]
+
+    plt.rcParams.update({"font.family": "serif", "font.serif": "DejaVu Serif"})
+
+    fig, axes = plt.subplots(
+        nrows=1,
+        ncols=n_threads,
+        figsize=(3.2, 1.2),
+        sharey=True,
+        gridspec_kw={"wspace": 0.05},
+    )
+
+    palettes = [
+        sns.color_palette(config.CARREFOUR_COLOR, n_colors=2),
+        sns.color_palette(config.SPARE_COLOR, n_colors=2),
+    ]
+
+    sns.set_style("ticks")
+    sns.set_context("paper")
+
+    if len(methods) == 1:
+        axes = [axes]
+
+    for tidx, t in enumerate(threads):
+        ax = axes[tidx]
+        df_t0 = df[df["threads"] == t]
+
+        if df_t0.empty:
+            ax.axis("off")
+            continue
+
+        for i, method in enumerate(methods):
+            df_t = df_t0[df_t0["method"] == method]
+
+            agg = df_t.groupby("unique_tag")["elapsed_ms"].agg(["mean", "std"])
+            mean_col = "mean_norm"
+            std_col = "std_norm"
+
+            default_val = agg.loc[tags[0], "mean"]
+            agg["mean_norm"] = agg["mean"] / default_val
+            std_raw = df_t.groupby("unique_tag")["elapsed_ms"].std()
+            agg["std_norm"] = std_raw / default_val
+
+            agg = agg.reindex(tags, fill_value=0)
+            ntags = 0
+
+            bar_width = 0.3
+            gap = 0.0
+
+            group_center = [-(gap / 2), (gap / 2)]
+
+            tag = "alloc_repl_repl"
+            height = agg.loc[tag, mean_col]
+            ntags += 1
+
+            group_offset = (i - 0.5) * bar_width
+            x = group_center[i] + group_offset
+
+            bar = ax.bar(
+                x,
+                height,
+                width=bar_width,
+                # yerr=yerr_val,
+                label=tag_labels.get(tag, tag),
+                capsize=1.0,
+                color=palettes[i],
+                edgecolor=palettes[i],
+                linewidth=0.25,
+                # error_kw=dict(lw=0.6, capthick=0.6),
+                zorder=2,
+            )
+
+            if showText:
+                ax.text(
+                    bar[0].get_x() + bar[0].get_width() / 2,
+                    height + 0.02,
+                    f"x{height:.1f}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=6,
+                    color="black",
+                    zorder=3,
+                )
+
+        sns.despine(ax=ax, left=tidx != 0)
+        if tidx != 0:
+            ax.tick_params(
+                labelleft=False,
+                left=False,
+            )
+
+        ax.set_xticks([0])
+
+        ax.tick_params(axis="y", labelsize=6, length=2)
+        ax.set_xticklabels([f"{str(t)} node{'s' if t > 1 else ''}"], fontsize=6)
+
+        ax.yaxis.set_major_locator(mtick.MaxNLocator(nbins=4))
+        ax.yaxis.set_major_formatter(mtick.FormatStrFormatter("%.1f"))
+
+    axes[0].set_ylabel("repl", fontsize=7)
+    axes[0].yaxis.set_label_coords(-0.50, 0.5)  # align vertically
+
+    # for midx, ylabel in enumerate(ylabels):
+    #     axes[midx][0].set_ylabel(ylabel, fontsize=7)
+    #     axes[midx][0].yaxis.set_label_coords(-0.50, 0.5)  # align vertically
+
     fig.tight_layout()
     plt.subplots_adjust(top=0.9)
     path = os.path.join(config.PLOT_DIR_MICROBENCH, arch)
-    plt.savefig(f"{path}_{title}.svg", bbox_inches="tight", dpi=300)
-    plt.savefig(f"{path}_{title}.png", bbox_inches="tight", dpi=300)
+    plt.savefig(f"{path}_alloc.svg", bbox_inches="tight", pad_inches=0, dpi=300)
+    plt.savefig(f"{path}_alloc.png", bbox_inches="tight", pad_inches=0, dpi=300)
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig_legend = plt.figure(figsize=(3.3, 0.5))
+    legend = fig_legend.legend(
+        handles,
+        ["Carrefour", "SPaRe"],
+        fontsize=8,
+        edgecolor="white",
+        framealpha=1.0,
+        ncol=len(handles),
+    )
+    fig_legend.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    path = os.path.join(config.PLOT_DIR_MICROBENCH, "legend")
+    plt.savefig(f"{path}.svg", bbox_inches="tight", pad_inches=0, dpi=300)
+    plt.savefig(f"{path}.png", bbox_inches="tight", pad_inches=0, dpi=300)
+    plt.close(fig_legend)

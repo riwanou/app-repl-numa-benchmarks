@@ -16,21 +16,30 @@ DATASETS = [
 # DATASETS = ann.lib.DATASETS
 
 TAGS_ORDER = [
-    "default",
     "imbalanced-memory",
+    "default",
     "interleaved-memory",
     # "numa-balancing",
     "patched-repl",
     # "patched-repl-unrepl",
 ]
 TAG_LABELS = {
-    "default": "Default",
     "imbalanced-memory": "Imbalanced",
+    "default": "Default",
     "interleaved-memory": "Interleaved",
     # "numa-balancing": "NumaBalancing",
-    "patched-repl": "Replication",
+    "patched-repl": "SPaRe",
     # "patched-repl-unrepl": "ReplicationDynamic",
 }
+linux = sns.color_palette(config.LINUX_COLOR, n_colors=4)
+spare = sns.color_palette(config.SPARE_COLOR, n_colors=2)
+palettes = {
+    "imbalanced-memory": linux[0],
+    "default": linux[1],
+    "interleaved-memory": linux[2],
+    "patched-repl": spare[0],
+}
+
 
 RUNNER_NAMES = ["faiss", "annoy", "usearch"]
 N_RUNNERS = len(RUNNER_NAMES)
@@ -198,9 +207,9 @@ def plot_main(df_main: pd.DataFrame):
                     capsize=1.0,
                     linewidth=0.25,
                     # error_kw=dict(lw=0.7, capthick=0.7),
-                    color=palette[i],
+                    color=palettes[tag],
                     hatch=hatches[i],
-                    edgecolor=palette[i],
+                    edgecolor=palettes[tag],
                 )
 
                 # ax.bar(
@@ -246,24 +255,28 @@ def plot_main(df_main: pd.DataFrame):
             fontsize=7,
         )
 
-        # legend unchanged
-        # handles, labels = axes[0].get_legend_handles_labels()
-        # legend = fig.legend(
-        #     handles,
-        #     labels,
-        #     fontsize=6,
-        #     loc="upper right",
-        #     bbox_to_anchor=(0.93, 1),
-        #     edgecolor="white",
-        #     framealpha=1.0,
-        # )
-        # legend.get_frame().set_linewidth(0.3)
-
         # fig.tight_layout(pad=0)
         path = os.path.join(config.PLOT_DIR_ANN, arch)
         plt.savefig(f"{path}.svg", bbox_inches="tight", pad_inches=0, dpi=300)
         plt.savefig(f"{path}.png", bbox_inches="tight", pad_inches=0, dpi=300)
         plt.close(fig)
+
+        handles, labels = axes[0].get_legend_handles_labels()
+        fig_legend = plt.figure(figsize=(3.3, 0.5))
+        legend = fig_legend.legend(
+            handles,
+            labels,
+            fontsize=9,
+            ncol=len(handles),
+            edgecolor="white",
+            framealpha=1.0,
+        )
+        # legend.get_frame().set_linewidth(0.3)
+        fig_legend.subplots_adjust(left=0, right=1, top=1, bottom=0)
+        path = os.path.join(config.PLOT_DIR_ANN, "legend")
+        plt.savefig(f"{path}.svg", bbox_inches="tight", pad_inches=0, dpi=300)
+        plt.savefig(f"{path}.png", bbox_inches="tight", pad_inches=0, dpi=300)
+        plt.close(fig_legend)
 
 
 def plot_main2(df_main: pd.DataFrame):

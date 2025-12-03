@@ -32,7 +32,7 @@ def make_plot_fio():
 
     make_plot_fio_arch("IntelR_XeonR_Silver_4216_CPU_@_2.10GHz_X86_64")
     make_plot_fio_arch("IntelR_XeonR_Gold_6130_CPU_@_2.10GHz_X86_64")
-    make_plot_fio_arch("INTELR_XEONR_PLATINUM_8568Y+_X86_64")
+    # make_plot_fio_arch("INTELR_XEONR_PLATINUM_8568Y+_X86_64")
 
 
 def make_plot_fio_arch(arch):
@@ -78,21 +78,29 @@ def get_data(arch: str) -> pd.DataFrame:
         is_repl = match["repl"] is not None
         is_unrepl = match["unrepl"] is not None
 
-        if distrib != "zipf":
+        if distrib != "random":
             continue
 
         path = os.path.join(dir, fname)
         if os.path.getsize(path) == 0:
             continue
-        with open(path, "r") as f:
-            json_data = json.load(f)
+        try:
+            with open(path, "r") as f:
+                json_data = json.load(f)
+        except Exception as e:
+            print(f"Skipping {path}: {e}")
+            continue
 
         read_bw_gb = 0
         write_bw_gb = 0
 
         for job in json_data.get("jobs", []):
-            read_bw_gb = job.get("read", {}).get("bw_bytes", 0) / 1000_000_000
-            write_bw_gb = job.get("write", {}).get("bw_bytes", 0) / 1000_000_000
+            read_bw_gb = job.get("read", {}).get("bw_bytes", 0) / (
+                1024 * 1024 * 1024
+            )
+            write_bw_gb = job.get("write", {}).get("bw_bytes", 0) / (
+                1024 * 1024 * 1024
+            )
 
         tag = ""
         if is_repl:
@@ -151,16 +159,17 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
         figsize=(3.3, 1.2),
     )
 
-    palette = sns.color_palette("Blues", n_colors=3)
+    linux = sns.color_palette(config.LINUX_COLOR, n_colors=2)
+    palette = sns.color_palette(config.SPARE_COLOR, n_colors=3)
 
     ax.bar(
         x - 1.5 * width,
         read_bw_normal,
         width,
-        label="Default",
+        label="NumaBalancing",
         capsize=3,
-        color=palette[0],
-        edgecolor=palette[0],
+        color=linux[0],
+        edgecolor=linux[0],
         linewidth=0.3,
         zorder=2,
     )
@@ -168,10 +177,10 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
         x - 0.5 * width,
         read_bw_repl,
         width,
-        label="Replication",
+        label="SPaRe",
         capsize=3,
-        color=palette[1],
-        edgecolor=palette[1],
+        color=palette[0],
+        edgecolor=palette[0],
         linewidth=0.3,
         zorder=2,
     )
@@ -179,10 +188,10 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
         x + 0.5 * width,
         read_bw_unrepl,
         width,
-        label="UnReplication",
+        label="SPaRe Unreplication",
         capsize=3,
-        color=palette[2],
-        edgecolor=palette[2],
+        color=palette[1],
+        edgecolor=palette[1],
         linewidth=0.3,
         zorder=2,
     )
@@ -209,19 +218,6 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
     ax.yaxis.set_major_formatter(mtick.FormatStrFormatter("%.0f"))
     ax.yaxis.set_major_locator(mtick.MaxNLocator(nbins=6))
 
-    # handles, labels = ax.get_legend_handles_labels()
-    # legend = fig.legend(
-    #     handles,
-    #     labels,
-    #     fontsize=8,
-    #     loc="upper center",
-    #     bbox_to_anchor=(0.5, 1.0),
-    #     ncol=2,
-    #     edgecolor="white",
-    #     framealpha=1.0,
-    # )
-    # legend.get_frame().set_linewidth(0.4)
-
     fig.tight_layout()
     path = os.path.join(config.PLOT_DIR_FIO, arch)
     plt.savefig(
@@ -230,3 +226,20 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
     plt.savefig(
         f"{path}_{title}.png", bbox_inches="tight", pad_inches=0, dpi=300
     )
+
+    handles, labels = ax.get_legend_handles_labels()
+    fig_legend = plt.figure(figsize=(3.3, 0.5))
+    legend = fig_legend.legend(
+        handles,
+        labels,
+        fontsize=8,
+        ncol=len(handles),
+        edgecolor="white",
+        framealpha=1.0,
+    )
+
+    fig_legend.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    path = os.path.join(config.PLOT_DIR_FIO, "legend")
+    plt.savefig(f"{path}.svg", bbox_inches="tight", pad_inches=0, dpi=300)
+    plt.savefig(f"{path}.png", bbox_inches="tight", pad_inches=0, dpi=300)
+    plt.close(fig_legend)
