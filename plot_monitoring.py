@@ -49,9 +49,9 @@ def make_plot_monitoring():
 
 def plot(variant: str):
     df_pcm, df_pcm_memory, df_mem = get_data(variant)
-    plot_pcm(df_pcm, variant)
-    plot_pcm_memory(df_pcm_memory, variant)
-    plot_mem(df_mem, variant)
+    # plot_pcm(df_pcm, variant)
+    # plot_pcm_memory(df_pcm_memory, variant)
+    # plot_mem(df_mem, variant)
 
 
 def get_data(variant: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -155,6 +155,9 @@ def show_interesting_data(variant, df_pcm, df_pcm_memory, df_mem):
         f"Memory Locality (GB): [Node 1] local {df_pcm[('Socket 1', 'LMB')].mean() / 1024:.2f} | remote {df_pcm[('Socket 1', 'RMB')].mean() / 1024:.2f}"
     )
     print(
+        f"Memory Locality (percent): [Node 0] local {df_pcm[('Socket 0', 'LOCAL')].mean():.2f} | [Node 1] {df_pcm[('Socket 1', 'LOCAL')].mean():.2f}"
+    )
+    print(
         f"LLC Read Miss Latency (ns): {df_pcm[('System', 'LLCRDMISSLAT (ns)')].mean():.2f}",
     )
     print(
@@ -163,6 +166,51 @@ def show_interesting_data(variant, df_pcm, df_pcm_memory, df_mem):
     print(
         f"UPI traffic (GB): in {df_pcm[('System', 'TotalUPIin')].mean() / 1024:.2f} | out {df_pcm[('System', 'TotalUPIout')].mean() / 1024:.2f}",
     )
+
+    upi_in_mean = (
+        df_pcm[("SKT0trafficOut (percent)", "UPI0")]
+        .str.rstrip("%")
+        .astype(float)
+        .mean()
+    )
+    upi_out_mean = (
+        df_pcm[("SKT0trafficOut (percent)", "UPI1")]
+        .str.rstrip("%")
+        .astype(float)
+        .mean()
+    )
+    print(f"traffic (GB): in {upi_in_mean:.2f} | out {upi_out_mean:.2f}")
+
+    upi_cols = [
+        ("SKT0trafficOut (percent)", "UPI0"),
+        ("SKT0trafficOut (percent)", "UPI1"),
+        ("SKT1trafficOut (percent)", "UPI0"),
+        ("SKT1trafficOut (percent)", "UPI1"),
+    ]
+    upi_percent = df_pcm[upi_cols].apply(
+        lambda col: col.str.rstrip("%").astype(float)
+    )
+    print(upi_percent.mean())
+    mean_total_upi_normalized = upi_percent.mean().mean()
+    print(
+        f"Mean total UPI usage out (all links, normalized): {mean_total_upi_normalized:.2f}%"
+    )
+
+    upi_cols = [
+        ("SKT0dataIn (percent)", "UPI0"),
+        ("SKT0dataIn (percent)", "UPI1"),
+        ("SKT1dataIn (percent)", "UPI0"),
+        ("SKT1dataIn (percent)", "UPI1"),
+    ]
+    upi_percent = df_pcm[upi_cols].apply(
+        lambda col: col.str.rstrip("%").astype(float)
+    )
+    print(upi_percent.mean())
+    mean_total_upi_normalized = upi_percent.mean().mean()
+    print(
+        f"Mean total UPI usage in (all links, normalized): {mean_total_upi_normalized:.2f}%"
+    )
+
     print(
         f"Instruction Per Cycle (IPC): {df_pcm[('System', 'IPC')].mean():.2f} | [Node 0] {df_pcm[('Socket 0', 'IPC')].mean():.2f}  | [Node 1] {df_pcm[('Socket 1', 'IPC')].mean():.2f}",
     )
