@@ -8,7 +8,7 @@ import matplotlib.gridspec as gridspec
 RESULT_DIR = config.RESULT_DIR
 
 TIME_WINDOWS = {
-    "ann": [("2025-11-30T19:03:26.237831", "2025-11-30T19:04:05.718766")],
+    "ann": [("2025-11-30T20:56:35.144994", "2025-11-30T20:57:09.636315")],
     "ann-repl": [("2025-12-01T01:10:02.109631", "2025-12-01T01:10:23.984930")],
     # "rocksdb": [("2025-11-23T20:53:08.628380", "2025-12-01T01:53:22.633492")],
     # "tmp": [("2025-12-01T01:10:47.574730", "2025-12-01T01:53:22.633492")],
@@ -49,9 +49,9 @@ def make_plot_monitoring():
 
 def plot(variant: str):
     df_pcm, df_pcm_memory, df_mem = get_data(variant)
-    # plot_pcm(df_pcm, variant)
-    # plot_pcm_memory(df_pcm_memory, variant)
-    # plot_mem(df_mem, variant)
+    plot_pcm(df_pcm, variant)
+    plot_pcm_memory(df_pcm_memory, variant)
+    plot_mem(df_mem, variant)
 
 
 def get_data(variant: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -147,6 +147,7 @@ def show_interesting_data(variant, df_pcm, df_pcm_memory, df_mem):
     print("----")
     print(variant)
 
+    # pcm
     print(
         f"Memory Locality (GB): [Node 0] local {df_pcm[('Socket 0', 'LMB')].mean() / 1024:.2f} | remote {df_pcm[('Socket 0', 'RMB')].mean() / 1024:.2f}"
     )
@@ -155,6 +156,34 @@ def show_interesting_data(variant, df_pcm, df_pcm_memory, df_mem):
     )
     print(
         f"LLC Read Miss Latency (ns): {df_pcm[('System', 'LLCRDMISSLAT (ns)')].mean():.2f}",
+    )
+    print(
+        f"UPI traffic to Memory traffic (ratio): {df_pcm[('System', 'UPItoMC')].mean():.2f}",
+    )
+    print(
+        f"UPI traffic (GB): in {df_pcm[('System', 'TotalUPIin')].mean() / 1024:.2f} | out {df_pcm[('System', 'TotalUPIout')].mean() / 1024:.2f}",
+    )
+    print(
+        f"Instruction Per Cycle (IPC): {df_pcm[('System', 'IPC')].mean():.2f} | [Node 0] {df_pcm[('Socket 0', 'IPC')].mean():.2f}  | [Node 1] {df_pcm[('Socket 1', 'IPC')].mean():.2f}",
+    )
+    print(
+        f"L3HIT: {df_pcm[('System', 'L3HIT')].mean():.2f} | [Node 0] {df_pcm[('Socket 0', 'L3HIT')].mean():.2f}  | [Node 1] {df_pcm[('Socket 1', 'L3HIT')].mean():.2f}",
+    )
+
+    # pcm memory
+    print(
+        f"Memory Read Bandwidth (GB): {df_pcm_memory[('System', 'Read')].mean() / 1024:.2f} | [Node 0] {df_pcm_memory[('SKT0', 'Mem Read (MB/s)')].mean() / 1024:.2f} | [Node 1] {df_pcm_memory[('SKT1', 'Mem Read (MB/s)')].mean() / 1024:.2f}",
+    )
+
+    # memory
+    print(
+        f"Memory anon (GB): {df_mem['anon'].mean() / (1024 * 1024):.2f} | [Node 0] {df_mem['Node0_anon'].mean() / (1024 * 1024):.2f} | [Node 0] {df_mem['Node1_anon'].mean() / (1024 * 1024):.2f}",
+    )
+    print(
+        f"Memory mapped (GB): {df_mem['mapped'].mean() / (1024 * 1024):.2f} | [Node 0] {df_mem['Node0_mapped'].mean() / (1024 * 1024):.2f} | [Node 0] {df_mem['Node1_mapped'].mean() / (1024 * 1024):.2f}",
+    )
+    print(
+        f"Memory pageTable (MB): {df_mem['pageTable'].mean() / (1024):.2f} | [Node 0] {df_mem['Node0_pageTable'].mean() / (1024):.2f} | [Node 0] {df_mem['Node1_pageTable'].mean() / (1024):.2f}",
     )
 
     print("----")
