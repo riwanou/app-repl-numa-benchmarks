@@ -29,7 +29,9 @@ def run_bench(tag: str, repl_enabled: bool, numa_distribute=False):
 
 def run_bench_llama():
     sh("echo 3 > /proc/sys/vm/drop_caches")
+    sh("echo 1 > /proc/sys/kernel/numa_balancing")
     sh(f"{run_bench(tag='baseline', repl_enabled=False)}")
+    sh("echo 0 > /proc/sys/kernel/numa_balancing")
 
     sh("echo 3 > /proc/sys/vm/drop_caches")
     sh(
