@@ -17,6 +17,7 @@ pattern = re.compile(
     r"_(?P<writeratio>\d+)"  # number of writer jobs
     r"(?P<repl>_repl)?"  # matches "_repl" if present
     r"(?P<unrepl>_unrepl)?"  # matches "_unrepl" if present
+    r"(?P<default>_default)?"  # matches "_default" if present
     r"\.json$"  # exactly one .json at the end
 )
 
@@ -77,6 +78,7 @@ def get_data(arch: str) -> pd.DataFrame:
         writeratio = match["writeratio"]
         is_repl = match["repl"] is not None
         is_unrepl = match["unrepl"] is not None
+        is_default = match["default"] is not None
 
         if distrib != "random":
             continue
@@ -96,10 +98,10 @@ def get_data(arch: str) -> pd.DataFrame:
 
         for job in json_data.get("jobs", []):
             read_bw_gb = job.get("read", {}).get("bw_bytes", 0) / (
-                1024 * 1024 * 1024
+                1000 * 1000 * 1000
             )
             write_bw_gb = job.get("write", {}).get("bw_bytes", 0) / (
-                1024 * 1024 * 1024
+                1000 * 1000 * 1000
             )
 
         tag = ""
@@ -107,6 +109,8 @@ def get_data(arch: str) -> pd.DataFrame:
             tag = "repl"
         if is_unrepl:
             tag = "unrepl"
+        if is_default:
+            tag = "default"
 
         df = pd.DataFrame(
             [
@@ -132,12 +136,17 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
 
     read_ratios = sorted(df["readratio"].unique())
     x = np.arange(len(read_ratios))
-    width = 0.25
+    width = 0.21
 
     df_repl = df[df["tag"] == "repl"].set_index("readratio")
     df_unrepl = df[df["tag"] == "unrepl"].set_index("readratio")
+    df_default = df[df["tag"] == "default"].set_index("readratio")
     df_normal = df[df["tag"] == ""].set_index("readratio")
 
+    read_bw_default = [
+        df_default.loc[r, value_col] if r in df_default.index else 0
+        for r in read_ratios
+    ]
     read_bw_normal = [
         df_normal.loc[r, value_col] if r in df_normal.index else 0
         for r in read_ratios
@@ -156,17 +165,17 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
     sns.set_style("ticks")
     sns.set_context("paper")
     fig, ax = plt.subplots(
-        figsize=(3.31, 1.5),
+        figsize=(3.31, 1.55),
     )
 
-    linux = sns.color_palette(config.LINUX_COLOR, n_colors=1)
-    palette = sns.color_palette(config.SPARE_COLOR, n_colors=2)
+    linux = sns.color_palette(config.LINUX_COLOR, n_colors=3)
+    palette = sns.color_palette(config.SPARE_COLOR, n_colors=9)
 
     ax.bar(
-        x - 1 * width,
-        read_bw_normal,
+        x - 1.5 * width,
+        read_bw_default,
         width,
-        label="NumaBalancing",
+        label="Default",
         capsize=3,
         color=linux[0],
         edgecolor=linux[0],
@@ -174,24 +183,35 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
         zorder=2,
     )
     ax.bar(
-        x - 0 * width,
-        read_bw_repl,
+        x - 0.5 * width,
+        read_bw_normal,
         width,
-        label="SPaRe",
+        label="NumaBalancing",
         capsize=3,
-        color=palette[0],
-        edgecolor=palette[0],
+        color=linux[1],
+        edgecolor=linux[1],
         linewidth=0.3,
         zorder=2,
     )
     ax.bar(
-        x + 1 * width,
+        x + 0.5 * width,
+        read_bw_repl,
+        width,
+        label="SPaRe",
+        capsize=3,
+        color=palette[6],
+        edgecolor=palette[6],
+        linewidth=0.3,
+        zorder=2,
+    )
+    ax.bar(
+        x + 1.5 * width,
         read_bw_unrepl,
         width,
         label="SPaRe Unreplication",
         capsize=3,
-        color=palette[1],
-        edgecolor=palette[1],
+        color=palette[8],
+        edgecolor=palette[8],
         linewidth=0.3,
         zorder=2,
     )
@@ -217,6 +237,7 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
     ax.set_ylabel(ylabel, fontsize=7)
     ax.yaxis.set_major_formatter(mtick.FormatStrFormatter("%.0f"))
     ax.yaxis.set_major_locator(mtick.MaxNLocator(nbins=6))
+    ax.set_xlabel("Read Ratio (%)", fontsize=6)
 
     fig.tight_layout()
     path = os.path.join(config.PLOT_DIR_FIO, arch)

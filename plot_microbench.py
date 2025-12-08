@@ -132,7 +132,7 @@ def plot_microbench_sync(
 
     palettes = [
         sns.color_palette(config.CARREFOUR_COLOR, n_colors=2),
-        sns.color_palette(config.SPARE_COLOR, n_colors=1),
+        sns.color_palette(config.SPARE_COLOR, n_colors=9)[6],
     ]
 
     sns.set_style("ticks")
@@ -445,7 +445,7 @@ def plot_microbench_alloc(
 
     palettes = [
         sns.color_palette(config.CARREFOUR_COLOR, n_colors=2),
-        sns.color_palette(config.SPARE_COLOR, n_colors=1),
+        sns.color_palette(config.SPARE_COLOR, n_colors=9)[6],
     ]
 
     sns.set_style("ticks")

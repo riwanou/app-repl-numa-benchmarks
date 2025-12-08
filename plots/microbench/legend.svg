@@ -6,7 +6,7 @@
   <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
    <cc:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-    <dc:date>2025-12-08T12:03:34.367726</dc:date>
+    <dc:date>2025-12-08T17:29:41.109030</dc:date>
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <cc:Agent>
@@ -246,7 +246,7 @@ L 87.38625 12.92625
 L 87.38625 7.32625 
 L 71.38625 7.32625 
 z
-" style="fill: #6aaed6; stroke: #6aaed6; stroke-width: 0.25; stroke-linejoin: miter"/>
+" style="fill: #2e7ebc; stroke: #2e7ebc; stroke-width: 0.25; stroke-linejoin: miter"/>
    </g>
    <g id="text_2">
     <!-- SPaRe -->
