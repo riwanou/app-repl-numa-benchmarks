@@ -156,14 +156,14 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
     sns.set_style("ticks")
     sns.set_context("paper")
     fig, ax = plt.subplots(
-        figsize=(3.3, 1.2),
+        figsize=(3.31, 1.5),
     )
 
-    linux = sns.color_palette(config.LINUX_COLOR, n_colors=2)
-    palette = sns.color_palette(config.SPARE_COLOR, n_colors=3)
+    linux = sns.color_palette(config.LINUX_COLOR, n_colors=1)
+    palette = sns.color_palette(config.SPARE_COLOR, n_colors=2)
 
     ax.bar(
-        x - 1.5 * width,
+        x - 1 * width,
         read_bw_normal,
         width,
         label="NumaBalancing",
@@ -174,7 +174,7 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
         zorder=2,
     )
     ax.bar(
-        x - 0.5 * width,
+        x - 0 * width,
         read_bw_repl,
         width,
         label="SPaRe",
@@ -185,7 +185,7 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
         zorder=2,
     )
     ax.bar(
-        x + 0.5 * width,
+        x + 1 * width,
         read_bw_unrepl,
         width,
         label="SPaRe Unreplication",

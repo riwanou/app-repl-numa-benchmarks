@@ -49,13 +49,13 @@ def make_plot_rocksdb():
         "patched-repl": "Replication",
         # "patched-repl-unrepl": "ReplicationDynamic",
     }
-    linux = sns.color_palette(config.LINUX_COLOR, n_colors=4)
-    spare = sns.color_palette(config.SPARE_COLOR, n_colors=2)
+    linux = sns.color_palette(config.LINUX_COLOR, n_colors=5)
+    spare = sns.color_palette(config.SPARE_COLOR, n_colors=9)
     palettes = {
         "imbalanced": linux[0],
         "": linux[1],
         "interleaved": linux[2],
-        "patched-repl": spare[0],
+        "patched-repl": spare[6],
     }
 
     all_data = []
@@ -109,7 +109,7 @@ def make_plot_rocksdb():
         fig, ax = plt.subplots(
             nrows=1,
             ncols=1,
-            figsize=(3.3, 1.2),
+            figsize=(3.3, 1.25),
             sharey=True,
         )
 
@@ -172,7 +172,7 @@ def make_plot_rocksdb():
         ax.set_xticklabels(methods_labels, fontsize=7, rotation=25)
 
         ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
-        ax.set_ylabel("Improvement over Linux (%) \n (mean MB/s)", fontsize=7)
+        ax.set_ylabel("Improvement over \n Linux (%)", fontsize=7)
 
         # handles, labels = ax.get_legend_handles_labels()
         # legend = fig.legend(

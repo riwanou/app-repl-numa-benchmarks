@@ -6,7 +6,7 @@
   <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
    <cc:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-    <dc:date>2025-12-04T00:29:42.400297</dc:date>
+    <dc:date>2025-12-08T15:51:51.296874</dc:date>
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <cc:Agent>
@@ -48,7 +48,7 @@ L 15.2 13.02375
 L 15.2 7.42375 
 L -0.8 7.42375 
 z
-" style="fill: #fbacb9; stroke: #fbacb9; stroke-width: 0.3; stroke-linejoin: miter"/>
+" style="fill: #f767a1; stroke: #f767a1; stroke-width: 0.3; stroke-linejoin: miter"/>
    </g>
    <g id="text_1">
     <!-- NumaBalancing -->
@@ -321,7 +321,7 @@ L 110.07375 13.02375
 L 110.07375 7.42375 
 L 94.07375 7.42375 
 z
-" style="fill: #c6dbef; stroke: #c6dbef; stroke-width: 0.3; stroke-linejoin: miter"/>
+" style="fill: #abd0e6; stroke: #abd0e6; stroke-width: 0.3; stroke-linejoin: miter"/>
    </g>
    <g id="text_2">
     <!-- SPaRe -->
@@ -460,7 +460,7 @@ L 173.82125 13.02375
 L 173.82125 7.42375 
 L 157.82125 7.42375 
 z
-" style="fill: #6aaed6; stroke: #6aaed6; stroke-width: 0.3; stroke-linejoin: miter"/>
+" style="fill: #3787c0; stroke: #3787c0; stroke-width: 0.3; stroke-linejoin: miter"/>
    </g>
    <g id="text_3">
     <!-- SPaRe Unreplication -->

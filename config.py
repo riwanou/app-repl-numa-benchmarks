@@ -6,7 +6,7 @@ import tempfile
 import datetime
 
 LINUX_COLOR = "RdPu"
-CARREFOUR_COLOR = "Reds"
+CARREFOUR_COLOR = "Oranges"
 SPARE_COLOR = "Blues"
 
 

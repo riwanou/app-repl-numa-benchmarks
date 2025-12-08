@@ -31,13 +31,13 @@ TAG_LABELS = {
     "patched-repl": "SPaRe",
     # "patched-repl-unrepl": "ReplicationDynamic",
 }
-linux = sns.color_palette(config.LINUX_COLOR, n_colors=4)
-spare = sns.color_palette(config.SPARE_COLOR, n_colors=2)
+linux = sns.color_palette(config.LINUX_COLOR, n_colors=5)
+spare = sns.color_palette(config.SPARE_COLOR, n_colors=9)
 palettes = {
     "imbalanced-memory": linux[0],
     "default": linux[1],
     "interleaved-memory": linux[2],
-    "patched-repl": spare[0],
+    "patched-repl": spare[6],
 }
 
 
@@ -251,7 +251,7 @@ def plot_main(df_main: pd.DataFrame):
                 ax.spines["left"].set_visible(False)
 
         axes[0].set_ylabel(
-            "Improvement over Linux (%) \n (mean QPS)",
+            "Improvement over \n Linux (%)",
             fontsize=7,
         )
 
