@@ -39,7 +39,22 @@ def run_bench(
 
 
 def run_bench_readwrite(distrib, base_tag, num_readers, num_writers):
-    # baseline
+    # default (without NUMA balancing)
+    sh("echo 0 > /proc/sys/kernel/numa_balancing")
+    sh("echo 3 > /proc/sys/vm/drop_caches")
+    sh(
+        f"{
+            run_bench(
+                tag=f'{base_tag}_default',
+                repl_enabled=False,
+                readjobs=num_readers,
+                writejobs=num_writers,
+                distrib=distrib,
+            )
+        }"
+    )
+
+    # baseline (with NUMA Balancing)
     sh("echo 1 > /proc/sys/kernel/numa_balancing")
     sh("echo 3 > /proc/sys/vm/drop_caches")
     sh(
