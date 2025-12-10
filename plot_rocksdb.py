@@ -43,7 +43,7 @@ def make_plot_rocksdb():
     ]
     tag_labels = {
         "imbalanced": "Imbalanced",
-        "": "Default",
+        "": "Vanilla",
         "interleaved": "Interleaved",
         # "balancing": "NumaBalancing",
         "patched-repl": "Replication",
@@ -55,7 +55,7 @@ def make_plot_rocksdb():
         "imbalanced": linux[0],
         "": linux[1],
         "interleaved": linux[2],
-        "patched-repl": spare[6],
+        "patched-repl": spare[5],
     }
 
     all_data = []
@@ -109,7 +109,7 @@ def make_plot_rocksdb():
         fig, ax = plt.subplots(
             nrows=1,
             ncols=1,
-            figsize=(3.3, 1.25),
+            figsize=(3.3, 1.47),
             sharey=True,
         )
 
@@ -172,7 +172,7 @@ def make_plot_rocksdb():
         ax.set_xticklabels(methods_labels, fontsize=7, rotation=25)
 
         ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
-        ax.set_ylabel("Improvement over \n Linux (%)", fontsize=7)
+        ax.set_ylabel("Improvement over \n NUMA Balancing (%)", fontsize=7)
 
         # handles, labels = ax.get_legend_handles_labels()
         # legend = fig.legend(
@@ -188,7 +188,8 @@ def make_plot_rocksdb():
         # legend.get_frame().set_linewidth(0.4)
 
         fig.tight_layout(pad=0)
-        path = os.path.join(config.PLOT_DIR_ROCKSDB, f"{arch}.svg")
+        path = os.path.join(
+            config.PLOT_DIR_ROCKSDB, f"{config.ARCH_SUBNAMES[arch]}_rocksdb.svg"
+        )
         plt.savefig(path, bbox_inches="tight", pad_inches=0, dpi=300)
-        path = os.path.join(config.PLOT_DIR_ROCKSDB, f"{arch}.png")
         plt.savefig(path, bbox_inches="tight", pad_inches=0, dpi=300)

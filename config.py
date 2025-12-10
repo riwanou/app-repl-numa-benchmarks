@@ -5,9 +5,15 @@ import subprocess
 import tempfile
 import datetime
 
-LINUX_COLOR = "RdPu"
-CARREFOUR_COLOR = "Oranges"
+LINUX_COLOR = "Oranges"
+CARREFOUR_COLOR = "Greens"
 SPARE_COLOR = "Blues"
+
+ARCH_SUBNAMES = {
+    "IntelR_XeonR_Gold_6130_CPU_@_2.10GHz_X86_64": "gold",
+    "IntelR_XeonR_Silver_4216_CPU_@_2.10GHz_X86_64": "silver",
+    "INTELR_XEONR_PLATINUM_8568Y+_X86_64": "plat",
+}
 
 
 def get_safe_platform_string():

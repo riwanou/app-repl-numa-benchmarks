@@ -25,7 +25,7 @@ TAGS_ORDER = [
 ]
 TAG_LABELS = {
     "imbalanced-memory": "Imbalanced",
-    "default": "Default",
+    "default": "Vanilla",
     "interleaved-memory": "Interleaved",
     # "numa-balancing": "NumaBalancing",
     "patched-repl": "SPaRe",
@@ -37,7 +37,7 @@ palettes = {
     "imbalanced-memory": linux[0],
     "default": linux[1],
     "interleaved-memory": linux[2],
-    "patched-repl": spare[6],
+    "patched-repl": spare[5],
 }
 
 
@@ -169,7 +169,7 @@ def plot_main(df_main: pd.DataFrame):
         x = np.arange(N_DATASETS) * 0.48
 
         palette = sns.color_palette("Blues", n_colors=4)
-        hatches = ["OOO", "////", "...", "xxxx"]
+        hatches = ["OOO", "////", "...", "////////"]
 
         for idx in range(N_RUNNERS):
             runner = RUNNER_NAMES[idx]
@@ -208,7 +208,7 @@ def plot_main(df_main: pd.DataFrame):
                     linewidth=0.25,
                     # error_kw=dict(lw=0.7, capthick=0.7),
                     color=palettes[tag],
-                    hatch=hatches[i],
+                    # hatch=hatches[i],
                     edgecolor=palettes[tag],
                 )
 
@@ -251,14 +251,18 @@ def plot_main(df_main: pd.DataFrame):
                 ax.spines["left"].set_visible(False)
 
         axes[0].set_ylabel(
-            "Improvement over \n Linux (%)",
+            "Improvement over \n NUMA Balancing (%)",
             fontsize=7,
         )
 
         # fig.tight_layout(pad=0)
-        path = os.path.join(config.PLOT_DIR_ANN, arch)
-        plt.savefig(f"{path}.svg", bbox_inches="tight", pad_inches=0, dpi=300)
-        plt.savefig(f"{path}.png", bbox_inches="tight", pad_inches=0, dpi=300)
+        path = os.path.join(config.PLOT_DIR_ANN, config.ARCH_SUBNAMES[arch])
+        plt.savefig(
+            f"{path}_ann.svg", bbox_inches="tight", pad_inches=0, dpi=300
+        )
+        plt.savefig(
+            f"{path}_ann.png", bbox_inches="tight", pad_inches=0, dpi=300
+        )
         plt.close(fig)
 
         handles, labels = axes[0].get_legend_handles_labels()

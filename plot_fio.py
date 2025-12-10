@@ -48,14 +48,14 @@ def make_plot_fio_arch(arch):
         "read",
         combined_df,
         value_col="read_bw_gb",
-        ylabel="Read Bandwidth (GB/s)",
+        ylabel="$\mathbf{Read}$ Bandwidth (GB/s)",
     )
     plot_fio(
         arch,
         "write",
         combined_df,
         value_col="write_bw_gb",
-        ylabel="Write Bandwidth (GB/s)",
+        ylabel="$\mathbf{Write}$ Bandwidth (GB/s)",
     )
 
 
@@ -165,20 +165,20 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
     sns.set_style("ticks")
     sns.set_context("paper")
     fig, ax = plt.subplots(
-        figsize=(3.31, 1.55),
+        figsize=(3.31, 1.65),
     )
 
-    linux = sns.color_palette(config.LINUX_COLOR, n_colors=3)
+    linux = sns.color_palette(config.LINUX_COLOR, n_colors=7)
     palette = sns.color_palette(config.SPARE_COLOR, n_colors=9)
 
     ax.bar(
         x - 1.5 * width,
         read_bw_default,
         width,
-        label="Default",
+        label="Vanilla",
         capsize=3,
-        color=linux[0],
-        edgecolor=linux[0],
+        color=linux[1],
+        edgecolor=linux[1],
         linewidth=0.3,
         zorder=2,
     )
@@ -188,8 +188,8 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
         width,
         label="NumaBalancing",
         capsize=3,
-        color=linux[1],
-        edgecolor=linux[1],
+        color=linux[3],
+        edgecolor=linux[3],
         linewidth=0.3,
         zorder=2,
     )
@@ -199,8 +199,8 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
         width,
         label="SPaRe",
         capsize=3,
-        color=palette[6],
-        edgecolor=palette[6],
+        color=palette[5],
+        edgecolor=palette[5],
         linewidth=0.3,
         zorder=2,
     )
@@ -210,8 +210,8 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
         width,
         label="SPaRe Unreplication",
         capsize=3,
-        color=palette[8],
-        edgecolor=palette[8],
+        color=palette[7],
+        edgecolor=palette[7],
         linewidth=0.3,
         zorder=2,
     )
@@ -240,7 +240,7 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
     ax.set_xlabel("Read Ratio (%)", fontsize=6)
 
     fig.tight_layout()
-    path = os.path.join(config.PLOT_DIR_FIO, arch)
+    path = os.path.join(config.PLOT_DIR_FIO, config.ARCH_SUBNAMES[arch])
     plt.savefig(
         f"{path}_{title}.svg", bbox_inches="tight", pad_inches=0, dpi=300
     )

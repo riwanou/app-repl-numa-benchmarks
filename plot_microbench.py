@@ -7,6 +7,11 @@ import pandas as pd
 import numpy as np
 import re
 
+palettes = [
+    sns.color_palette(config.CARREFOUR_COLOR, n_colors=9)[3],
+    sns.color_palette(config.SPARE_COLOR, n_colors=9)[5],
+]
+
 RESULT_DIR = config.RESULT_DIR
 pattern = re.compile(
     r"(?P<benchmark>\w+)"  # pgtable, mem, alloc, etc.
@@ -116,36 +121,24 @@ def plot_microbench_sync(
     methods = ["madvise", "mmap"]
 
     plt.rcParams.update({"font.family": "serif", "font.serif": "DejaVu Serif"})
-
+    sns.set_style("ticks")
+    sns.set_context("paper")
     tags = [
         "pgtable_norepl_repl",
         "pgtable_repl_repl",
     ]
 
-    fig, axes = plt.subplots(
-        nrows=len(methods),
-        ncols=n_threads,
-        figsize=(3.2, 1.2),
-        sharey="row",
-        gridspec_kw={"wspace": 0.05, "hspace": 0.45},
-    )
-
-    palettes = [
-        sns.color_palette(config.CARREFOUR_COLOR, n_colors=2),
-        sns.color_palette(config.SPARE_COLOR, n_colors=9)[6],
-    ]
-
-    sns.set_style("ticks")
-    sns.set_context("paper")
-
-    if len(methods) == 1:
-        axes = [axes]
-    if n_threads == 1:
-        axes = [[ax] for ax in axes]
-
     for midx, tag in enumerate(tags):
+        fig, axes = plt.subplots(
+            nrows=1,
+            ncols=n_threads,
+            figsize=(3.2, 1.2),
+            sharey=True,
+            gridspec_kw={"wspace": 0.05},
+        )
+
         for tidx, t in enumerate(threads):
-            ax = axes[midx][tidx]
+            ax = axes[tidx]
             df_t0 = df[df["threads"] == t]
 
             if df_t0.empty:
@@ -193,7 +186,7 @@ def plot_microbench_sync(
                         zorder=3,
                     )
 
-            sns.despine(ax=ax, left=tidx != 0)
+            sns.despine(ax=ax, left=True)
             if tidx != 0:
                 ax.tick_params(
                     labelleft=False,
@@ -206,40 +199,52 @@ def plot_microbench_sync(
                 [f"{str(t)} node{'s' if t > 1 else ''}"], fontsize=6
             )
 
-            if midx == 0:
-                ax.set_xticks([])
-                ax.set_xticklabels([])
-
             ax.yaxis.set_major_locator(mtick.MaxNLocator(nbins=3))
             ax.yaxis.set_major_formatter(mtick.FormatStrFormatter("%.1f"))
+            ax.set_ylim(1.0, 18)
 
-    axes[0][0].set_ylabel("not repl", fontsize=7)
-    axes[0][0].yaxis.set_label_coords(-0.50, 0.5)  # align vertically
-    axes[1][0].set_ylabel("repl", fontsize=7)
-    axes[1][0].yaxis.set_label_coords(-0.50, 0.5)  # align vertically
+        axes[0].yaxis.set_visible(False)
 
-    # handles, labels = axes[0][0].get_legend_handles_labels()
-    # legend = fig.legend(
-    #     handles,
-    #     labels,
-    #     fontsize=8,
-    #     loc="upper center",
-    #     bbox_to_anchor=(0.5, 1.0),
-    #     edgecolor="white",
-    #     framealpha=1.0,
-    #     ncol=len(handles),
-    #     frameon=False,
+        path = os.path.join(
+            config.PLOT_DIR_MICROBENCH, config.ARCH_SUBNAMES[arch]
+        )
+        plt.savefig(
+            f"{path}_{tag}.svg", bbox_inches="tight", pad_inches=0, dpi=300
+        )
+        plt.savefig(
+            f"{path}_{tag}.png", bbox_inches="tight", pad_inches=0, dpi=300
+        )
+        plt.close(fig)
+
+    # axes[0][0].set_ylabel("not repl", fontsize=7)
+    # axes[0][0].yaxis.set_label_coords(-0.50, 0.5)  # align vertically
+    # axes[1][0].set_ylabel("repl", fontsize=7)
+    # axes[1][0].yaxis.set_label_coords(-0.50, 0.5)  # align vertically
+    # axes[0][0].yaxis.set_visible(False)
+    # axes[1][0].yaxis.set_visible(False)
+
+    # # handles, labels = axes[0][0].get_legend_handles_labels()
+    # # legend = fig.legend(
+    # #     handles,
+    # #     labels,
+    # #     fontsize=8,
+    # #     loc="upper center",
+    # #     bbox_to_anchor=(0.5, 1.0),
+    # #     edgecolor="white",
+    # #     framealpha=1.0,
+    # #     ncol=len(handles),
+    # #     frameon=False,
+    # # )
+    # # legend.get_frame().set_linewidth(0.4)
+
+    # plt.subplots_adjust(top=0.9)
+    # path = os.path.join(config.PLOT_DIR_MICROBENCH, arch)
+    # plt.savefig(
+    #     f"{path}_pgtable.svg", bbox_inches="tight", pad_inches=0, dpi=300
     # )
-    # legend.get_frame().set_linewidth(0.4)
-
-    plt.subplots_adjust(top=0.9)
-    path = os.path.join(config.PLOT_DIR_MICROBENCH, arch)
-    plt.savefig(
-        f"{path}_pgtable.svg", bbox_inches="tight", pad_inches=0, dpi=300
-    )
-    plt.savefig(
-        f"{path}_pgtable.png", bbox_inches="tight", pad_inches=0, dpi=300
-    )
+    # plt.savefig(
+    #     f"{path}_pgtable.png", bbox_inches="tight", pad_inches=0, dpi=300
+    # )
 
 
 # def plot_microbench_sync(
@@ -443,11 +448,6 @@ def plot_microbench_alloc(
         gridspec_kw={"wspace": 0.05},
     )
 
-    palettes = [
-        sns.color_palette(config.CARREFOUR_COLOR, n_colors=2),
-        sns.color_palette(config.SPARE_COLOR, n_colors=9)[6],
-    ]
-
     sns.set_style("ticks")
     sns.set_context("paper")
 
@@ -515,7 +515,7 @@ def plot_microbench_alloc(
                     zorder=3,
                 )
 
-        sns.despine(ax=ax, left=tidx != 0)
+        sns.despine(ax=ax, left=True)
         if tidx != 0:
             ax.tick_params(
                 labelleft=False,
@@ -530,8 +530,10 @@ def plot_microbench_alloc(
         ax.yaxis.set_major_locator(mtick.MaxNLocator(nbins=4))
         ax.yaxis.set_major_formatter(mtick.FormatStrFormatter("%.1f"))
 
-    axes[0].set_ylabel("repl", fontsize=7)
+    # axes[0].set_ylabel("repl", fontsize=7)
+    axes[0].yaxis.set_visible(False)
     axes[0].yaxis.set_label_coords(-0.50, 0.5)  # align vertically
+    axes[0].set_ylim(1.0, 18)
 
     # for midx, ylabel in enumerate(ylabels):
     #     axes[midx][0].set_ylabel(ylabel, fontsize=7)
@@ -539,7 +541,7 @@ def plot_microbench_alloc(
 
     fig.tight_layout()
     plt.subplots_adjust(top=0.9)
-    path = os.path.join(config.PLOT_DIR_MICROBENCH, arch)
+    path = os.path.join(config.PLOT_DIR_MICROBENCH, config.ARCH_SUBNAMES[arch])
     plt.savefig(f"{path}_alloc.svg", bbox_inches="tight", pad_inches=0, dpi=300)
     plt.savefig(f"{path}_alloc.png", bbox_inches="tight", pad_inches=0, dpi=300)
 
