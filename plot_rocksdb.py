@@ -10,7 +10,41 @@ import numpy as np
 RESULT_DIR = config.RESULT_DIR
 
 
+def get_std():
+    for arch in os.listdir(RESULT_DIR):
+        arch_dir = os.path.join(RESULT_DIR, arch, "rocksdb", "outputs")
+        if not os.path.isdir(arch_dir):
+            continue
+
+        for benchmark in os.listdir(arch_dir):
+            benchmark_path = os.path.join(arch_dir, benchmark)
+            if os.path.isdir(benchmark_path):
+                csv_file = next(
+                    (
+                        f
+                        for f in os.listdir(benchmark_path)
+                        if f.endswith(".log.r.csv")
+                    ),
+                    None,
+                )
+                if csv_file:
+                    csv_path = os.path.join(benchmark_path, csv_file)
+                    data = pd.read_csv(csv_path)
+                    values = pd.to_numeric(
+                        data["interval_qps"], errors="coerce"
+                    )
+
+                    mean_val = values.mean()
+                    std_val = values.std()
+
+                    print(
+                        f"{arch}: {benchmark}: mean = {mean_val:.2f}, std = {std_val:.2f}, std percent = {(std_val / mean_val) * 100:.2f}"
+                    )
+
+
 def make_plot_rocksdb():
+    get_std()
+    return
     os.makedirs(config.PLOT_DIR_ROCKSDB, exist_ok=True)
 
     methods = [

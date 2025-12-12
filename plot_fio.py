@@ -48,6 +48,7 @@ def make_plot_fio_arch(arch):
         "read",
         combined_df,
         value_col="read_bw_gb",
+        std_col="read_bw_std",
         ylabel="$\mathbf{Read}$ Bandwidth (GB/s)",
     )
     plot_fio(
@@ -55,6 +56,7 @@ def make_plot_fio_arch(arch):
         "write",
         combined_df,
         value_col="write_bw_gb",
+        std_col="write_bw_std",
         ylabel="$\mathbf{Write}$ Bandwidth (GB/s)",
     )
 
@@ -97,12 +99,21 @@ def get_data(arch: str) -> pd.DataFrame:
         write_bw_gb = 0
 
         for job in json_data.get("jobs", []):
-            read_bw_gb = job.get("read", {}).get("bw_bytes", 0) / (
-                1000 * 1000 * 1000
-            )
-            write_bw_gb = job.get("write", {}).get("bw_bytes", 0) / (
-                1000 * 1000 * 1000
-            )
+            read_stats = job.get("read", {})
+            write_stats = job.get("write", {})
+
+            read_bw_gb = read_stats.get("bw_bytes", 0) / (1000**3)
+            write_bw_gb = write_stats.get("bw_bytes", 0) / (1000**3)
+            # read_bw_gb = read_stats.get("bw_mean", 0) / (1024**2)
+            # write_bw_gb = write_stats.get("bw_mean", 0) / (1024**2)
+
+            rbm = read_stats.get("bw_mean", 0) / (1000**2)
+            rbd = read_stats.get("bw_dev", 0) / (1000**2)
+            wbm = write_stats.get("bw_mean", 0) / (1000**2)
+            wbd = write_stats.get("bw_dev", 0) / (1000**2)
+
+            read_bw_std_pct = (rbd / rbm) * 100 if rbm > 0 else 0
+            write_bw_std_pct = (wbd / wbm) * 100 if wbm > 0 else 0
 
         tag = ""
         if is_repl:
@@ -119,6 +130,10 @@ def get_data(arch: str) -> pd.DataFrame:
                     "writeratio": writeratio,
                     "read_bw_gb": read_bw_gb,
                     "write_bw_gb": write_bw_gb,
+                    # "read_bw_std": rbd,
+                    # "write_bw_std": wbd,
+                    "read_bw_std_pct": read_bw_std_pct,
+                    "write_bw_std_pct": write_bw_std_pct,
                     "benchmark": f"{benchmark}_{distrib}",
                     "tag": tag,
                 }
@@ -127,10 +142,15 @@ def get_data(arch: str) -> pd.DataFrame:
         data.append(df)
 
     combined_df = pd.concat(data, ignore_index=True)
+
+    print(
+        f"Avg std percent — Read:  {combined_df['read_bw_std_pct'].mean():.3f}%  Write: {combined_df['write_bw_std_pct'].mean():.3f}%"
+    )
+
     return combined_df
 
 
-def plot_fio(arch, title, df_param, value_col, ylabel):
+def plot_fio(arch, title, df_param, value_col, std_col, ylabel):
     df = df_param.copy()
     df["readratio"] = df["readratio"].astype(int)
 
@@ -147,18 +167,34 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
         df_default.loc[r, value_col] if r in df_default.index else 0
         for r in read_ratios
     ]
+    # read_std_default = [
+    #     df_default.loc[r, std_col] if r in df_default.index else 0
+    #     for r in read_ratios
+    # ]
     read_bw_normal = [
         df_normal.loc[r, value_col] if r in df_normal.index else 0
         for r in read_ratios
     ]
+    # read_std_normal = [
+    #     df_normal.loc[r, std_col] if r in df_normal.index else 0
+    #     for r in read_ratios
+    # ]
     read_bw_repl = [
         df_repl.loc[r, value_col] if r in df_repl.index else 0
         for r in read_ratios
     ]
+    # read_std_repl = [
+    #     df_repl.loc[r, std_col] if r in df_repl.index else 0
+    #     for r in read_ratios
+    # ]
     read_bw_unrepl = [
         df_unrepl.loc[r, value_col] if r in df_unrepl.index else 0
         for r in read_ratios
     ]
+    # read_std_unrepl = [
+    #     df_unrepl.loc[r, std_col] if r in df_unrepl.index else 0
+    #     for r in read_ratios
+    # ]
 
     plt.rcParams.update({"font.family": "serif", "font.serif": "DejaVu Serif"})
 
@@ -175,6 +211,8 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
         x - 1.5 * width,
         read_bw_default,
         width,
+        # yerr=read_std_default,
+        # error_kw=dict(lw=0.1, capthick=0.1),
         label="Vanilla",
         capsize=3,
         color=linux[1],
@@ -186,6 +224,8 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
         x - 0.5 * width,
         read_bw_normal,
         width,
+        # yerr=read_std_normal,
+        # error_kw=dict(lw=0.1, capthick=0.1),
         label="NumaBalancing",
         capsize=3,
         color=linux[3],
@@ -197,6 +237,8 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
         x + 0.5 * width,
         read_bw_repl,
         width,
+        # yerr=read_std_repl,
+        # error_kw=dict(lw=0.1, capthick=0.1),
         label="SPaRe",
         capsize=3,
         color=palette[5],
@@ -208,6 +250,8 @@ def plot_fio(arch, title, df_param, value_col, ylabel):
         x + 1.5 * width,
         read_bw_unrepl,
         width,
+        # yerr=read_std_unrepl,
+        # error_kw=dict(lw=0.1, capthick=0.1),
         label="SPaRe Unreplication",
         capsize=3,
         color=palette[7],

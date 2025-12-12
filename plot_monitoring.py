@@ -10,6 +10,8 @@ RESULT_DIR = config.RESULT_DIR
 TIME_WINDOWS = {
     "ann": [("2025-11-30T20:56:35.144994", "2025-11-30T20:57:09.636315")],
     "ann-repl": [("2025-12-01T01:10:02.109631", "2025-12-01T01:10:23.984930")],
+    # "ann": [("2025-12-02T23:38:44.343160", "2025-12-02T23:39:12.623384")],
+    # "ann-repl": [("2025-12-02T19:10:27.466445", "2025-12-02T19:10:42.419298")],
     # "rocksdb": [("2025-11-23T20:53:08.628380", "2025-12-01T01:53:22.633492")],
     # "tmp": [("2025-12-01T01:10:47.574730", "2025-12-01T01:53:22.633492")],
     # "tmp": [
@@ -130,7 +132,8 @@ def show_interesting_data(variant, df_pcm, df_pcm_memory, df_mem):
     if variant != "ann" and variant != "ann-repl":
         return
 
-    arch = "IntelR_XeonR_Silver_4216_CPU_@_2.10GHz_X86_64"
+    # arch = "IntelR_XeonR_Silver_4216_CPU_@_2.10GHz_X86_64"
+    arch = "IntelR_XeonR_Gold_6130_CPU_@_2.10GHz_X86_64"
     df_pcm = extract_variant_data(
         df_pcm, variant, arch, True, "System", "System"
     )

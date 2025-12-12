@@ -152,24 +152,29 @@ def plot_microbench_sync(
                     ["mean", "std"]
                 )
                 mean_col = "mean_norm"
+                std_col = "std_norm"
 
                 default_val = agg.loc["pgtable_norepl_default", "mean"]
                 agg["mean_norm"] = agg["mean"] / default_val
+                agg["std_norm"] = agg["std"] / default_val
 
                 agg = agg.reindex(tags, fill_value=0)
                 ntags = 0
 
                 xpos = np.arange(len(tags))
                 height = agg.loc[tag, mean_col]
+                yerr_val = agg.loc[tag, std_col]
                 ntags += 1
 
                 bar = ax.bar(
                     xpos[i],
                     height,
                     width=1.0,
+                    yerr=yerr_val,
                     capsize=1.0,
                     color=palettes[i],
                     edgecolor=palettes[i],
+                    error_kw=dict(lw=0.5, capthick=0.5),
                     linewidth=0.25,
                     zorder=2,
                 )
@@ -443,7 +448,7 @@ def plot_microbench_alloc(
     fig, axes = plt.subplots(
         nrows=1,
         ncols=n_threads,
-        figsize=(3.2, 1.2),
+        figsize=(3.2, 1.8),
         sharey=True,
         gridspec_kw={"wspace": 0.05},
     )
@@ -484,6 +489,7 @@ def plot_microbench_alloc(
 
             tag = "alloc_repl_repl"
             height = agg.loc[tag, mean_col]
+            yerr_val = agg.loc[tag, std_col]
             ntags += 1
 
             group_offset = (i - 0.5) * bar_width
@@ -493,13 +499,13 @@ def plot_microbench_alloc(
                 x,
                 height,
                 width=bar_width,
-                # yerr=yerr_val,
+                yerr=yerr_val,
                 label=tag_labels.get(tag, tag),
                 capsize=1.0,
                 color=palettes[i],
                 edgecolor=palettes[i],
                 linewidth=0.25,
-                # error_kw=dict(lw=0.6, capthick=0.6),
+                error_kw=dict(lw=0.6, capthick=0.6),
                 zorder=2,
             )
 
