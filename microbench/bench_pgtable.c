@@ -17,8 +17,8 @@ static void *pgtable_worker(void *arg) {
     struct timespec t_unmap_start, t_unmap_end;
     clock_gettime(CLOCK_MONOTONIC, &t_unmap_start);
 
-    for (size_t i = 0; i < size; i += PAGE_SIZE * 4)
-      munmap((char *)array + i, PAGE_SIZE * 4);
+    for (size_t i = 0; i < size; i += PAGE_SIZE * 16)
+      munmap((char *)array + i, PAGE_SIZE * 16);
 
     clock_gettime(CLOCK_MONOTONIC, &t_unmap_end);
     double unmap_elapsed = elapsed_time(t_unmap_start, t_unmap_end);
@@ -39,7 +39,7 @@ int main(int argc, char **argv) {
     run_and_join_on_all_threads(pgtable_worker);
   }
 
-  if (repl_enabled) {
+  if (!repl_enabled) {
     printf("> mmap without replication after replication\n");
     repl_enabled = 0;
     for (round = 0; round < NB_ROUNDS; round++) {

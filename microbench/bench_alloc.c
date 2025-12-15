@@ -18,8 +18,6 @@ int main(int argc, char **argv) {
   common_init(argc, argv);
   logger = csv_init("alloc", "elapsed_ms");
   int nb_rounds = NB_ROUNDS;
-  if (use_madvise)
-    nb_rounds = 10;
 
   for (int i = 0; i < nb_rounds; i++) {
     struct timespec start, end;

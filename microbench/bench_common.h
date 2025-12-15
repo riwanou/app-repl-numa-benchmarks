@@ -15,7 +15,7 @@
 #include <unistd.h>
 
 #define ARRAY_NB_ENTRIES (1024UL * 1024UL * 32UL)
-#define NB_ROUNDS 5
+#define NB_ROUNDS 20
 
 unsigned int *array;
 int repl_enabled;

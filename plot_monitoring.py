@@ -12,7 +12,8 @@ TIME_WINDOWS = {
     "ann-repl": [("2025-12-01T01:10:02.109631", "2025-12-01T01:10:23.984930")],
     # "ann": [("2025-12-02T23:38:44.343160", "2025-12-02T23:39:12.623384")],
     # "ann-repl": [("2025-12-02T19:10:27.466445", "2025-12-02T19:10:42.419298")],
-    # "rocksdb": [("2025-11-23T20:53:08.628380", "2025-12-01T01:53:22.633492")],
+    "tmp": [("2025-12-17T11:07:15.581004", "2025-12-17T11:32:26.815946")],
+    "tmp-repl": [("2025-12-17T11:34:40.114263", "2025-12-17T12:00:08.974248")],
     # "tmp": [("2025-12-01T01:10:47.574730", "2025-12-01T01:53:22.633492")],
     # "tmp": [
     #     # ("2025-09-04T13:45:12.489159", "2025-09-04T13:53:20.251285"),
@@ -47,12 +48,13 @@ def make_plot_monitoring():
     plot("ann-repl")
     plot("rocksdb-repl")
     plot("tmp")
+    plot("tmp-repl")
 
 
 def plot(variant: str):
     df_pcm, df_pcm_memory, df_mem = get_data(variant)
-    # plot_pcm(df_pcm, variant)
-    # plot_pcm_memory(df_pcm_memory, variant)
+    plot_pcm(df_pcm, variant)
+    plot_pcm_memory(df_pcm_memory, variant)
     # plot_mem(df_mem, variant)
 
 
@@ -387,7 +389,9 @@ def plot_pcm(df, variant: str):
         ax.tick_params(axis="x")
 
         plt.tight_layout()
-        path = os.path.join(config.PLOT_DIR_MONITORING, arch)
+        path = os.path.join(
+            config.PLOT_DIR_MONITORING, config.ARCH_SUBNAMES[arch]
+        )
         plt.savefig(f"{path}_pcm_{variant}.png", bbox_inches="tight", dpi=300)
 
 
@@ -542,7 +546,9 @@ def plot_pcm_memory(df, variant: str):
         ax.tick_params(axis="x")
 
         plt.tight_layout()
-        path = os.path.join(config.PLOT_DIR_MONITORING, arch)
+        path = os.path.join(
+            config.PLOT_DIR_MONITORING, config.ARCH_SUBNAMES[arch]
+        )
         plt.savefig(
             f"{path}_pcm_memory_{variant}.png", bbox_inches="tight", dpi=300
         )
