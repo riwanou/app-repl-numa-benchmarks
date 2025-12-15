@@ -43,8 +43,8 @@ def get_std():
 
 
 def make_plot_rocksdb():
-    get_std()
-    return
+    # get_std()
+    # return
     os.makedirs(config.PLOT_DIR_ROCKSDB, exist_ok=True)
 
     methods = [
@@ -89,7 +89,7 @@ def make_plot_rocksdb():
         "imbalanced": linux[0],
         "": linux[1],
         "interleaved": linux[2],
-        "patched-repl": spare[5],
+        "patched-repl": spare[7],
     }
 
     all_data = []
@@ -223,7 +223,6 @@ def make_plot_rocksdb():
 
         fig.tight_layout(pad=0)
         path = os.path.join(
-            config.PLOT_DIR_ROCKSDB, f"{config.ARCH_SUBNAMES[arch]}_rocksdb.svg"
+            config.PLOT_DIR_ROCKSDB, f"{config.ARCH_SUBNAMES[arch]}_rocksdb.pdf"
         )
-        plt.savefig(path, bbox_inches="tight", pad_inches=0, dpi=300)
         plt.savefig(path, bbox_inches="tight", pad_inches=0, dpi=300)

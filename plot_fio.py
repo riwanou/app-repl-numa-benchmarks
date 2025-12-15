@@ -50,6 +50,7 @@ def make_plot_fio_arch(arch):
         value_col="read_bw_gb",
         std_col="read_bw_std",
         ylabel="$\mathbf{Read}$ Bandwidth (GB/s)",
+        is_write=False,
     )
     plot_fio(
         arch,
@@ -58,6 +59,7 @@ def make_plot_fio_arch(arch):
         value_col="write_bw_gb",
         std_col="write_bw_std",
         ylabel="$\mathbf{Write}$ Bandwidth (GB/s)",
+        is_write=True,
     )
 
 
@@ -104,8 +106,8 @@ def get_data(arch: str) -> pd.DataFrame:
 
             read_bw_gb = read_stats.get("bw_bytes", 0) / (1000**3)
             write_bw_gb = write_stats.get("bw_bytes", 0) / (1000**3)
-            # read_bw_gb = read_stats.get("bw_mean", 0) / (1024**2)
-            # write_bw_gb = write_stats.get("bw_mean", 0) / (1024**2)
+            # read_bw_gb = read_stats.get("bw_mean", 0) / (1000**2)
+            # write_bw_gb = write_stats.get("bw_mean", 0) / (1000**2)
 
             rbm = read_stats.get("bw_mean", 0) / (1000**2)
             rbd = read_stats.get("bw_dev", 0) / (1000**2)
@@ -130,8 +132,8 @@ def get_data(arch: str) -> pd.DataFrame:
                     "writeratio": writeratio,
                     "read_bw_gb": read_bw_gb,
                     "write_bw_gb": write_bw_gb,
-                    # "read_bw_std": rbd,
-                    # "write_bw_std": wbd,
+                    "read_bw_std": rbd,
+                    "write_bw_std": wbd,
                     "read_bw_std_pct": read_bw_std_pct,
                     "write_bw_std_pct": write_bw_std_pct,
                     "benchmark": f"{benchmark}_{distrib}",
@@ -150,7 +152,7 @@ def get_data(arch: str) -> pd.DataFrame:
     return combined_df
 
 
-def plot_fio(arch, title, df_param, value_col, std_col, ylabel):
+def plot_fio(arch, title, df_param, value_col, std_col, ylabel, is_write=False):
     df = df_param.copy()
     df["readratio"] = df["readratio"].astype(int)
 
@@ -167,34 +169,34 @@ def plot_fio(arch, title, df_param, value_col, std_col, ylabel):
         df_default.loc[r, value_col] if r in df_default.index else 0
         for r in read_ratios
     ]
-    # read_std_default = [
-    #     df_default.loc[r, std_col] if r in df_default.index else 0
-    #     for r in read_ratios
-    # ]
+    read_std_default = [
+        df_default.loc[r, std_col] if r in df_default.index else 0
+        for r in read_ratios
+    ]
     read_bw_normal = [
         df_normal.loc[r, value_col] if r in df_normal.index else 0
         for r in read_ratios
     ]
-    # read_std_normal = [
-    #     df_normal.loc[r, std_col] if r in df_normal.index else 0
-    #     for r in read_ratios
-    # ]
+    read_std_normal = [
+        df_normal.loc[r, std_col] if r in df_normal.index else 0
+        for r in read_ratios
+    ]
     read_bw_repl = [
         df_repl.loc[r, value_col] if r in df_repl.index else 0
         for r in read_ratios
     ]
-    # read_std_repl = [
-    #     df_repl.loc[r, std_col] if r in df_repl.index else 0
-    #     for r in read_ratios
-    # ]
+    read_std_repl = [
+        df_repl.loc[r, std_col] if r in df_repl.index else 0
+        for r in read_ratios
+    ]
     read_bw_unrepl = [
         df_unrepl.loc[r, value_col] if r in df_unrepl.index else 0
         for r in read_ratios
     ]
-    # read_std_unrepl = [
-    #     df_unrepl.loc[r, std_col] if r in df_unrepl.index else 0
-    #     for r in read_ratios
-    # ]
+    read_std_unrepl = [
+        df_unrepl.loc[r, std_col] if r in df_unrepl.index else 0
+        for r in read_ratios
+    ]
 
     plt.rcParams.update({"font.family": "serif", "font.serif": "DejaVu Serif"})
 
@@ -212,9 +214,9 @@ def plot_fio(arch, title, df_param, value_col, std_col, ylabel):
         read_bw_default,
         width,
         # yerr=read_std_default,
-        # error_kw=dict(lw=0.1, capthick=0.1),
+        # error_kw=dict(lw=1, capthick=1),
+        # capsize=0.3,
         label="Vanilla",
-        capsize=3,
         color=linux[1],
         edgecolor=linux[1],
         linewidth=0.3,
@@ -225,9 +227,9 @@ def plot_fio(arch, title, df_param, value_col, std_col, ylabel):
         read_bw_normal,
         width,
         # yerr=read_std_normal,
-        # error_kw=dict(lw=0.1, capthick=0.1),
+        # error_kw=dict(lw=1, capthick=1),
+        # capsize=0.3,
         label="NumaBalancing",
-        capsize=3,
         color=linux[3],
         edgecolor=linux[3],
         linewidth=0.3,
@@ -238,9 +240,9 @@ def plot_fio(arch, title, df_param, value_col, std_col, ylabel):
         read_bw_repl,
         width,
         # yerr=read_std_repl,
-        # error_kw=dict(lw=0.1, capthick=0.1),
-        label="SPaRe",
-        capsize=3,
+        # error_kw=dict(lw=1, capthick=1),
+        # capsize=0.3,
+        label="SPaRe (No Unreplication)",
         color=palette[5],
         edgecolor=palette[5],
         linewidth=0.3,
@@ -251,9 +253,9 @@ def plot_fio(arch, title, df_param, value_col, std_col, ylabel):
         read_bw_unrepl,
         width,
         # yerr=read_std_unrepl,
-        # error_kw=dict(lw=0.1, capthick=0.1),
-        label="SPaRe Unreplication",
-        capsize=3,
+        # error_kw=dict(lw=1, capthick=1),
+        # capsize=0.3,
+        label="SPaRe",
         color=palette[7],
         edgecolor=palette[7],
         linewidth=0.3,
@@ -283,13 +285,19 @@ def plot_fio(arch, title, df_param, value_col, std_col, ylabel):
     ax.yaxis.set_major_locator(mtick.MaxNLocator(nbins=6))
     ax.set_xlabel("Read Ratio (%)", fontsize=6)
 
+    # legend inside figure
+    ax.legend(
+        loc="upper left" if not is_write else "upper right",
+        fontsize=5,
+        ncol=1,
+        framealpha=0.8,
+        edgecolor="none",
+    )
+
     fig.tight_layout()
     path = os.path.join(config.PLOT_DIR_FIO, config.ARCH_SUBNAMES[arch])
     plt.savefig(
-        f"{path}_{title}.svg", bbox_inches="tight", pad_inches=0, dpi=300
-    )
-    plt.savefig(
-        f"{path}_{title}.png", bbox_inches="tight", pad_inches=0, dpi=300
+        f"{path}_{title}.pdf", bbox_inches="tight", pad_inches=0, dpi=300
     )
 
     handles, labels = ax.get_legend_handles_labels()
@@ -305,6 +313,6 @@ def plot_fio(arch, title, df_param, value_col, std_col, ylabel):
 
     fig_legend.subplots_adjust(left=0, right=1, top=1, bottom=0)
     path = os.path.join(config.PLOT_DIR_FIO, "legend")
-    plt.savefig(f"{path}.svg", bbox_inches="tight", pad_inches=0, dpi=300)
-    plt.savefig(f"{path}.png", bbox_inches="tight", pad_inches=0, dpi=300)
+    # plt.savefig(f"{path}.pdf", bbox_inches="tight", pad_inches=0, dpi=300)
+    # plt.savefig(f"{path}.png", bbox_inches="tight", pad_inches=0, dpi=300)
     plt.close(fig_legend)

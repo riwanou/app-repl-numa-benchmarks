@@ -9,7 +9,7 @@ import re
 
 palettes = [
     sns.color_palette(config.CARREFOUR_COLOR, n_colors=9)[3],
-    sns.color_palette(config.SPARE_COLOR, n_colors=9)[5],
+    sns.color_palette(config.SPARE_COLOR, n_colors=9)[7],
 ]
 
 RESULT_DIR = config.RESULT_DIR
@@ -132,7 +132,7 @@ def plot_microbench_sync(
         fig, axes = plt.subplots(
             nrows=1,
             ncols=n_threads,
-            figsize=(3.2, 1.2),
+            figsize=(3.2, 1.1),
             sharey=True,
             gridspec_kw={"wspace": 0.05},
         )
@@ -170,6 +170,7 @@ def plot_microbench_sync(
                     xpos[i],
                     height,
                     width=1.0,
+                    label=method,
                     yerr=yerr_val,
                     capsize=1.0,
                     color=palettes[i],
@@ -206,19 +207,31 @@ def plot_microbench_sync(
 
             ax.yaxis.set_major_locator(mtick.MaxNLocator(nbins=3))
             ax.yaxis.set_major_formatter(mtick.FormatStrFormatter("%.1f"))
-            ax.set_ylim(1.0, 18)
+            ax.set_ylim(1.0, 22)
 
         axes[0].yaxis.set_visible(False)
+
+        if tag == "pgtable_norepl_repl":
+            handles, labels = axes[0].get_legend_handles_labels()
+            fig.legend(
+                handles,
+                ["Carrefour", "SPaRe"],
+                bbox_to_anchor=(0.5, 1.0),
+                loc="upper center",
+                fontsize=8,
+                ncol=len(handles),
+                edgecolor="none",
+            )
 
         path = os.path.join(
             config.PLOT_DIR_MICROBENCH, config.ARCH_SUBNAMES[arch]
         )
         plt.savefig(
-            f"{path}_{tag}.svg", bbox_inches="tight", pad_inches=0, dpi=300
+            f"{path}_{tag}.pdf", bbox_inches="tight", pad_inches=0, dpi=300
         )
-        plt.savefig(
-            f"{path}_{tag}.png", bbox_inches="tight", pad_inches=0, dpi=300
-        )
+        # plt.savefig(
+        #     f"{path}_{tag}.png", bbox_inches="tight", pad_inches=0, dpi=300
+        # )
         plt.close(fig)
 
     # axes[0][0].set_ylabel("not repl", fontsize=7)
@@ -448,7 +461,7 @@ def plot_microbench_alloc(
     fig, axes = plt.subplots(
         nrows=1,
         ncols=n_threads,
-        figsize=(3.2, 1.8),
+        figsize=(3.2, 1.1),
         sharey=True,
         gridspec_kw={"wspace": 0.05},
     )
@@ -539,7 +552,7 @@ def plot_microbench_alloc(
     # axes[0].set_ylabel("repl", fontsize=7)
     axes[0].yaxis.set_visible(False)
     axes[0].yaxis.set_label_coords(-0.50, 0.5)  # align vertically
-    axes[0].set_ylim(1.0, 18)
+    axes[0].set_ylim(1.0, 22)
 
     # for midx, ylabel in enumerate(ylabels):
     #     axes[midx][0].set_ylabel(ylabel, fontsize=7)
@@ -548,8 +561,9 @@ def plot_microbench_alloc(
     fig.tight_layout()
     plt.subplots_adjust(top=0.9)
     path = os.path.join(config.PLOT_DIR_MICROBENCH, config.ARCH_SUBNAMES[arch])
-    plt.savefig(f"{path}_alloc.svg", bbox_inches="tight", pad_inches=0, dpi=300)
-    plt.savefig(f"{path}_alloc.png", bbox_inches="tight", pad_inches=0, dpi=300)
+    # plt.savefig(f"{path}_alloc.svg", bbox_inches="tight", pad_inches=0, dpi=300)
+    plt.savefig(f"{path}_alloc.pdf", bbox_inches="tight", pad_inches=0, dpi=300)
+    # plt.savefig(f"{path}_alloc.png", bbox_inches="tight", pad_inches=0, dpi=300)
 
     handles, labels = axes[0].get_legend_handles_labels()
     fig_legend = plt.figure(figsize=(3.3, 0.5))
@@ -563,6 +577,5 @@ def plot_microbench_alloc(
     )
     fig_legend.subplots_adjust(left=0, right=1, top=1, bottom=0)
     path = os.path.join(config.PLOT_DIR_MICROBENCH, "legend")
-    plt.savefig(f"{path}.svg", bbox_inches="tight", pad_inches=0, dpi=300)
-    plt.savefig(f"{path}.png", bbox_inches="tight", pad_inches=0, dpi=300)
+    # plt.savefig(f"{path}.pdf", bbox_inches="tight", pad_inches=0, dpi=300)
     plt.close(fig_legend)

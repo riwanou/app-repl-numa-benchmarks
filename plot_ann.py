@@ -37,7 +37,7 @@ palettes = {
     "imbalanced-memory": linux[0],
     "default": linux[1],
     "interleaved-memory": linux[2],
-    "patched-repl": spare[5],
+    "patched-repl": spare[7],
 }
 
 
@@ -258,10 +258,7 @@ def plot_main(df_main: pd.DataFrame):
         # fig.tight_layout(pad=0)
         path = os.path.join(config.PLOT_DIR_ANN, config.ARCH_SUBNAMES[arch])
         plt.savefig(
-            f"{path}_ann.svg", bbox_inches="tight", pad_inches=0, dpi=300
-        )
-        plt.savefig(
-            f"{path}_ann.png", bbox_inches="tight", pad_inches=0, dpi=300
+            f"{path}_ann.pdf", bbox_inches="tight", pad_inches=0, dpi=300
         )
         plt.close(fig)
 
@@ -278,8 +275,7 @@ def plot_main(df_main: pd.DataFrame):
         # legend.get_frame().set_linewidth(0.3)
         fig_legend.subplots_adjust(left=0, right=1, top=1, bottom=0)
         path = os.path.join(config.PLOT_DIR_ANN, "legend")
-        plt.savefig(f"{path}.svg", bbox_inches="tight", pad_inches=0, dpi=300)
-        plt.savefig(f"{path}.png", bbox_inches="tight", pad_inches=0, dpi=300)
+        plt.savefig(f"{path}.pdf", bbox_inches="tight", pad_inches=0, dpi=300)
         plt.close(fig_legend)
 
 
