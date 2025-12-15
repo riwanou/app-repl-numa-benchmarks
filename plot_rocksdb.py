@@ -93,7 +93,6 @@ def make_plot_rocksdb():
     }
 
     all_data = []
-    arch = "IntelR_XeonR_Gold_6130_CPU_@_2.10GHz_X86_64"
     for arch in os.listdir(RESULT_DIR):
         arch_dir = os.path.join(RESULT_DIR, arch, "rocksdb")
         if not os.path.isdir(arch_dir):
@@ -104,7 +103,20 @@ def make_plot_rocksdb():
             continue
 
         df = pd.read_csv(csv_path)
+
         df["arch"] = arch
+
+        if "nb_runs" in df.columns:
+            df = (
+                df.groupby(["tag", "test", "arch"])["mb_sec"]
+                .agg(mb_sec_mean="mean", mb_sec_std="std")
+                .reset_index()
+            )
+        else:
+            df["mb_sec_mean"] = df["mb_sec"]
+            df["mb_sec_std"] = float("nan")
+            df = df[["tag", "test", "arch", "mb_sec_mean", "mb_sec_std"]]
+
         all_data.append(df)
 
     df_all = pd.concat(all_data, ignore_index=True)
@@ -115,11 +127,12 @@ def make_plot_rocksdb():
         if default_row.empty:
             return group
 
-        default_mean = default_row["mb_sec"].iloc[0]
+        default_mean = default_row["mb_sec_mean"].iloc[0]
         group = group.copy()
-        group["mb_sec_pct"] = (
-            100 * (group["mb_sec"] - default_mean) / default_mean
+        group["mb_sec_mean_pct"] = (
+            100 * (group["mb_sec_mean"] - default_mean) / default_mean
         )
+        group["mb_sec_std_pct"] = 100 * group["mb_sec_std"] / default_mean
 
         return group
 
@@ -155,6 +168,7 @@ def make_plot_rocksdb():
 
         for i, tag in enumerate(tags_order):
             means = []
+            stds = []
             for method in methods:
                 expected_tag = f"{tag}-{method}"
                 if tag == "":
@@ -163,9 +177,11 @@ def make_plot_rocksdb():
                     arch_data[(arch_data["tag"] == expected_tag)]
                 )
                 if len(row) > 0:
-                    means.append(row.iloc[0]["mb_sec_pct"])
+                    means.append(row.iloc[0]["mb_sec_mean_pct"])
+                    stds.append(row.iloc[0]["mb_sec_std_pct"])
                 else:
                     means.append(0)
+                    stds.append(0)
 
             positions = [
                 pos
@@ -179,9 +195,11 @@ def make_plot_rocksdb():
                 means,
                 width=bar_width,
                 label=tag_labels[tag],
-                capsize=1,
                 color=palettes[tag],
                 edgecolor=palettes[tag],
+                yerr=stds,
+                capsize=0.6,
+                error_kw={"linewidth": 0.4, "capthick": 0.4},
                 linewidth=0.25,
             )
 
