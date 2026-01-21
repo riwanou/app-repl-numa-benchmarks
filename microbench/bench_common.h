@@ -151,13 +151,18 @@ void *allocate_buffer_platform(int repl, size_t buf_size) {
   return buf_array;
 }
 
-void touch_buffer(int repl, char *buffer, size_t buf_size) {
-  for (size_t i = 0; i < buf_size; i++) {
+void touch_buffer_write(int repl, char *buffer, size_t buf_size) {
+  for (size_t i = 0; i < buf_size; i += PAGE_SIZE)
     buffer[i] = (char)i;
-  }
-  if (use_madvise && repl) {
+  if (use_madvise && repl)
     assert(madvise(buffer, size, MADV_REPLICATE) == 0);
-  }
+}
+
+void touch_buffer_read(char *buffer, size_t buf_size) {
+  volatile char tmp;
+  for (size_t i = 0; i < buf_size; i += PAGE_SIZE)
+    tmp = buffer[i];
+  tmp++;
 }
 
 void run_and_join_on_all_threads(void *thread_fn(void *args)) {
