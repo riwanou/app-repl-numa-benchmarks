@@ -5,9 +5,13 @@ workdir="$2"
 shift 2
 cmd="$*"
 
-for cpu in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
-  echo performance | tee "$cpu" > /dev/null 2>&1
-done
+# perf governor
+echo performance > /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+# disable smt
+# echo off > /sys/devices/system/cpu/smt/control
+# disable frequency boosting
+echo 1 > /sys/devices/system/cpu/intel_pstate/no_turbo
+
 
 if [ ! -d "$workdir/app-repl-numa-benchmarks" ]; then
   git clone https://github.com/riwanou/app-repl-numa-benchmarks.git "$workdir/app-repl-numa-benchmarks"

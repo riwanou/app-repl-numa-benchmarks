@@ -18,6 +18,7 @@ pattern = re.compile(
     r"(?P<repl>_repl)?"  # matches "_repl" if present
     r"(?P<unrepl>_unrepl)?"  # matches "_unrepl" if present
     r"(?P<default>_default)?"  # matches "_default" if present
+    r"(?:_run(?P<run>\d+))?"  # match _run<nb_run>
     r"\.json$"  # exactly one .json at the end
 )
 
@@ -38,15 +39,25 @@ def make_plot_fio():
 
 def make_plot_fio_arch(arch):
     combined_df = get_data(arch)
-    combined_df = combined_df.sort_values(
+
+    agg_df = (
+        combined_df.groupby(["tag", "readratio", "writeratio", "benchmark"])
+        .agg(
+            read_bw_gb=("read_bw_gb", "mean"),
+            write_bw_gb=("write_bw_gb", "mean"),
+            read_bw_std=("read_bw_gb", "std"),  # std across runs
+            write_bw_std=("write_bw_gb", "std"),  # std across runs
+        )
+        .reset_index()
+    )
+    agg_df = agg_df.sort_values(
         by=["tag", "read_bw_gb"], ascending=False
     ).reset_index(drop=True)
-    # print(combined_df)
 
     plot_fio(
         arch,
         "read",
-        combined_df,
+        agg_df,
         value_col="read_bw_gb",
         std_col="read_bw_std",
         ylabel="$\mathbf{Read}$ Bandwidth (GB/s)",
@@ -55,7 +66,7 @@ def make_plot_fio_arch(arch):
     plot_fio(
         arch,
         "write",
-        combined_df,
+        agg_df,
         value_col="write_bw_gb",
         std_col="write_bw_std",
         ylabel="$\mathbf{Write}$ Bandwidth (GB/s)",
@@ -83,6 +94,7 @@ def get_data(arch: str) -> pd.DataFrame:
         is_repl = match["repl"] is not None
         is_unrepl = match["unrepl"] is not None
         is_default = match["default"] is not None
+        run = match["run"] if match["run"] else "1"
 
         if distrib != "random":
             continue
@@ -130,6 +142,7 @@ def get_data(arch: str) -> pd.DataFrame:
                 {
                     "readratio": readratio,
                     "writeratio": writeratio,
+                    "run": int(run),
                     "read_bw_gb": read_bw_gb,
                     "write_bw_gb": write_bw_gb,
                     "read_bw_std": rbd,
@@ -213,9 +226,9 @@ def plot_fio(arch, title, df_param, value_col, std_col, ylabel, is_write=False):
         x - 1.5 * width,
         read_bw_default,
         width,
-        # yerr=read_std_default,
-        # error_kw=dict(lw=1, capthick=1),
-        # capsize=0.3,
+        yerr=read_std_default,
+        error_kw={"linewidth": 0.4, "capthick": 0.4},
+        capsize=0.3,
         label="Vanilla",
         color=linux[1],
         edgecolor=linux[1],
@@ -226,9 +239,9 @@ def plot_fio(arch, title, df_param, value_col, std_col, ylabel, is_write=False):
         x - 0.5 * width,
         read_bw_normal,
         width,
-        # yerr=read_std_normal,
-        # error_kw=dict(lw=1, capthick=1),
-        # capsize=0.3,
+        yerr=read_std_normal,
+        error_kw={"linewidth": 0.4, "capthick": 0.4},
+        capsize=0.3,
         label="NumaBalancing",
         color=linux[3],
         edgecolor=linux[3],
@@ -239,9 +252,9 @@ def plot_fio(arch, title, df_param, value_col, std_col, ylabel, is_write=False):
         x + 0.5 * width,
         read_bw_repl,
         width,
-        # yerr=read_std_repl,
-        # error_kw=dict(lw=1, capthick=1),
-        # capsize=0.3,
+        yerr=read_std_repl,
+        error_kw={"linewidth": 0.4, "capthick": 0.4},
+        capsize=0.3,
         label="SPaRe (No Unreplication)",
         color=palette[5],
         edgecolor=palette[5],
@@ -252,9 +265,9 @@ def plot_fio(arch, title, df_param, value_col, std_col, ylabel, is_write=False):
         x + 1.5 * width,
         read_bw_unrepl,
         width,
-        # yerr=read_std_unrepl,
-        # error_kw=dict(lw=1, capthick=1),
-        # capsize=0.3,
+        yerr=read_std_unrepl,
+        error_kw={"linewidth": 0.4, "capthick": 0.4},
+        capsize=0.3,
         label="SPaRe",
         color=palette[7],
         edgecolor=palette[7],
