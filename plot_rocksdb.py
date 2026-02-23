@@ -105,6 +105,11 @@ def make_plot_rocksdb():
         df = pd.read_csv(csv_path)
 
         df["arch"] = arch
+        df["test"] = (
+            df["test"]
+            .str.replace(r"\.t\d+", "", regex=True)  # remove .t64
+            .str.replace(r"\.s\d+", "", regex=True)  # remove .s1
+        )
 
         if "nb_runs" in df.columns:
             df = (
