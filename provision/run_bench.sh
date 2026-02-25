@@ -10,7 +10,7 @@ echo performance > /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 # disable smt
 # echo off > /sys/devices/system/cpu/smt/control
 # disable frequency boosting
-echo 1 > /sys/devices/system/cpu/intel_pstate/no_turbo
+# echo 1 > /sys/devices/system/cpu/intel_pstate/no_turbo
 
 
 if [ ! -d "$workdir/app-repl-numa-benchmarks" ]; then

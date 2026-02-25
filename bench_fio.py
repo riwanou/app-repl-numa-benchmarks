@@ -1,7 +1,7 @@
 import os
 from config import sh, RESULT_DIR_FIO
 
-RUNTIME = 180
+RUNTIME = 210
 NB_RUNS = 5
 
 
