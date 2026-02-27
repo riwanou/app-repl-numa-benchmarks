@@ -42,56 +42,41 @@ def get_std():
                     )
 
 
-def make_plot_rocksdb():
-    # get_std()
-    # return
-    os.makedirs(config.PLOT_DIR_ROCKSDB, exist_ok=True)
+METHODS = [
+    "readrandom",
+    "multireadrandom",
+    "fwdrange",
+    "revrange",
+    "overwrite",
+    "readwhilewriting",
+    "fwdrangewhilewriting",
+    "revrangewhilewriting",
+]
+METHODS_LABELS = [
+    "read",
+    "mread",
+    "fscan",
+    "rscan",
+    "overwrite",
+    "read-write",
+    "fscan-write",
+    "rscan-write",
+]
+TAGS_ORDER = [
+    "imbalanced",
+    "",
+    "interleaved",
+    "patched-repl",
+]
+TAG_LABELS = {
+    "imbalanced": "Imbalanced",
+    "": "Vanilla",
+    "interleaved": "Interleaved",
+    "patched-repl": "Replication",
+}
 
-    methods = [
-        "readrandom",
-        "multireadrandom",
-        "fwdrange",
-        "revrange",
-        "overwrite",
-        "readwhilewriting",
-        "fwdrangewhilewriting",
-        "revrangewhilewriting",
-    ]
-    methods_labels = [
-        "read",
-        "mread",
-        "fscan",
-        "rscan",
-        "overwrite",
-        "read-write",
-        "fscan-write",
-        "rscan-write",
-    ]
-    tags_order = [
-        "imbalanced",
-        "",
-        "interleaved",
-        # "balancing",
-        "patched-repl",
-        # "patched-repl-unrepl",
-    ]
-    tag_labels = {
-        "imbalanced": "Imbalanced",
-        "": "Vanilla",
-        "interleaved": "Interleaved",
-        # "balancing": "NumaBalancing",
-        "patched-repl": "Replication",
-        # "patched-repl-unrepl": "ReplicationDynamic",
-    }
-    linux = sns.color_palette(config.LINUX_COLOR, n_colors=5)
-    spare = sns.color_palette(config.SPARE_COLOR, n_colors=9)
-    palettes = {
-        "imbalanced": linux[0],
-        "": linux[1],
-        "interleaved": linux[2],
-        "patched-repl": spare[7],
-    }
 
+def _load_data():
     all_data = []
     for arch in os.listdir(RESULT_DIR):
         arch_dir = os.path.join(RESULT_DIR, arch, "rocksdb")
@@ -107,8 +92,8 @@ def make_plot_rocksdb():
         df["arch"] = arch
         df["test"] = (
             df["test"]
-            .str.replace(r"\.t\d+", "", regex=True)  # remove .t64
-            .str.replace(r"\.s\d+", "", regex=True)  # remove .s1
+            .str.replace(r"\.t\d+", "", regex=True)
+            .str.replace(r"\.s\d+", "", regex=True)
         )
 
         if "nb_runs" in df.columns:
@@ -124,26 +109,132 @@ def make_plot_rocksdb():
 
         all_data.append(df)
 
-    df_all = pd.concat(all_data, ignore_index=True)
+    return pd.concat(all_data, ignore_index=True)
 
-    def normalize_relative_to_default(group):
-        method = group.iloc[0]["test"].rsplit(".", 2)[0]
-        default_row = group[group["tag"] == f"balancing-{method}"]
-        if default_row.empty:
-            return group
 
-        default_mean = default_row["mb_sec_mean"].iloc[0]
-        group = group.copy()
-        group["mb_sec_mean_pct"] = (
-            100 * (group["mb_sec_mean"] - default_mean) / default_mean
-        )
-        group["mb_sec_std_pct"] = 100 * group["mb_sec_std"] / default_mean
-
+def _normalize_relative_to_default(group):
+    method = group.iloc[0]["test"].rsplit(".", 2)[0]
+    default_row = group[group["tag"] == f"balancing-{method}"]
+    if default_row.empty:
         return group
+
+    default_mean = default_row["mb_sec_mean"].iloc[0]
+    group = group.copy()
+    group["mb_sec_mean_pct"] = (
+        100 * (group["mb_sec_mean"] - default_mean) / default_mean
+    )
+    group["mb_sec_std_pct"] = 100 * group["mb_sec_std"] / default_mean
+
+    return group
+
+
+def _plot_bars(ax, arch_data, show_absolute=False):
+    bar_width = 0.11
+    bar_gap = 0.0
+    n_bars = len(TAGS_ORDER)
+    group_width = n_bars * bar_width + (n_bars - 1) * bar_gap
+    x = np.arange(len(METHODS)) * 0.63
+
+    linux = sns.color_palette(config.LINUX_COLOR, n_colors=5)
+    spare = sns.color_palette(config.SPARE_COLOR, n_colors=9)
+    palettes = {
+        "imbalanced": linux[0],
+        "": linux[1],
+        "interleaved": linux[2],
+        "patched-repl": spare[7],
+    }
+
+    for i, tag in enumerate(TAGS_ORDER):
+        means = []
+        stds = []
+        abs_values = []
+        abs_stds = []
+
+        for method in METHODS:
+            expected_tag = f"{tag}-{method}" if tag else method
+            row = arch_data[arch_data["tag"] == expected_tag]
+            if len(row) > 0:
+                means.append(row.iloc[0]["mb_sec_mean_pct"])
+                stds.append(row.iloc[0]["mb_sec_std_pct"])
+                abs_values.append(row.iloc[0]["mb_sec_mean"])
+                abs_stds.append(
+                    row.iloc[0]["mb_sec_std"]
+                    if pd.notna(row.iloc[0]["mb_sec_std"])
+                    else 0
+                )
+            else:
+                means.append(0)
+                stds.append(0)
+                abs_values.append(0)
+                abs_stds.append(0)
+
+        positions = [
+            pos - group_width / 2 + i * (bar_width + bar_gap) + bar_width / 2
+            for pos in x
+        ]
+
+        if show_absolute:
+            bar_values = abs_values
+            bar_stds = abs_stds
+        else:
+            bar_values = means
+            bar_stds = stds
+
+        if show_absolute:
+            error_kw = dict(lw=0.2, capthick=0.2)
+            capsize = 0.8
+        else:
+            error_kw = dict(lw=0.4, capthick=0.4)
+            capsize = 1.0
+
+        bars = ax.bar(
+            positions,
+            bar_values,
+            width=bar_width,
+            label=TAG_LABELS[tag],
+            color=palettes[tag],
+            edgecolor=palettes[tag],
+            yerr=bar_stds,
+            capsize=capsize,
+            error_kw=error_kw,
+            linewidth=0.25,
+        )
+
+        for rect, pct, abs_val in zip(bars, means, abs_values):
+            h = rect.get_height()
+            if h == 0:
+                continue
+
+            if show_absolute:
+                offset = 0.3 if h >= 0 else -0.3
+                va = "bottom" if h >= 0 else "top"
+                label = f"{pct:+.0f}%" if pct != 0 else f"{abs_val:.0f}"
+                color = "green" if pct > 0 else "red" if pct < 0 else "black"
+
+                ax.text(
+                    rect.get_x() + rect.get_width() / 2,
+                    h + offset,
+                    label,
+                    ha="center",
+                    va=va,
+                    fontsize=2,
+                    color=color,
+                )
+
+
+def make_plot_rocksdb():
+    _make_plot_rocksdb_variant(absolute=False)
+    _make_plot_rocksdb_variant(absolute=True)
+
+
+def _make_plot_rocksdb_variant(absolute=False):
+    os.makedirs(config.PLOT_DIR_ROCKSDB, exist_ok=True)
+
+    df_all = _load_data()
 
     df_all_norm = pd.DataFrame(
         df_all.groupby(["arch", "test"])[df_all.columns.tolist()]
-        .apply(normalize_relative_to_default, include_groups=True)
+        .apply(_normalize_relative_to_default, include_groups=True)
         .reset_index(drop=True)
     )
 
@@ -151,13 +242,12 @@ def make_plot_rocksdb():
     sns.set_context("paper")
 
     for arch in df_all_norm["arch"].unique():
-        arch_data = pd.DataFrame(df_all_norm[df_all_norm["arch"] == arch])
+        arch_data = df_all_norm[df_all_norm["arch"] == arch]
 
         plt.rcParams.update(
             {"font.family": "serif", "font.serif": "DejaVu Serif"}
         )
 
-        n_methods = len(methods)
         fig, ax = plt.subplots(
             nrows=1,
             ncols=1,
@@ -165,87 +255,32 @@ def make_plot_rocksdb():
             sharey=True,
         )
 
-        bar_width = 0.11
-        bar_gap = 0.0
-        n_bars = len(tags_order)
-        group_width = n_bars * bar_width + (n_bars - 1) * bar_gap
-        x = np.arange(n_methods) * 0.63
-
-        for i, tag in enumerate(tags_order):
-            means = []
-            stds = []
-            for method in methods:
-                expected_tag = f"{tag}-{method}"
-                if tag == "":
-                    expected_tag = f"{method}"
-                row = pd.DataFrame(
-                    arch_data[(arch_data["tag"] == expected_tag)]
-                )
-                if len(row) > 0:
-                    means.append(row.iloc[0]["mb_sec_mean_pct"])
-                    stds.append(row.iloc[0]["mb_sec_std_pct"])
-                else:
-                    means.append(0)
-                    stds.append(0)
-
-            positions = [
-                pos
-                - group_width / 2
-                + i * (bar_width + bar_gap)
-                + bar_width / 2
-                for pos in x
-            ]
-            ax.bar(
-                positions,
-                means,
-                width=bar_width,
-                label=tag_labels[tag],
-                color=palettes[tag],
-                edgecolor=palettes[tag],
-                yerr=stds,
-                capsize=0.6,
-                error_kw={"linewidth": 0.4, "capthick": 0.4},
-                linewidth=0.25,
-            )
-
-            # ax.bar(
-            #     positions,
-            #     means,
-            #     width=bar_width,
-            #     color="none",
-            #     hatch=hatches[i],
-            #     edgecolor="darkblue",
-            #     linewidth=0,
-            #     alpha=0.55,
-            # )
+        _plot_bars(ax, arch_data, show_absolute=absolute)
 
         sns.despine(ax=ax)
-        ax.axhline(0, linestyle="--", color="gray", linewidth=0.3, alpha=0.25)
+        if not absolute:
+            ax.axhline(
+                0, linestyle="--", color="gray", linewidth=0.3, alpha=0.25
+            )
 
         ax.tick_params(axis="y", labelsize=6, length=2)
         ax.tick_params(axis="x", labelsize=6, length=2)
 
-        ax.set_xticks(x)
-        ax.set_xticklabels(methods_labels, fontsize=7, rotation=25)
+        ax.set_xticks(np.arange(len(METHODS)) * 0.63)
+        ax.set_xticklabels(METHODS_LABELS, fontsize=7, rotation=25)
 
         ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
-        ax.set_ylabel("Improvement over \n NUMA Balancing (%)", fontsize=7)
-
-        # handles, labels = ax.get_legend_handles_labels()
-        # legend = fig.legend(
-        #     handles,
-        #     labels,
-        #     fontsize=4,
-        #     title_fontsize=9,
-        #     loc="upper right",
-        #     bbox_to_anchor=(1.0, 1.0),
-        #     edgecolor="white",
-        #     framealpha=1.0,
-        # )
-        # legend.get_frame().set_linewidth(0.4)
+        ax.set_ylabel(
+            "Throughput (MB/s)"
+            if absolute
+            else "Improvement over \n NUMA Balancing (%)",
+            fontsize=7,
+        )
 
         fig.tight_layout(pad=0)
+        suffix = "_rocksdb_abs" if absolute else "_rocksdb"
         path = os.path.join(
-            config.PLOT_DIR_ROCKSDB, f"{config.ARCH_SUBNAMES[arch]}_rocksdb.pdf"
+            config.PLOT_DIR_ROCKSDB, f"{config.ARCH_SUBNAMES[arch]}{suffix}.pdf"
         )
         plt.savefig(path, bbox_inches="tight", pad_inches=0, dpi=300)
+        plt.close()
