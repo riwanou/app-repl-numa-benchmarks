@@ -3,7 +3,7 @@ build: build-rocksdb build-fio build-llama build-micro
 bench: bench-ann bench-rocksdb bench-llama bench-fio
 bench-repl: bench-ann-repl bench-rocksdb-repl bench-llama-repl bench-fio-repl
 
-plot: plot-ann plot-rocksdb plot-fio plot-microbench
+plot: plot-ann plot-rocksdb plot-llama plot-fio plot-microbench
 
 build-rocksdb:
     #!/usr/bin/env bash
@@ -77,6 +77,9 @@ plot-ann:
 plot-rocksdb:
     uv run run.py plot-rocksdb
 
+plot-llama:
+    uv run run.py plot-llama
+
 plot-fio:
     uv run run.py plot-fio
 
@@ -85,3 +88,6 @@ plot-microbench:
 
 plot-monitoring:
     uv run run.py plot-monitoring
+
+analyze-runtime:
+    uv run python analyze_runtime.py

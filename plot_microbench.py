@@ -174,10 +174,10 @@ def plot_microbench_sync(
                     width=1.0,
                     label=method,
                     yerr=yerr_val,
-                    capsize=1.0,
+                    capsize=0.6,
                     color=palettes[i],
                     edgecolor=palettes[i],
-                    error_kw=dict(lw=0.5, capthick=0.5),
+                    error_kw=dict(lw=0.3, capthick=0.3),
                     linewidth=0.25,
                     zorder=2,
                 )
@@ -315,11 +315,11 @@ def plot_microbench_alloc(
                 width=bar_width,
                 yerr=yerr_val,
                 label=tag_labels.get(tag, tag),
-                capsize=1.0,
+                capsize=0.6,
                 color=palettes[i],
                 edgecolor=palettes[i],
                 linewidth=0.25,
-                error_kw=dict(lw=0.6, capthick=0.6),
+                error_kw=dict(lw=0.3, capthick=0.3),
                 zorder=2,
             )
 

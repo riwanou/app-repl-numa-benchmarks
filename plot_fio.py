@@ -222,13 +222,16 @@ def plot_fio(arch, title, df_param, value_col, std_col, ylabel, is_write=False):
     linux = sns.color_palette(config.LINUX_COLOR, n_colors=7)
     palette = sns.color_palette(config.SPARE_COLOR, n_colors=9)
 
+    error_kw = {"linewidth": 0.3, "capthick": 0.3}
+    capsize = 0.7
+
     ax.bar(
         x - 1.5 * width,
         read_bw_default,
         width,
         yerr=read_std_default,
-        error_kw={"linewidth": 0.4, "capthick": 0.4},
-        capsize=0.3,
+        error_kw=error_kw,
+        capsize=capsize,
         label="Vanilla",
         color=linux[1],
         edgecolor=linux[1],
@@ -240,8 +243,8 @@ def plot_fio(arch, title, df_param, value_col, std_col, ylabel, is_write=False):
         read_bw_normal,
         width,
         yerr=read_std_normal,
-        error_kw={"linewidth": 0.4, "capthick": 0.4},
-        capsize=0.3,
+        error_kw=error_kw,
+        capsize=capsize,
         label="NumaBalancing",
         color=linux[3],
         edgecolor=linux[3],
@@ -253,8 +256,8 @@ def plot_fio(arch, title, df_param, value_col, std_col, ylabel, is_write=False):
         read_bw_repl,
         width,
         yerr=read_std_repl,
-        error_kw={"linewidth": 0.4, "capthick": 0.4},
-        capsize=0.3,
+        error_kw=error_kw,
+        capsize=capsize,
         label="SPaRe (No Unreplication)",
         color=palette[5],
         edgecolor=palette[5],
@@ -266,8 +269,8 @@ def plot_fio(arch, title, df_param, value_col, std_col, ylabel, is_write=False):
         read_bw_unrepl,
         width,
         yerr=read_std_unrepl,
-        error_kw={"linewidth": 0.4, "capthick": 0.4},
-        capsize=0.3,
+        error_kw=error_kw,
+        capsize=capsize,
         label="SPaRe",
         color=palette[7],
         edgecolor=palette[7],
