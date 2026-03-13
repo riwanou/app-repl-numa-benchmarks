@@ -10,6 +10,7 @@ runtime=${RUNTIME}
 share_mmap=1
 repl=1
 norandommap=1
+ramp_time=30
 
 [writers]
 rw=randwrite
