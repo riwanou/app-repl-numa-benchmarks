@@ -62,7 +62,7 @@ def make_plot_ann():
     df_main_norm = normalize_data(df_main)
 
     plot_main(df_main_norm)
-    plot_main_abs(df_main_norm)
+    plot_main_abs(df_main, df_main_norm)
     plot_details(df_details)
 
 
@@ -112,23 +112,27 @@ def get_data(datasets) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 def normalize_data(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalize QPS relative to the 'numa-balancing' baseline."""
+    """Normalize QPS relative to the 'numa-balancing' baseline.
+    Groups without a numa-balancing row are silently dropped."""
 
     def _normalize(group):
-        baseline = group.loc[group["tag"] == "numa-balancing", "mean_qps"].values[0]
+        rows = group.loc[group["tag"] == "numa-balancing", "mean_qps"]
+        if rows.empty:
+            return pd.DataFrame()
+        baseline = rows.values[0]
         group = group.copy()
-        group["mean_qps_copy"] = group["mean_qps"]
-        group["std_qps_copy"] = group["std_qps"]
         group["mean_qps"] = 100 * (group["mean_qps"] - baseline) / baseline
         group["std_qps"] = 100 * group["std_qps"] / baseline
         return group
 
-    normalized = (
+    result = (
         df.groupby(["arch", "dataset", "runner_name"])[df.columns.tolist()]
         .apply(_normalize, include_groups=True)
         .reset_index(drop=True)
     )
-    return normalized[normalized["tag"].isin(TAGS_ORDER)]
+    if result.empty:
+        return result
+    return result[result["tag"].isin(TAGS_ORDER)]
 
 
 # --- Plot helpers ---
@@ -229,30 +233,43 @@ def plot_main(df: pd.DataFrame):
         _save_figure(fig_legend, os.path.join(config.PLOT_DIR_ANN, "legend.pdf"))
 
 
-def plot_main_abs(df: pd.DataFrame):
-    """Plot absolute throughput with percentage improvement over NUMA Balancing."""
+def plot_main_abs(df: pd.DataFrame, df_norm: pd.DataFrame):
+    """Plot absolute throughput with percentage improvement over NUMA Balancing.
+    df holds absolute QPS for all arches; df_norm holds normalized values only
+    for arches that have a numa-balancing baseline (used for % annotations)."""
     _setup_style()
     x = np.arange(N_DATASETS) * X_SPACING
     n_bars = len(TAGS_ORDER)
 
     for arch in df["arch"].unique():
         df_arch = df[df["arch"] == arch]
+        df_norm_arch = (
+            df_norm[df_norm["arch"] == arch]
+            if not df_norm.empty and "arch" in df_norm.columns
+            else pd.DataFrame()
+        )
         fig, axes = _make_subplots(sharey=False, wspace=0.35)
 
         for idx, runner in enumerate(RUNNER_NAMES):
             ax = axes[idx]
             df_runner = df_arch[df_arch["runner_name"] == runner]
+            df_norm_runner = (
+                df_norm_arch[df_norm_arch["runner_name"] == runner]
+                if not df_norm_arch.empty
+                else pd.DataFrame()
+            )
 
-            max_val = df_runner["mean_qps_copy"].max() if len(df_runner) > 0 else 1
+            max_val = df_runner["mean_qps"].max() if len(df_runner) > 0 else 1
             offset = max_val * 0.03
 
             for i, tag in enumerate(TAGS_ORDER):
-                abs_values = _tag_values(df_runner, tag, "mean_qps_copy")
-                abs_stds = [
-                    v if pd.notna(v) else 0
-                    for v in _tag_values(df_runner, tag, "std_qps_copy")
-                ]
-                pct_values = _tag_values(df_runner, tag, "mean_qps")
+                abs_values = _tag_values(df_runner, tag, "mean_qps")
+                abs_stds = _tag_values(df_runner, tag, "std_qps")
+                pct_values = (
+                    _tag_values(df_norm_runner, tag, "mean_qps")
+                    if not df_norm_runner.empty
+                    else [0] * N_DATASETS
+                )
 
                 bars = ax.bar(
                     _bar_positions(x, i, n_bars), abs_values, yerr=abs_stds,
@@ -262,14 +279,13 @@ def plot_main_abs(df: pd.DataFrame):
                 )
 
                 for rect, pct in zip(bars, pct_values):
-                    if rect.get_height() == 0:
+                    if rect.get_height() == 0 or pct == 0:
                         continue
-                    color = "green" if pct > 0 else "red" if pct < 0 else "black"
-                    label = f"{pct:+.0f}%" if pct != 0 else ""
+                    color = "green" if pct > 0 else "red"
                     ax.text(
                         rect.get_x() + rect.get_width() / 2,
                         rect.get_height() + offset,
-                        label, ha="center", va="bottom", fontsize=2, color=color,
+                        f"{pct:+.0f}%", ha="center", va="bottom", fontsize=2, color=color,
                     )
 
             _format_runner_ax(ax, x, runner, y_nbins=6)

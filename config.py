@@ -13,6 +13,7 @@ ARCH_SUBNAMES = {
     "IntelR_XeonR_Gold_6130_CPU_@_2.10GHz_X86_64": "gold",
     "IntelR_XeonR_Silver_4216_CPU_@_2.10GHz_X86_64": "silver",
     "INTELR_XEONR_PLATINUM_8568Y+_X86_64": "plat",
+    "IntelR_XeonR_Gold_5320_CPU_@_2.20GHz_X86_64": "gold5320",
 }
 
 
