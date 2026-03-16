@@ -26,19 +26,19 @@ pattern = re.compile(
 def make_plot_fio():
     os.makedirs(config.PLOT_DIR_FIO, exist_ok=True)
 
-    # for arch in os.listdir(config.RESULT_DIR):
-    #     arch_dir = os.path.join(RESULT_DIR, arch)
-    #     if not os.path.isdir(arch_dir):
-    #         continue
-    #     make_plot_fio_arch(arch)
-
-    make_plot_fio_arch("IntelR_XeonR_Silver_4216_CPU_@_2.10GHz_X86_64")
-    make_plot_fio_arch("IntelR_XeonR_Gold_6130_CPU_@_2.10GHz_X86_64")
-    # make_plot_fio_arch("INTELR_XEONR_PLATINUM_8568Y+_X86_64")
+    for arch in os.listdir(RESULT_DIR):
+        if arch not in config.ARCH_SUBNAMES:
+            continue
+        if not os.path.isdir(os.path.join(RESULT_DIR, arch, "fio")):
+            continue
+        make_plot_fio_arch(arch)
 
 
 def make_plot_fio_arch(arch):
     combined_df = get_data(arch)
+    if combined_df.empty:
+        print(f"No random fio data for {arch}, skipping.")
+        return
 
     agg_df = (
         combined_df.groupby(["tag", "readratio", "writeratio", "benchmark"])
@@ -47,12 +47,23 @@ def make_plot_fio_arch(arch):
             write_bw_gb=("write_bw_gb", "mean"),
             read_bw_std=("read_bw_gb", "std"),  # std across runs
             write_bw_std=("write_bw_gb", "std"),  # std across runs
+            nb_runs=("run", "count"),
         )
         .reset_index()
     )
+    agg_df["readratio"] = agg_df["readratio"].astype(int)
     agg_df = agg_df.sort_values(
-        by=["tag", "read_bw_gb"], ascending=False
+        by=["readratio", "tag"], ascending=[False, True]
     ).reset_index(drop=True)
+
+    combined_df["readratio"] = combined_df["readratio"].astype(int)
+    combined_df = combined_df.sort_values(
+        by=["readratio", "tag", "run"], ascending=[False, True, True]
+    ).reset_index(drop=True)
+
+    result_dir = os.path.join(RESULT_DIR, arch, "fio")
+    combined_df.to_csv(os.path.join(result_dir, "details.csv"), index=False)
+    agg_df.to_csv(os.path.join(result_dir, "agg.csv"), index=False)
 
     plot_fio(
         arch,
@@ -156,6 +167,9 @@ def get_data(arch: str) -> pd.DataFrame:
         )
         data.append(df)
 
+    if not data:
+        return pd.DataFrame()
+
     combined_df = pd.concat(data, ignore_index=True)
 
     print(
@@ -225,58 +239,21 @@ def plot_fio(arch, title, df_param, value_col, std_col, ylabel, is_write=False):
     error_kw = {"linewidth": 0.3, "capthick": 0.3}
     capsize = 0.7
 
-    ax.bar(
-        x - 1.5 * width,
-        read_bw_default,
-        width,
-        yerr=read_std_default,
-        error_kw=error_kw,
-        capsize=capsize,
-        label="Vanilla",
-        color=linux[1],
-        edgecolor=linux[1],
-        linewidth=0.3,
-        zorder=2,
-    )
-    ax.bar(
-        x - 0.5 * width,
-        read_bw_normal,
-        width,
-        yerr=read_std_normal,
-        error_kw=error_kw,
-        capsize=capsize,
-        label="NumaBalancing",
-        color=linux[3],
-        edgecolor=linux[3],
-        linewidth=0.3,
-        zorder=2,
-    )
-    ax.bar(
-        x + 0.5 * width,
-        read_bw_repl,
-        width,
-        yerr=read_std_repl,
-        error_kw=error_kw,
-        capsize=capsize,
-        label="SPaRe (No Unreplication)",
-        color=palette[5],
-        edgecolor=palette[5],
-        linewidth=0.3,
-        zorder=2,
-    )
-    ax.bar(
-        x + 1.5 * width,
-        read_bw_unrepl,
-        width,
-        yerr=read_std_unrepl,
-        error_kw=error_kw,
-        capsize=capsize,
-        label="SPaRe",
-        color=palette[7],
-        edgecolor=palette[7],
-        linewidth=0.3,
-        zorder=2,
-    )
+    series = [
+        (x - 1.5 * width, read_bw_default, read_std_default, "Vanilla",                 linux[1]),
+        (x - 0.5 * width, read_bw_normal,  read_std_normal,  "NumaBalancing",           linux[3]),
+        (x + 0.5 * width, read_bw_repl,    read_std_repl,    "SPaRe (No Unreplication)", palette[5]),
+        (x + 1.5 * width, read_bw_unrepl,  read_std_unrepl,  "SPaRe",                   palette[7]),
+    ]
+
+    for pos, values, stds, label, color in series:
+        if all(v == 0 for v in values):
+            continue
+        ax.bar(
+            pos, values, width, yerr=stds,
+            error_kw=error_kw, capsize=capsize, label=label,
+            color=color, edgecolor=color, linewidth=0.3, zorder=2,
+        )
 
     # ax.grid(
     #     axis="y",

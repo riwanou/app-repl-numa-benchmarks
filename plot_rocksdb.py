@@ -97,6 +97,7 @@ def _load_data():
         )
 
         if "nb_runs" in df.columns:
+            df = df[df["nb_runs"].between(0, 4)]
             df = (
                 df.groupby(["tag", "test", "arch"])["mb_sec"]
                 .agg(mb_sec_mean="mean", mb_sec_std="std")
@@ -151,8 +152,13 @@ def _plot_bars(ax, arch_data, show_absolute=False):
         abs_stds = []
 
         for method in METHODS:
-            expected_tag = f"{tag}-{method}" if tag else method
-            row = arch_data[arch_data["tag"] == expected_tag]
+            if tag:
+                expected_tag = f"{tag}-{method}"
+                row = arch_data[arch_data["tag"] == expected_tag]
+            else:
+                row = arch_data[arch_data["tag"] == f"default-{method}"]
+                if len(row) == 0:
+                    row = arch_data[arch_data["tag"] == method]
             if len(row) > 0:
                 means.append(row.iloc[0]["mb_sec_mean_pct"])
                 stds.append(row.iloc[0]["mb_sec_std_pct"])

@@ -1,8 +1,8 @@
 import os
 from config import sh, RESULT_DIR_FIO
 
-RUNTIME = 210
-NB_RUNS = 5
+RUNTIME = 60
+NB_RUNS = 10
 
 
 def run_repl(cmd: str) -> str:
@@ -40,10 +40,10 @@ def run_bench(
 
 
 def run_bench_readwrite(distrib, base_tag, num_readers, num_writers):
+    # default (without NUMA balancing) — all runs first
+    sh("echo 0 > /proc/sys/kernel/numa_balancing")
+    sh("echo 3 > /proc/sys/vm/drop_caches")
     for run in range(1, NB_RUNS + 1):
-        # default (without NUMA balancing)
-        sh("echo 0 > /proc/sys/kernel/numa_balancing")
-        sh("echo 3 > /proc/sys/vm/drop_caches")
         sh(
             f"{
                 run_bench(
@@ -56,9 +56,10 @@ def run_bench_readwrite(distrib, base_tag, num_readers, num_writers):
             }"
         )
 
-        # baseline (with NUMA Balancing)
-        sh("echo 1 > /proc/sys/kernel/numa_balancing")
-        sh("echo 3 > /proc/sys/vm/drop_caches")
+    # baseline (with NUMA Balancing) — all runs together
+    sh("echo 1 > /proc/sys/kernel/numa_balancing")
+    sh("echo 3 > /proc/sys/vm/drop_caches")
+    for run in range(1, NB_RUNS + 1):
         sh(
             f"{
                 run_bench(
@@ -70,13 +71,13 @@ def run_bench_readwrite(distrib, base_tag, num_readers, num_writers):
                 )
             }"
         )
-        sh("echo 0 > /proc/sys/kernel/numa_balancing")
+    sh("echo 0 > /proc/sys/kernel/numa_balancing")
 
 
 def run_bench_readwrite_repl(distrib, base_tag, num_readers, num_writers):
+    # replication — all runs first
+    sh("echo 3 > /proc/sys/vm/drop_caches")
     for run in range(1, NB_RUNS + 1):
-        # replication
-        sh("echo 3 > /proc/sys/vm/drop_caches")
         sh(
             f"{
                 run_bench(
@@ -89,9 +90,10 @@ def run_bench_readwrite_repl(distrib, base_tag, num_readers, num_writers):
             }"
         )
 
-        # unreplication
-        sh("echo 1 > /sys/kernel/debug/repl_pt/write_unreplication")
-        sh("echo 3 > /proc/sys/vm/drop_caches")
+    # unreplication — all runs together
+    sh("echo 1 > /sys/kernel/debug/repl_pt/write_unreplication")
+    sh("echo 3 > /proc/sys/vm/drop_caches")
+    for run in range(1, NB_RUNS + 1):
         sh(
             f"{
                 run_bench(
@@ -103,7 +105,7 @@ def run_bench_readwrite_repl(distrib, base_tag, num_readers, num_writers):
                 )
             }"
         )
-        sh("echo 0 > /sys/kernel/debug/repl_pt/write_unreplication")
+    sh("echo 0 > /sys/kernel/debug/repl_pt/write_unreplication")
 
 
 def run_bench_readwrite_fio(repl, distrib, total_jobs, read_ratio, write_ratio):
