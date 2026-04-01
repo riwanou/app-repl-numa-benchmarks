@@ -352,7 +352,7 @@ def plot_microbench_alloc(
 
     axes[0].yaxis.set_visible(False)
     axes[0].yaxis.set_label_coords(-0.50, 0.5)  # align vertically
-    axes[0].set_ylim(1.0, 22)
+    axes[0].set_ylim(1.0, 40)
 
     fig.tight_layout()
     plt.subplots_adjust(top=0.9)

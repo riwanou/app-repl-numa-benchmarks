@@ -22,6 +22,7 @@ int main(int argc, char **argv) {
 
   for (int i = 0; i < nb_rounds; i++) {
     struct timespec start, end;
+
     clock_gettime(CLOCK_MONOTONIC, &start);
 
     array = allocate_buffer_platform(repl_enabled, size);

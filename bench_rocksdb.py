@@ -12,17 +12,18 @@ CSV_PATH = os.path.join(RESULT_DIR, "results.csv")
 NUM_THREADS = config.NUM_THREADS
 DB_DIR = os.path.join(config.TMP_DIR_ROCKSDB, "db")
 WAL_DIR = os.path.join(config.TMP_DIR_ROCKSDB, "wal")
-NUM_KEYS = 40_000_000
+NUM_KEYS = 32_000_000
 CACHE_SIZE = 16_000_000_000  # 16 GB
 MB_WRITE_PER_SEC = 2
 COMPRESSION_TYPE = "none"
-DURATION = 60
+DURATION = 70
 RAMP_SECS = 20
 STAT_INTERVAL_SECONDS = 5
-NB_RUNS = 10
+NB_RUNS = 5
 
 LOAD_ENV = f"DB_DIR={DB_DIR} WAL_DIR={WAL_DIR} NUM_KEYS={NUM_KEYS} CACHE_SIZE={CACHE_SIZE} COMPRESSION_TYPE={COMPRESSION_TYPE}"
-BENCH_ENV = f"{LOAD_ENV} DURATION={DURATION} STATS_INTERVAL_SECONDS={STAT_INTERVAL_SECONDS} NUM_THREADS={NUM_THREADS}"
+NUM_NEXTS_PER_SEEK = 200
+BENCH_ENV = f"{LOAD_ENV} DURATION={DURATION} STATS_INTERVAL_SECONDS={STAT_INTERVAL_SECONDS} NUM_THREADS={NUM_THREADS} NUM_NEXTS_PER_SEEK={NUM_NEXTS_PER_SEEK}"
 BENCHMARK_SCRIPT = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "rocksdb",
@@ -71,14 +72,16 @@ def _bench_cmd(
     return cmds[variant]
 
 
-def _load_db(output_tag: str):
+def _load_db(output_tag: str, numactl_invoc: str = ""):
     """Drop caches and load the database. Call once per round before running benches."""
     output_dir = os.path.join(RESULT_DIR, "outputs", f"{output_tag}_load")
     shutil.rmtree(output_dir, ignore_errors=True)
     os.makedirs(output_dir, exist_ok=True)
 
     sh("echo 3 > /proc/sys/vm/drop_caches")
-    sh(f"{LOAD_ENV} OUTPUT_DIR={output_dir} {BENCHMARK_SCRIPT} bulkload")
+    sh(
+        f"{LOAD_ENV} OUTPUT_DIR={output_dir} {numactl_invoc} {BENCHMARK_SCRIPT} bulkload"
+    )
 
 
 def _do_bench(
@@ -185,8 +188,13 @@ def run_bench_rocksdb():
             for run_idx in range(NB_RUNS):
                 if setup:
                     setup()
-                _load_db(f"{variant_tag}-{bench}-round{run_idx}")
-                _do_bench(f"{variant_tag}-{bench}", bench, run_idx, numactl)
+                _load_db(f"{variant_tag}-{bench}-round{run_idx}", numactl)
+                _do_bench(
+                    f"{variant_tag}-{bench}-round{run_idx}",
+                    bench,
+                    run_idx,
+                    numactl,
+                )
                 if teardown:
                     teardown()
 
@@ -197,12 +205,13 @@ def run_bench_rocksdb_repl():
     # patched-interleaved variant: best case, debug purpose
     for bench in BENCHES:
         for run_idx in range(NB_RUNS):
-            _load_db(f"patched-interleaved-{bench}-round{run_idx}")
+            numactl = "numactl --interleave=all"
+            _load_db(f"patched-interleaved-{bench}-round{run_idx}", numactl)
             _do_bench(
-                f"patched-interleaved-{bench}",
+                f"patched-interleaved-{bench}-round{run_idx}",
                 bench,
                 run_idx,
-                "numactl --interleave=all",
+                numactl,
             )
 
     # patched-repl variant: with normal replication
@@ -212,5 +221,10 @@ def run_bench_rocksdb_repl():
             sh("echo 1 > /sys/kernel/debug/repl_pt/clear_registered")
             sh("echo .sst > /sys/kernel/debug/repl_pt/registered")
             sh("echo 1 > /sys/kernel/debug/repl_pt/write_unreplication")
-            _do_bench(f"patched-repl-{bench}", bench, run_idx, repl=True)
+            _do_bench(
+                f"patched-repl-{bench}-round{run_idx}",
+                bench,
+                run_idx,
+                repl=True,
+            )
             sh("echo 0 > /sys/kernel/debug/repl_pt/write_unreplication")
