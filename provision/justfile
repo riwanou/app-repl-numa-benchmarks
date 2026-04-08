@@ -67,7 +67,8 @@ bench-fetch:
     platform=$(ssh {{host}} '
         cd {{workdir}}/app-repl-numa-benchmarks && \
         echo "from config import PLATFORM; print(PLATFORM)" | PATH=$HOME/.local/bin:$PATH  uv run -')
-    scp -r {{host}}:{{workdir}}/app-repl-numa-benchmarks/results/$platform/* results/{{host}}
+    rsync -a --progress {{host}}:{{workdir}}/app-repl-numa-benchmarks/results/$platform/ results/{{host}}/
+    # scp -r {{host}}:{{workdir}}/app-repl-numa-benchmarks/results/$platform/* results/{{host}}
 
 [group('bench')]
 bench-push:

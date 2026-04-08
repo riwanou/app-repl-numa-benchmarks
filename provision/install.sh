@@ -6,7 +6,7 @@ apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
   git curl build-essential pcm libomp-dev libnuma-dev numactl time sysstat \
   cmake flex bison bc libncurses-dev libelf-dev libssl-dev kexec-tools \
-  tmux libgflags-dev clang libzstd-dev psmisc
+  tmux libgflags-dev clang libzstd-dev psmisc rsync
 apt-get install -y ./helix_25.1.1-1_amd64.deb ./zenith_0.14.1-1_amd64.deb
 
 echo "Installing tools"

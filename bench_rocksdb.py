@@ -92,7 +92,7 @@ def _do_bench(
     repl: bool = False,
 ):
     """Run a single benchmark and append the result to the CSV."""
-    output_dir = os.path.join(RESULT_DIR, "outputs", tag)
+    output_dir = os.path.join(RESULT_DIR, "outputs", f"{tag}-round{run_idx}")
     shutil.rmtree(output_dir, ignore_errors=True)
     os.makedirs(output_dir, exist_ok=True)
 
@@ -190,7 +190,7 @@ def run_bench_rocksdb():
                     setup()
                 _load_db(f"{variant_tag}-{bench}-round{run_idx}", numactl)
                 _do_bench(
-                    f"{variant_tag}-{bench}-round{run_idx}",
+                    f"{variant_tag}-{bench}",
                     bench,
                     run_idx,
                     numactl,
@@ -208,7 +208,7 @@ def run_bench_rocksdb_repl():
             numactl = "numactl --interleave=all"
             _load_db(f"patched-interleaved-{bench}-round{run_idx}", numactl)
             _do_bench(
-                f"patched-interleaved-{bench}-round{run_idx}",
+                f"patched-interleaved-{bench}",
                 bench,
                 run_idx,
                 numactl,
@@ -222,7 +222,7 @@ def run_bench_rocksdb_repl():
             sh("echo .sst > /sys/kernel/debug/repl_pt/registered")
             sh("echo 1 > /sys/kernel/debug/repl_pt/write_unreplication")
             _do_bench(
-                f"patched-repl-{bench}-round{run_idx}",
+                f"patched-repl-{bench}",
                 bench,
                 run_idx,
                 repl=True,
