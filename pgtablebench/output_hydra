@@ -1,0 +1,23 @@
+FOR LOOP
+System hydra
+NPAGES=32768
+===Non Replicated===
+bench region 131072 KB | nrounds 100 | repl 0 | max nodes 2
+npages=32768 | avg/page 5963 min/page 5865 max/paged 6036 p95/page 6019 | avg 195402392 min 192200452 max 197803330 p95 197250202
+npages=32768 | avg/page 6009 min/page 5902 max/paged 6200 p95/page 6094 | avg 196889790 min 193428702 max 203175090 p95 199719978
+===Replicated Page tables only===
+bench region 131072 KB | nrounds 100 | repl 0 | max nodes 2
+npages=32768 | avg/page 6360 min/page 6270 max/paged 6425 p95/page 6413 | avg 208410014 min 205485892 max 210547190 p95 210168642
+npages=32768 | avg/page 6519 min/page 6360 max/paged 6676 p95/page 6646 | avg 213599458 min 208432102 max 218763384 p95 217807876
+
+1 MUNMAP
+System hydra
+NPAGES=32768
+===Non Replicated===
+bench region 131072 KB | nrounds 100 | repl 0 | max nodes 2
+npages=32768 | avg/page 349 min/page 346 max/paged 351 p95/page 350 | avg 11427902 min 11347674 max 11510038 p95 11484890
+npages=32768 | avg/page 363 min/page 350 max/paged 509 p95/page 370 | avg 11895264 min 11484858 max 16687600 p95 12127330
+===Replicated Page tables only===
+bench region 131072 KB | nrounds 100 | repl 0 | max nodes 2
+npages=32768 | avg/page 351 min/page 349 max/paged 353 p95/page 352 | avg 11505262 min 11438334 max 11572912 p95 11559724
+npages=32768 | avg/page 421 min/page 387 max/paged 485 p95/page 437 | avg 13796879 min 12700338 max 15923244 p95 14321842

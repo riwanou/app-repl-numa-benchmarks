@@ -1,0 +1,24 @@
+2 NODES
+FOR LOOP
+System mitosis
+NPAGES=32768
+===Non Replicated===
+bench region 131072 KB | nrounds 100 | repl 0 | max nodes 2
+npages=32768 | avg/page 1623 min/page 1616 max/paged 1691 p95/page 1647 | avg 53188690 min 52963776 max 55429260 p95 53972792
+npages=32768 | avg/page 1737 min/page 1684 max/paged 2040 p95/page 1773 | avg 56922760 min 55192798 max 66864722 p95 58118634
+===Replicated Page tables only===
+bench region 131072 KB | nrounds 100 | repl 0 | max nodes 2
+npages=32768 | avg/page 1689 min/page 1675 max/paged 1829 p95/page 1757 | avg 55332119 min 54918942 max 59942318 p95 57592620
+npages=32768 | avg/page 1777 min/page 1706 max/paged 1896 p95/page 1820 | avg 58223116 min 55907922 max 62140088 p95 59660548
+
+1 MUNMAP
+System mitosis
+NPAGES=32768
+===Non Replicated===
+bench region 131072 KB | nrounds 100 | repl 0 | max nodes 2
+npages=32768 | avg/page 417 min/page 396 max/paged 466 p95/page 421 | avg 13657269 min 12998186 max 15301620 p95 13820122
+npages=32768 | avg/page 450 min/page 424 max/paged 874 p95/page 462 | avg 14733783 min 13911486 max 28639406 p95 15169498
+===Replicated Page tables only===
+bench region 131072 KB | nrounds 100 | repl 0 | max nodes 2
+npages=32768 | avg/page 474 min/page 452 max/paged 517 p95/page 483 | avg 15519509 min 14818302 max 16952308 p95 15847830
+npages=32768 | avg/page 513 min/page 476 max/paged 540 p95/page 534 | avg 16794274 min 15613888 max 17700368 p95 17522242

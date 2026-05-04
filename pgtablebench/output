@@ -1,0 +1,59 @@
+System spare
+NPAGES=32768
+===Non Replicated===
+bench region 131072 KB | nrounds 100 | repl 0 | max nodes 2
+npages=32768 | avg/page 4456 min/page 4361 max/paged 4618 p95/page 4576 | avg 146025623 min 142930032 max 151344370 p95 149959966
+npages=32768 | avg/page 4484 min/page 4405 max/paged 4642 p95/page 4591 | avg 146944761 min 144372674 max 152138866 p95 150442936
+===Replicated Page tables only===
+bench region 131072 KB | nrounds 100 | repl 0 | max nodes 2
+npages=32768 | avg/page 4449 min/page 4363 max/paged 4744 p95/page 4578 | avg 145776378 min 142995308 max 155473306 p95 150043726
+npages=32768 | avg/page 4469 min/page 4367 max/paged 4612 p95/page 4571 | avg 146427131 min 143099232 max 151127522 p95 149786110
+===Replicated Page tables and Data===
+bench region 131072 KB | nrounds 100 | repl 1 | max nodes 2
+npages=32768 | avg/page 5238 min/page 5077 max/paged 5619 p95/page 5525 | avg 171639728 min 166366704 max 184128834 p95 181044822
+npages=32768 | avg/page 6154 min/page 6049 max/paged 6374 p95/page 6290 | avg 201644444 min 198221320 max 208868902 p95 206120448
+
+System spare
+NPAGES=32768
+===Non Replicated===
+bench region 131072 KB | nrounds 100 | repl 0 | max nodes 2
+npages=32768 | avg/page 323 min/page 309 max/paged 440 p95/page 339 | avg 10594295 min 10138738 max 14443772 p95 11119222
+===Replicated Page tables only===
+bench region 131072 KB | nrounds 100 | repl 0 | max nodes 2
+npages=32768 | avg/page 320 min/page 316 max/paged 341 p95/page 332 | avg 10482675 min 10377892 max 11193146 p95 10906952
+npages=32768 | avg/page 332 min/page 319 max/paged 357 p95/page 344 | avg 10872915 min 10454220 max 11727296 p95 11295814
+===Replicated Page tables and Data===
+bench region 131072 KB | nrounds 100 | repl 1 | max nodes 2
+npages=32768 | avg/page 467 min/page 461 max/paged 489 p95/page 484 | avg 15291940 min 15135878 max 16030476 p95 15883310
+npages=32768 | avg/page 1030 min/page 916 max/paged 1112 p95/page 1104 | avg 33761474 min 30045386 max 36459674 p95 36176314
+
+System spare (Optimized)
+NPAGES=32768
+===Non Replicated===
+bench region 131072 KB | nrounds 100 | repl 0 | max nodes 2
+npages=32768 | avg/page 4422 min/page 4326 max/paged 4575 p95/page 4559 | avg 144900360 min 141771518 max 149942822 p95 149390606
+npages=32768 | avg/page 4472 min/page 4354 max/paged 4637 p95/page 4620 | avg 146541586 min 142703206 max 151958806 p95 151400194
+===Replicated Page tables only===
+bench region 131072 KB | nrounds 100 | repl 0 | max nodes 2
+npages=32768 | avg/page 4442 min/page 4349 max/paged 4584 p95/page 4568 | avg 145541512 min 142523742 max 150235890 p95 149689342
+npages=32768 | avg/page 4468 min/page 4372 max/paged 4660 p95/page 4597 | avg 146418818 min 143291928 max 152719516 p95 150647452
+===Replicated Page tables and Data===
+bench region 131072 KB | nrounds 100 | repl 1 | max nodes 2
+npages=32768 | avg/page 4887 min/page 4797 max/paged 5041 p95/page 5021 | avg 160152736 min 157212454 max 165189174 p95 164548994
+npages=32768 | avg/page 5770 min/page 5603 max/paged 5937 p95/page 5905 | avg 189064564 min 183615468 max 194545164 p95 193514512
+
+System spare (Optimized)
+NPAGES=32768
+===Non Replicated===
+bench region 131072 KB | nrounds 100 | repl 0 | max nodes 2
+npages=32768 | avg/page 399 min/page 386 max/paged 425 p95/page 416 | avg 13065333 min 12648548 max 13927760 p95 13660436
+npages=32768 | avg/page 409 min/page 397 max/paged 434 p95/page 424 | avg 13401981 min 13015806 max 14225296 p95 13906200
+===Replicated Page tables only===
+bench region 131072 KB | nrounds 100 | repl 0 | max nodes 2
+npages=32768 | avg/page 402 min/page 394 max/paged 430 p95/page 420 | avg 13167431 min 12934854 max 14101946 p95 13785992
+npages=32768 | avg/page 412 min/page 398 max/paged 433 p95/page 431 | avg 13503749 min 13043578 max 14193412 p95 14132316
+===Replicated Page tables and Data===
+bench region 131072 KB | nrounds 100 | repl 1 | max nodes 2
+npages=32768 | avg/page 420 min/page 411 max/paged 448 p95/page 438 | avg 13749874 min 13492280 max 14697642 p95 14373728
+npages=32768 | avg/page 1028 min/page 994 max/paged 1085 p95/page 1059 | avg 33689902 min 32602182 max 35563858 p95 34705254
+
