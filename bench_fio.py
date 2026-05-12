@@ -1,8 +1,12 @@
+import json
 import os
-from config import sh, RESULT_DIR_FIO
+import time
+from config import sh, RESULT_DIR_FIO, HYDRA_NUMACTL, MITOSIS_NUMACTL
 
 RUNTIME = 60
 NB_RUNS = 10
+NB_RUNS_PGTABLE = 5
+TEMP_JSON = "/tmp/fio_run_tmp.json"
 
 
 def run_repl(cmd: str) -> str:
@@ -14,97 +18,84 @@ def run_repl(cmd: str) -> str:
 
 
 def run_bench(
-    tag: str,
     repl_enabled: bool,
     readjobs,
     writejobs,
     distrib="random",
+    prepend="",
+    size="768m"
 ) -> str:
-    os.makedirs(RESULT_DIR_FIO, exist_ok=True)
-    json_path = os.path.join(RESULT_DIR_FIO, f"{tag}.json")
-
     cmd = f"""RUNTIME={RUNTIME} \
         READJOBS={readjobs} \
         WRITEJOBS={writejobs} \
         DISTRIB={distrib} \
+        SIZE={size} \
+        {prepend} \
         ./fio-3.40/fio \
         --output-format=json \
         {"--section=readers" if writejobs == 0 else ""} \
         bench.fio \
-        --output={json_path}"""
+        --output={TEMP_JSON}"""
 
-    if repl_enabled:
-        return run_repl(cmd)
-    else:
-        return cmd
+    meta = {
+        "distrib": distrib,
+        "readjobs": readjobs,
+        "writejobs": writejobs,
+        "repl_enabled": repl_enabled,
+        "prepend": prepend,
+        "size": size,
+    }
 
+    return run_repl(cmd) if repl_enabled else cmd, meta
+
+def run_one(json_path, run, tag, cmd, meta):
+    ts_start = time.time()
+    sh(cmd)
+    ts_end = time.time()
+    with open(TEMP_JSON) as f:
+        record = {"run": run, "tag": tag, **meta, "ts_start": ts_start, "ts_end": ts_end, "data": json.load(f)}
+    with open(json_path, "a") as f:
+        f.write(json.dumps(record) + "\n")
+
+def init_json(filename):
+    path = os.path.join(RESULT_DIR_FIO, f"{filename}.jsonl")
+    os.makedirs(RESULT_DIR_FIO, exist_ok=True)
+    if os.path.exists(path):
+        os.remove(path)
+    return path
 
 def run_bench_readwrite(distrib, base_tag, num_readers, num_writers):
+    json_path = init_json(base_tag)
+    cmd, meta = run_bench(repl_enabled=False, readjobs=num_readers, writejobs=num_writers, distrib=distrib)
+
     # default (without NUMA balancing) — all runs first
     sh("echo 0 > /proc/sys/kernel/numa_balancing")
     sh("echo 3 > /proc/sys/vm/drop_caches")
     for run in range(1, NB_RUNS + 1):
-        sh(
-            f"{
-                run_bench(
-                    tag=f'{base_tag}_default_run{run}',
-                    repl_enabled=False,
-                    readjobs=num_readers,
-                    writejobs=num_writers,
-                    distrib=distrib,
-                )
-            }"
-        )
+        run_one(json_path, run, "default", cmd, meta)
 
     # baseline (with NUMA Balancing) — all runs together
     sh("echo 1 > /proc/sys/kernel/numa_balancing")
     sh("echo 3 > /proc/sys/vm/drop_caches")
     for run in range(1, NB_RUNS + 1):
-        sh(
-            f"{
-                run_bench(
-                    tag=f'{base_tag}_run{run}',
-                    repl_enabled=False,
-                    readjobs=num_readers,
-                    writejobs=num_writers,
-                    distrib=distrib,
-                )
-            }"
-        )
+        run_one(json_path, run, "numabalancing", cmd, meta)
     sh("echo 0 > /proc/sys/kernel/numa_balancing")
 
 
 def run_bench_readwrite_repl(distrib, base_tag, num_readers, num_writers):
+    json_path = init_json(base_tag)
+    cmd, meta = run_bench(repl_enabled=True, readjobs=num_readers, writejobs=num_writers, distrib=distrib)
+
     # replication — all runs first
     sh("echo 3 > /proc/sys/vm/drop_caches")
     for run in range(1, NB_RUNS + 1):
-        sh(
-            f"{
-                run_bench(
-                    tag=f'{base_tag}_repl_run{run}',
-                    repl_enabled=True,
-                    readjobs=num_readers,
-                    writejobs=num_writers,
-                    distrib=distrib,
-                )
-            }"
-        )
+        run_one(json_path, run, "repl", cmd, meta)
 
     # unreplication — all runs together
     sh("echo 1 > /sys/kernel/debug/repl_pt/write_unreplication")
     sh("echo 3 > /proc/sys/vm/drop_caches")
     for run in range(1, NB_RUNS + 1):
-        sh(
-            f"{
-                run_bench(
-                    tag=f'{base_tag}_unrepl_run{run}',
-                    repl_enabled=True,
-                    readjobs=num_readers,
-                    writejobs=num_writers,
-                    distrib=distrib,
-                )
-            }"
-        )
+        run_one(json_path, run, "unrepl", cmd, meta)
     sh("echo 0 > /sys/kernel/debug/repl_pt/write_unreplication")
 
 
@@ -163,9 +154,36 @@ def run_bench_fio_distrib(distrib, repl=False):
 
 def run_bench_fio():
     run_bench_fio_distrib("random")
-    # run_bench_fio_distrib("zipf")
 
 
 def run_bench_fio_repl():
     run_bench_fio_distrib("random", repl=True)
-    # run_bench_fio_distrib("zipf", repl=True)
+
+def run_bench_fio_pgtable(json_path, tag, prepend="", spare_repl=False):
+    distrib = "random"
+    total_jobs = os.cpu_count()
+
+    cmd, meta = run_bench(repl_enabled=spare_repl, readjobs=total_jobs, writejobs=0, prepend=prepend, size="768m")
+    for run in range(1, NB_RUNS_PGTABLE + 1):
+        sh("echo 3 > /proc/sys/vm/drop_caches")
+        run_one(json_path, run, tag, cmd, meta)
+
+    cmd, meta = run_bench(repl_enabled=spare_repl, readjobs=total_jobs, writejobs=0, prepend=prepend, size="4G")
+    for run in range(1, NB_RUNS_PGTABLE + 1):
+        sh("echo 3 > /proc/sys/vm/drop_caches")
+        run_one(json_path, run, tag, cmd, meta)
+
+def run_bench_fio_pgt_spare():
+    json_path = init_json("pgtable_spare")
+    run_bench_fio_pgtable(json_path, tag="interleave", prepend="numactl --interleave=all")
+    run_bench_fio_pgtable(json_path, tag="repl", prepend="", spare_repl=True)
+
+def run_bench_fio_pgt_mitosis():
+    json_path = init_json("pgtable_mitosis")
+    run_bench_fio_pgtable(json_path, tag="interleave", prepend=f"{MITOSIS_NUMACTL} --interleave=all")
+    run_bench_fio_pgtable(json_path, tag="repl", prepend=f"{MITOSIS_NUMACTL} --pgtablerepl=all --interleave=all")
+
+def run_bench_fio_pgt_hydra():
+    json_path = init_json("pgtable_hydra")
+    run_bench_fio_pgtable(json_path, tag="interleave", prepend=f"{HYDRA_NUMACTL} --interleave=all")
+    run_bench_fio_pgtable(json_path, tag="repl", prepend=f"{HYDRA_NUMACTL} --pgtablerepl=all --interleave=all")

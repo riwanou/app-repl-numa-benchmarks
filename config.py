@@ -41,6 +41,12 @@ def get_safe_platform_string():
 NUM_THREADS = multiprocessing.cpu_count()
 PLATFORM = get_safe_platform_string()
 
+HYDRA_DIR = os.path.join("..", "linux-hydra-6.5")
+HYDRA_NUMACTL = os.path.join(HYDRA_DIR, "hydra-numactl", "numactl")
+
+MITOSIS_DIR = os.path.join("..", "linux-mitosis-4.17")
+MITOSIS_NUMACTL = os.path.join(MITOSIS_DIR, "mitosis-numactl", "numactl")
+
 TMP_DIR = tempfile.gettempdir()
 TMP_DIR_ROCKSDB = os.path.join(TMP_DIR, "rocksdb")
 

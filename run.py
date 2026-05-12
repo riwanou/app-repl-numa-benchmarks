@@ -16,6 +16,9 @@ parser.add_argument(
         "rocksdb-repl",
         "fio",
         "fio-repl",
+        "fio-pgt-spare",
+        "fio-pgt-mitosis",
+        "fio-pgt-hydra",
         "llama",
         "llama-repl",
         "bench-pgtable-own",
@@ -61,6 +64,12 @@ elif args.run == "fio":
     bench_and_monitor(bench_fio.run_bench_fio, "fio")
 elif args.run == "fio-repl":
     bench_and_monitor(bench_fio.run_bench_fio_repl, "fio-repl")
+elif args.run == "fio-pgt-spare":
+    bench_and_monitor(bench_fio.run_bench_fio_pgt_spare, "fio-pgt-spare")
+elif args.run == "fio-pgt-mitosis":
+    bench_and_monitor(bench_fio.run_bench_fio_pgt_mitosis, "fio-pgt-mitosis")
+elif args.run == "fio-pgt-hydra":
+    bench_and_monitor(bench_fio.run_bench_fio_pgt_hydra, "fio-pgt-hydra")
 elif args.run == "llama":
     bench_and_monitor(bench_llama.run_bench_llama, "llama")
 elif args.run == "llama-repl":

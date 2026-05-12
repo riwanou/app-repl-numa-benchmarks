@@ -61,6 +61,15 @@ bench-fio:
 bench-fio-repl:
     uv run run.py fio-repl
 
+bench-fio-pgt-spare:
+    uv run run.py fio-pgt-spare
+
+bench-fio-pgt-mitosis:
+    uv run run.py fio-pgt-mitosis
+
+bench-fio-pgt-hydra:
+    uv run run.py fio-pgt-hydra
+
 bench-llama:
     #!/usr/bin/env bash
     . /opt/intel/oneapi/setvars.sh
