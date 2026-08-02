@@ -89,3 +89,25 @@ def run_bench_ann_repl():
     #   echo 0 > /sys/kernel/debug/repl_pt/policy
     # )""")
     # sh("echo 0 > /sys/kernel/debug/repl_pt/write_unreplication")
+
+
+def run_bench_ann_pressure():
+    # a case (numa balancing)
+    sh("echo 1 > /proc/sys/kernel/numa_balancing")
+    sh("echo 3 > /proc/sys/vm/drop_caches")
+    sh(f"{run_bench('pressure-numa-balancing')}")
+    sh("echo 0 > /proc/sys/kernel/numa_balancing")
+
+
+def run_bench_ann_pressure_repl():
+    sh("echo 1 > /sys/kernel/debug/repl_pt/clear_registered")
+    sh("echo .ivf > /sys/kernel/debug/repl_pt/registered")
+    sh("echo .ann > /sys/kernel/debug/repl_pt/registered")
+    sh("echo .usearch > /sys/kernel/debug/repl_pt/registered")
+
+    sh("echo 3 > /proc/sys/vm/drop_caches")
+    sh(f"""(
+      echo 1 > /sys/kernel/debug/repl_pt/policy &&
+      {run_bench("pressure-patched-repl")};
+      echo 0 > /sys/kernel/debug/repl_pt/policy
+    )""")

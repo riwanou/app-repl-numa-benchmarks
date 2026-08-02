@@ -228,6 +228,7 @@ def runner_bench(
     neighbors: h5py.Dataset,
     tag: str,
     threads: int,
+    running_time: int,
 ):
     runner, index_path, config, runner_name = create_f(
         index_dir, dataset, dataset_config
@@ -249,7 +250,8 @@ def runner_bench(
     begin = time.time()
     start_time = get_time()
 
-    for nb_runs in range(0, NB_RUNS):
+    nb_runs = 0
+    while True:
         run_start_time = get_time()
         pred_vecs, total_time = runner.query_batch(test, k)
         run_end_time = get_time()
@@ -273,9 +275,21 @@ def runner_bench(
         std_time = np.std(total_times)
         elapsed_time = time.time() - begin
 
+        nb_runs += 1
+        max_nb_runs = NB_RUNS
+        if running_time:
+            max_nb_runs = nb_runs
+
         print(
-            f"Run {nb_runs}/{NB_RUNS} [{tag}] elapsed {elapsed_time:.2f}s mean {mean_time:.2f}s +- {std_time:.4f}s"
+            f"Run {nb_runs}/{max_nb_runs} [{tag}] run {total_time:.2f}s QPS {qps:.2f} "
+            f"elapsed {elapsed_time:.2f}s mean {mean_time:.2f}s +- {std_time:.4f}s"
         )
+
+        if running_time:
+            if elapsed_time >= running_time:
+                break
+        elif nb_runs >= NB_RUNS or elapsed_time > MAX_TIME:
+            break
 
         if elapsed_time > MAX_TIME:
             break
@@ -330,6 +344,7 @@ def run(
     recreate_index: bool,
     tag: str,
     threads: int,
+    running_time: int,
 ):
     os.makedirs(data_dir, exist_ok=True)
     os.makedirs(index_dir, exist_ok=True)
@@ -401,6 +416,7 @@ def run(
                         neighbors,
                         tag,
                         threads,
+                        running_time,
                     )
                 if annoy:
                     print("== Benching Annoy ==")
@@ -415,6 +431,7 @@ def run(
                         neighbors,
                         tag,
                         threads,
+                        running_time,
                     )
                 if usearch:
                     print("== Benching Usearch ==")
@@ -429,4 +446,5 @@ def run(
                         neighbors,
                         tag,
                         threads,
+                        running_time,
                     )

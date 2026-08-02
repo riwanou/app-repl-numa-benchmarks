@@ -12,6 +12,8 @@ parser.add_argument(
     choices=[
         "ann",
         "ann-repl",
+        "ann-pressure",
+        "ann-pressure-repl",
         "rocksdb",
         "rocksdb-repl",
         "fio",
@@ -56,6 +58,12 @@ if args.run == "ann":
     bench_and_monitor(bench_ann.run_bench_ann, "ann")
 elif args.run == "ann-repl":
     bench_and_monitor(bench_ann.run_bench_ann_repl, "ann-repl")
+elif args.run == "ann-pressure":
+    bench_and_monitor(bench_ann.run_bench_ann_pressure, "ann-pressure-repl")
+elif args.run == "ann-pressure-repl":
+    bench_and_monitor(
+        bench_ann.run_bench_ann_pressure_repl, "ann-pressure-repl"
+    )
 elif args.run == "rocksdb":
     bench_and_monitor(bench_rocksdb.run_bench_rocksdb, "rocksdb")
 elif args.run == "rocksdb-repl":

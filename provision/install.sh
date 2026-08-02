@@ -12,7 +12,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
 apt-get install -y ./helix_25.1.1-1_amd64.deb ./zenith_0.14.1-1_amd64.deb
 
 echo "Installing tools"
-curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh < /dev/null
 curl -LsSf https://astral.sh/uv/install.sh | sh
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 . "$HOME/.cargo/env"

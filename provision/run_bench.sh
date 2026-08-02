@@ -10,7 +10,10 @@ echo 0 > /proc/sys/kernel/numa_balancing
 
 
 # perf governor
-echo performance > /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+# echo performance > /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+for cpu in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+    echo performance > "$cpu"
+done
 # disable smt
 # echo off > /sys/devices/system/cpu/smt/control
 # disable frequency boosting

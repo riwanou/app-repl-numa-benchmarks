@@ -12,6 +12,12 @@ parser = argparse.ArgumentParser()
 parser.add_argument(
     "--threads", type=int, default=NUM_THREADS, help="Number of threads"
 )
+parser.add_argument(
+    "--running-time",
+    type=int,
+    default=0,
+    help="Time to run, disregard number of run",
+)
 parser.add_argument("--tag", default=TAG, help="CSV filename tag")
 parser.add_argument(
     "--datasets",
@@ -46,4 +52,5 @@ ann.lib.run(
     args.recreate_index,
     args.tag,
     args.threads,
+    args.running_time,
 )
