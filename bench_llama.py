@@ -40,6 +40,8 @@ def run_bench_llama():
 
 
 def run_bench_llama_repl():
+    sh("echo 0 > /sys/kernel/debug/repl_pt/main_placement")
+
     sh("echo 1 > /sys/kernel/debug/repl_pt/clear_registered")
     sh(
         "echo Llama-3.1-Tulu-3-8B-Q8_0.gguf > /sys/kernel/debug/repl_pt/registered"

@@ -46,24 +46,9 @@ def run_bench_ann():
     sh(f"{run_bench('numa-balancing')}")
     sh("echo 0 > /proc/sys/kernel/numa_balancing")
 
-    # full local
-    # sh("echo 3 > /proc/sys/vm/drop_caches")
-    # sh(f"numactl --membind=0 --cpunodebind=0 {run_bench('local')}")
-
-    # # full remote
-    # sh("echo 3 > /proc/sys/vm/drop_caches")
-    # sh(f"numactl --membind=0 --cpunodebind=1 {run_bench('distant')}")
-
-    # # cpus interleaved, 1 node
-    # cpus = get_interleaved_cpus_one_node()
-    # sh("echo 3 > /proc/sys/vm/drop_caches")
-    # sh(f"numactl --physcpubind={cpus} {run_bench('balanced')}")
-
 
 def run_bench_ann_repl():
-    # worst case (mem in 1 node)
-    # sh("echo 3 > /proc/sys/vm/drop_caches")
-    # sh(f"numactl --membind={0} {run_bench('patched-imbalanced-memory')}")
+    sh("echo 0 > /sys/kernel/debug/repl_pt/main_placement")
 
     # baseline patched, all cores, repl
     sh("echo 1 > /sys/kernel/debug/repl_pt/clear_registered")
@@ -79,20 +64,8 @@ def run_bench_ann_repl():
       echo 0 > /sys/kernel/debug/repl_pt/policy
     )""")
 
-    # with unrepl on write
-    # but there is no write so not needed..
-    # sh("echo 1 > /sys/kernel/debug/repl_pt/write_unreplication")
-    # sh("echo 3 > /proc/sys/vm/drop_caches")
-    # sh(f"""(
-    #   echo 1 > /sys/kernel/debug/repl_pt/policy &&
-    #   {run_bench("patched-repl-unrepl")};
-    #   echo 0 > /sys/kernel/debug/repl_pt/policy
-    # )""")
-    # sh("echo 0 > /sys/kernel/debug/repl_pt/write_unreplication")
-
 
 def run_bench_ann_pressure():
-    # a case (numa balancing)
     sh("echo 1 > /proc/sys/kernel/numa_balancing")
     sh("echo 3 > /proc/sys/vm/drop_caches")
     sh(f"{run_bench('pressure-numa-balancing')}")
@@ -100,6 +73,8 @@ def run_bench_ann_pressure():
 
 
 def run_bench_ann_pressure_repl():
+    sh("echo 0 > /sys/kernel/debug/repl_pt/main_placement")
+
     sh("echo 1 > /sys/kernel/debug/repl_pt/clear_registered")
     sh("echo .ivf > /sys/kernel/debug/repl_pt/registered")
     sh("echo .ann > /sys/kernel/debug/repl_pt/registered")

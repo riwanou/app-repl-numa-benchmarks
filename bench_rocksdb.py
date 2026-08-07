@@ -188,6 +188,7 @@ def run_bench_rocksdb():
             for run_idx in range(NB_RUNS):
                 if setup:
                     setup()
+                sh("echo 3 > /proc/sys/vm/drop_caches")
                 _load_db(f"{variant_tag}-{bench}-round{run_idx}", numactl)
                 _do_bench(
                     f"{variant_tag}-{bench}",
@@ -205,6 +206,7 @@ def run_bench_rocksdb_repl():
     # patched-interleaved variant: best case, debug purpose
     for bench in BENCHES:
         for run_idx in range(NB_RUNS):
+            sh("echo 3 > /proc/sys/vm/drop_caches")
             numactl = "numactl --interleave=all"
             _load_db(f"patched-interleaved-{bench}-round{run_idx}", numactl)
             _do_bench(
@@ -214,9 +216,12 @@ def run_bench_rocksdb_repl():
                 numactl,
             )
 
+    sh("echo 0 > /sys/kernel/debug/repl_pt/main_placement")
+
     # patched-repl variant: with normal replication
     for bench in BENCHES:
         for run_idx in range(NB_RUNS):
+            sh("echo 3 > /proc/sys/vm/drop_caches")
             _load_db(f"patched-repl-{bench}-round{run_idx}")
             sh("echo 1 > /sys/kernel/debug/repl_pt/clear_registered")
             sh("echo .sst > /sys/kernel/debug/repl_pt/registered")

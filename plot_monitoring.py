@@ -8,12 +8,12 @@ import matplotlib.gridspec as gridspec
 RESULT_DIR = config.RESULT_DIR
 
 TIME_WINDOWS = {
-    "ann": [("2025-11-30T20:56:35.144994", "2025-11-30T20:57:09.636315")],
-    "ann-repl": [("2025-12-01T01:10:02.109631", "2025-12-01T01:10:23.984930")],
+    "ann": [("2026-04-02T10:44:07.163144", "2026-04-02T10:44:50.514762")],
+    "ann-repl": [("2026-04-01T19:01:07.357579", "2026-04-01T19:01:30.258292")],
     # "ann": [("2025-12-02T23:38:44.343160", "2025-12-02T23:39:12.623384")],
     # "ann-repl": [("2025-12-02T19:10:27.466445", "2025-12-02T19:10:42.419298")],
-    "tmp": [("2025-12-17T11:07:15.581004", "2025-12-17T11:32:26.815946")],
-    "tmp-repl": [("2025-12-17T11:34:40.114263", "2025-12-17T12:00:08.974248")],
+    "tmp": [("2026-04-02T10:44:07.163144", "2026-04-02T10:44:50.514762")],
+    "tmp-repl": [("2026-04-01T19:01:07.357579", "2026-04-01T19:01:30.258292")],
     # "tmp": [("2025-12-01T01:10:47.574730", "2025-12-01T01:53:22.633492")],
     # "tmp": [
     #     # ("2025-09-04T13:45:12.489159", "2025-09-04T13:53:20.251285"),
@@ -43,12 +43,12 @@ def filter_by_time_windows(
 
 def make_plot_monitoring():
     os.makedirs(config.PLOT_DIR_MONITORING, exist_ok=True)
-    plot("ann")
-    plot("rocksdb")
+    # plot("ann")
+    # plot("rocksdb")
     plot("ann-repl")
-    plot("rocksdb-repl")
-    plot("tmp")
-    plot("tmp-repl")
+    # plot("rocksdb-repl")
+    # plot("tmp")
+    # plot("tmp-repl")
 
 
 def plot(variant: str):
@@ -134,8 +134,8 @@ def show_interesting_data(variant, df_pcm, df_pcm_memory, df_mem):
     if variant != "ann" and variant != "ann-repl":
         return
 
-    # arch = "IntelR_XeonR_Silver_4216_CPU_@_2.10GHz_X86_64"
-    arch = "IntelR_XeonR_Gold_6130_CPU_@_2.10GHz_X86_64"
+    arch = "IntelR_XeonR_Silver_4216_CPU_@_2.10GHz_X86_64"
+    # arch = "IntelR_XeonR_Gold_6130_CPU_@_2.10GHz_X86_64"
     df_pcm = extract_variant_data(
         df_pcm, variant, arch, True, "System", "System"
     )
@@ -165,6 +165,10 @@ def show_interesting_data(variant, df_pcm, df_pcm_memory, df_mem):
     print(
         f"LLC Read Miss Latency (ns): {df_pcm[('System', 'LLCRDMISSLAT (ns)')].mean():.2f}",
     )
+
+    print(f"L3 OCC (KB): [Node 0] {df_pcm[('Socket 0', 'L3OCC')]}")
+    print(f"L3 OCC (KB): [Node 1] {df_pcm[('Socket 1', 'L3OCC')]}")
+
     print(
         f"UPI traffic to Memory traffic (ratio): {df_pcm[('System', 'UPItoMC')].mean():.2f}",
     )
