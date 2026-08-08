@@ -12,12 +12,12 @@ CSV_PATH = os.path.join(RESULT_DIR, "results.csv")
 NUM_THREADS = config.NUM_THREADS
 DB_DIR = os.path.join(config.TMP_DIR_ROCKSDB, "db")
 WAL_DIR = os.path.join(config.TMP_DIR_ROCKSDB, "wal")
-NUM_KEYS = 32_000_000
+NUM_KEYS = 32_000_000  # 8 GB of keys
 CACHE_SIZE = 16_000_000_000  # 16 GB
 MB_WRITE_PER_SEC = 2
 COMPRESSION_TYPE = "none"
-DURATION = 70
-RAMP_SECS = 20
+DURATION = 75
+RAMP_SECS = 45
 STAT_INTERVAL_SECONDS = 5
 NB_RUNS = 5
 
@@ -78,10 +78,10 @@ def _load_db(output_tag: str, numactl_invoc: str = ""):
     shutil.rmtree(output_dir, ignore_errors=True)
     os.makedirs(output_dir, exist_ok=True)
 
-    sh("echo 3 > /proc/sys/vm/drop_caches")
     sh(
         f"{LOAD_ENV} OUTPUT_DIR={output_dir} {numactl_invoc} {BENCHMARK_SCRIPT} bulkload"
     )
+    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
 
 
 def _do_bench(
@@ -188,7 +188,6 @@ def run_bench_rocksdb():
             for run_idx in range(NB_RUNS):
                 if setup:
                     setup()
-                sh("echo 3 > /proc/sys/vm/drop_caches")
                 _load_db(f"{variant_tag}-{bench}-round{run_idx}", numactl)
                 _do_bench(
                     f"{variant_tag}-{bench}",
@@ -204,24 +203,22 @@ def run_bench_rocksdb_repl():
     prepare_dirs()
 
     # patched-interleaved variant: best case, debug purpose
-    for bench in BENCHES:
-        for run_idx in range(NB_RUNS):
-            sh("echo 3 > /proc/sys/vm/drop_caches")
-            numactl = "numactl --interleave=all"
-            _load_db(f"patched-interleaved-{bench}-round{run_idx}", numactl)
-            _do_bench(
-                f"patched-interleaved-{bench}",
-                bench,
-                run_idx,
-                numactl,
-            )
+    # for bench in BENCHES:
+    #     for run_idx in range(NB_RUNS):
+    #         numactl = "numactl --interleave=all"
+    #         _load_db(f"patched-interleaved-{bench}-round{run_idx}", numactl)
+    #         _do_bench(
+    #             f"patched-interleaved-{bench}",
+    #             bench,
+    #             run_idx,
+    #             numactl,
+    #         )
 
     sh("echo 0 > /sys/kernel/debug/repl_pt/main_placement")
 
     # patched-repl variant: with normal replication
     for bench in BENCHES:
         for run_idx in range(NB_RUNS):
-            sh("echo 3 > /proc/sys/vm/drop_caches")
             _load_db(f"patched-repl-{bench}-round{run_idx}")
             sh("echo 1 > /sys/kernel/debug/repl_pt/clear_registered")
             sh("echo .sst > /sys/kernel/debug/repl_pt/registered")

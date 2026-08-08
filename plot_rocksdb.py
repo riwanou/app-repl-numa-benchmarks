@@ -97,7 +97,6 @@ def _load_data():
         )
 
         if "nb_runs" in df.columns:
-            df = df[df["nb_runs"].between(0, 4)]
             df = (
                 df.groupby(["tag", "test", "arch"])["mb_sec"]
                 .agg(mb_sec_mean="mean", mb_sec_std="std")

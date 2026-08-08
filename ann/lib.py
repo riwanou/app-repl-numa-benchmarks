@@ -4,7 +4,7 @@ import h5py
 import numpy as np
 import csv
 import time
-from config import get_time
+from config import get_time, sh
 from . import mod_faiss
 from . import mod_annoy
 from . import mod_usearch
@@ -31,6 +31,10 @@ CONFIG = {
 }
 
 DATASETS = list(CONFIG.keys())
+
+
+def sync_drop_caches():
+    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
 
 
 def download_data(dataset: str, path: str):
@@ -403,6 +407,8 @@ def run(
                 )
 
             if bench:
+                sync_drop_caches()
+
                 if faiss:
                     print("== Benching Faiss ==")
                     runner_bench(

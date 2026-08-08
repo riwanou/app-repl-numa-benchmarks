@@ -20,8 +20,21 @@ def get_interleaved_cpus_one_node() -> str:
     return ",".join(map(str, selected))
 
 
+PRESSURE_RUNNING_TIME = 120
+PRESSURE_DATASET = "gist-960-euclidean.hdf5"
+
+
 def run_bench(tag: str) -> str:
     return f"uv run run_ann.py --faiss --annoy --usearch --bench --tag {tag}"
+
+
+def run_bench_pressure(
+    tag: str, running_time: int = PRESSURE_RUNNING_TIME
+) -> str:
+    return (
+        f"uv run run_ann.py --usearch --bench --tag {tag}"
+        f" --datasets {PRESSURE_DATASET} --running-time {running_time}"
+    )
 
 
 def run_bench_ann():
@@ -29,20 +42,20 @@ def run_bench_ann():
     sh("echo 0 > /proc/sys/kernel/numa_balancing")
 
     # all cores
-    sh("echo 3 > /proc/sys/vm/drop_caches")
+    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
     sh(f"{run_bench('default')}")
 
     # worst case (mem in 1 node)
-    sh("echo 3 > /proc/sys/vm/drop_caches")
+    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
     sh(f"numactl --membind={0} {run_bench('imbalanced-memory')}")
 
     # best case (interleaved)
-    sh("echo 3 > /proc/sys/vm/drop_caches")
+    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
     sh(f"numactl --interleave=all {run_bench('interleaved-memory')}")
 
     # a case (numa balancing)
     sh("echo 1 > /proc/sys/kernel/numa_balancing")
-    sh("echo 3 > /proc/sys/vm/drop_caches")
+    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
     sh(f"{run_bench('numa-balancing')}")
     sh("echo 0 > /proc/sys/kernel/numa_balancing")
 
@@ -57,7 +70,7 @@ def run_bench_ann_repl():
     sh("echo .usearch > /sys/kernel/debug/repl_pt/registered")
 
     # run
-    sh("echo 3 > /proc/sys/vm/drop_caches")
+    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
     sh(f"""(
       echo 1 > /sys/kernel/debug/repl_pt/policy &&
       {run_bench("patched-repl")};
@@ -67,8 +80,8 @@ def run_bench_ann_repl():
 
 def run_bench_ann_pressure():
     sh("echo 1 > /proc/sys/kernel/numa_balancing")
-    sh("echo 3 > /proc/sys/vm/drop_caches")
-    sh(f"{run_bench('pressure-numa-balancing')}")
+    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
+    sh(f"{run_bench_pressure('pressure-numa-balancing')}")
     sh("echo 0 > /proc/sys/kernel/numa_balancing")
 
 
@@ -80,9 +93,9 @@ def run_bench_ann_pressure_repl():
     sh("echo .ann > /sys/kernel/debug/repl_pt/registered")
     sh("echo .usearch > /sys/kernel/debug/repl_pt/registered")
 
-    sh("echo 3 > /proc/sys/vm/drop_caches")
+    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
     sh(f"""(
       echo 1 > /sys/kernel/debug/repl_pt/policy &&
-      {run_bench("pressure-patched-repl")};
+      {run_bench_pressure("pressure-patched-repl")};
       echo 0 > /sys/kernel/debug/repl_pt/policy
     )""")

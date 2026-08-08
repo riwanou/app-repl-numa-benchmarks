@@ -28,12 +28,12 @@ def run_bench(tag: str, repl_enabled: bool, numa_distribute=False):
 
 
 def run_bench_llama():
-    sh("echo 3 > /proc/sys/vm/drop_caches")
+    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
     sh("echo 1 > /proc/sys/kernel/numa_balancing")
     sh(f"{run_bench(tag='baseline', repl_enabled=False)}")
     sh("echo 0 > /proc/sys/kernel/numa_balancing")
 
-    sh("echo 3 > /proc/sys/vm/drop_caches")
+    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
     sh(
         f"{run_bench(tag='distribute', repl_enabled=False, numa_distribute=True)}"
     )
@@ -46,5 +46,5 @@ def run_bench_llama_repl():
     sh(
         "echo Llama-3.1-Tulu-3-8B-Q8_0.gguf > /sys/kernel/debug/repl_pt/registered"
     )
-    sh("echo 3 > /proc/sys/vm/drop_caches")
+    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
     sh(f"{run_bench(tag='repl', repl_enabled=True)}")

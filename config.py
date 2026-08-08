@@ -65,7 +65,7 @@ PLOT_DIR_LLAMA = os.path.join(PLOT_DIR, "llama")
 PLOT_DIR_MONITORING = os.path.join(PLOT_DIR, "monitoring")
 PLOT_DIR_MICROBENCH = os.path.join(PLOT_DIR, "microbench")
 
-MONITOR_DIR = os.path.join(RESULT_DIR, PLATFORM, "monitor")
+MONITOR_DIR = os.path.abspath(os.path.join(RESULT_DIR, PLATFORM, "monitor"))
 MONITOR_PCM = os.path.join(MONITOR_DIR, "pcm")
 MONITOR_PCM_MEMORY = os.path.join(MONITOR_DIR, "pcm_memory")
 MONITOR_MEM = os.path.join(MONITOR_DIR, "mem")

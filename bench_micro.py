@@ -57,11 +57,11 @@ def run_bench_pgtable(method: str):
     num_nodes = get_numa_nodes()
 
     for nthreads in range(1, num_nodes + 1):
-        sh("echo 3 > /proc/sys/vm/drop_caches")
+        sh("sync; echo 3 > /proc/sys/vm/drop_caches")
         sh(
             f"{run_bench(BENCH_PGTABLE, method, nthreads, repl_enabled=False, mmap_main_alloc=False)}"
         )
-        sh("echo 3 > /proc/sys/vm/drop_caches")
+        sh("sync; echo 3 > /proc/sys/vm/drop_caches")
         sh(
             f"{run_bench(BENCH_PGTABLE, method, nthreads, repl_enabled=True, mmap_main_alloc=False)}"
         )
@@ -71,11 +71,11 @@ def run_bench_alloc(method: str):
     num_nodes = get_numa_nodes()
 
     for nthreads in range(1, num_nodes + 1):
-        sh("echo 3 > /proc/sys/vm/drop_caches")
+        sh("sync; echo 3 > /proc/sys/vm/drop_caches")
         sh(
             f"{run_bench(BENCH_ALLOC, method, nthreads, repl_enabled=False, mmap_main_alloc=False)}"
         )
-        sh("echo 3 > /proc/sys/vm/drop_caches")
+        sh("sync; echo 3 > /proc/sys/vm/drop_caches")
         sh(
             f"{run_bench(BENCH_ALLOC, method, nthreads, repl_enabled=True, mmap_main_alloc=False)}"
         )
@@ -85,16 +85,16 @@ def run_bench_mem(method: str):
     num_nodes = get_numa_nodes()
 
     for nthreads in range(1, num_nodes + 1):
-        sh("echo 3 > /proc/sys/vm/drop_caches")
+        sh("sync; echo 3 > /proc/sys/vm/drop_caches")
         sh(
             f"{run_bench(BENCH_MEM, method, nthreads, repl_enabled=False, mmap_main_alloc=False)}"
         )
-        sh("echo 3 > /proc/sys/vm/drop_caches")
+        sh("sync; echo 3 > /proc/sys/vm/drop_caches")
         sh(
             f"{run_bench(BENCH_MEM, method, nthreads, repl_enabled=True, mmap_main_alloc=False)}"
         )
         if method == "mmap" and nthreads == 1:
-            sh("echo 3 > /proc/sys/vm/drop_caches")
+            sh("sync; echo 3 > /proc/sys/vm/drop_caches")
             sh(
                 f"{run_bench(BENCH_MEM, method, nthreads, repl_enabled=True, mmap_main_alloc=True)}"
             )

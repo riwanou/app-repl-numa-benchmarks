@@ -48,9 +48,8 @@ def bench_and_monitor(bench_fn, label):
         bench_fn()
     except Exception as e:
         print(f"Error: {e}")
-    else:
-        monitor.mv_output_files()
     finally:
+        monitor.mv_output_files()
         monitor.stop()
 
 

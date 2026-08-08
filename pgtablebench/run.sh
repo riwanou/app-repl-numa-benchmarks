@@ -112,7 +112,7 @@ run_bench() {
 
 mkdir -p perf_data
 gcc -Wall bench.c -o bench -lnuma -lpthread -lm
-echo 3 > /proc/sys/vm/drop_caches
+sync; echo 3 > /proc/sys/vm/drop_caches
 
 run_bench 32768 100
 
