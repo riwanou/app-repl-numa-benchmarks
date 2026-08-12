@@ -104,5 +104,8 @@ plot-microbench:
 plot-monitoring:
     uv run run.py plot-monitoring
 
+stats:
+    uv run run.py stats-monitoring
+
 analyze-runtime:
     uv run python analyze_runtime.py

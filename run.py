@@ -35,6 +35,7 @@ parser.add_argument(
         "plot-fio",
         "plot-monitoring",
         "plot-microbench",
+        "stats-monitoring",
     ],
     help="Variant to run",
 )
@@ -117,3 +118,7 @@ elif args.run == "plot-microbench":
     import plot_microbench
 
     plot_microbench.make_plot_microbench()
+elif args.run == "stats-monitoring":
+    import stats_monitoring
+
+    stats_monitoring.make_stats_monitoring()
