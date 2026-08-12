@@ -164,7 +164,11 @@ def collect_mem(mem_csv, interval):
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
-    "-i", "--interval", type=int, default=1, help="Sampling interval in seconds"
+    "-i",
+    "--interval",
+    type=float,
+    default=1.0,
+    help="Sampling interval in seconds",
 )
 parser.add_argument(
     "-csv", "--csv_path", type=str, required=True, help="Output CSV file path"

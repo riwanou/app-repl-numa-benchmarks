@@ -55,11 +55,11 @@ bench-ann:
 bench-ann-repl:
     uv run run.py ann-repl
 
-bench-ann-pressure:
-    uv run run.py ann-pressure
+bench-pressure:
+    uv run run.py pressure
 
-bench-ann-pressure-repl:
-    uv run run.py ann-pressure-repl
+bench-pressure-repl:
+    uv run run.py pressure-repl
 
 bench-fio:
     uv run run.py fio

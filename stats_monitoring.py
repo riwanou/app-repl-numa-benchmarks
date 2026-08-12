@@ -533,7 +533,7 @@ def _rocksdb_prepare(df: pd.DataFrame) -> pd.DataFrame:
 
 BENCHES = {
     "ann": Bench(
-        labels=["ann", "ann-repl", "ann-pressure-repl"],
+        labels=["ann", "ann-repl", "ann-pressure", "ann-pressure-repl"],
         # summarize the per run details rather than read the bench summary,
         # same as plot_ann: one window per run, and no run 1
         keep_file=lambda name: name.endswith("-details.csv"),

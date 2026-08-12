@@ -56,6 +56,7 @@ RESULT_DIR_ROCKSDB = os.path.join(RESULT_DIR, PLATFORM, "rocksdb")
 RESULT_DIR_FIO = os.path.join(RESULT_DIR, PLATFORM, "fio")
 RESULT_DIR_MICROBENCH = os.path.join(RESULT_DIR, PLATFORM, "microbench")
 RESULT_DIR_LLAMA = os.path.join(RESULT_DIR, PLATFORM, "llama")
+RESULT_DIR_PRESSURE = os.path.join(RESULT_DIR, PLATFORM, "pressure")
 
 PLOT_DIR = "plots"
 PLOT_DIR_ANN = os.path.join(PLOT_DIR, "ann")

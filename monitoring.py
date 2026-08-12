@@ -5,7 +5,7 @@ import ctypes.util
 import shutil
 from config import MONITOR_DIR, MONITOR_MEM, MONITOR_PCM, MONITOR_PCM_MEMORY, sh
 
-INTERVAL = 1
+INTERVAL = 1.0
 PR_SET_PDEATHSIG = 1
 
 
@@ -34,8 +34,12 @@ def safe_copy(src, dst):
 
 
 class Monitoring:
-    def __init__(self, label: str):
+    def __init__(self, label: str, interval: float = INTERVAL):
         self.label = label
+        # pcm / pcm-memory take the delay as a float, so sub-second sampling
+        # only costs an extra MSR read per interval. Benches that need to see
+        # a transient (ann-pressure) raise it; the rest stay at 1 s.
+        self.interval = interval
         self.pcm_proc = None
         self.pcm_memory_proc = None
         self.mem_proc = None
@@ -54,13 +58,22 @@ class Monitoring:
 
     def start_pcm(self):
         return subprocess.Popen(
-            ["pcm", "1", f"-csv={tmp_csv(MONITOR_PCM)}", "-nc"],
+            [
+                "pcm",
+                str(self.interval),
+                f"-csv={tmp_csv(MONITOR_PCM)}",
+                "-nc",
+            ],
             preexec_fn=set_pdeathsig,
         )
 
     def start_pcm_memory(self):
         return subprocess.Popen(
-            ["pcm-memory", "1", f"-csv={tmp_csv(MONITOR_PCM_MEMORY)}"],
+            [
+                "pcm-memory",
+                str(self.interval),
+                f"-csv={tmp_csv(MONITOR_PCM_MEMORY)}",
+            ],
             preexec_fn=set_pdeathsig,
         )
 
@@ -71,7 +84,7 @@ class Monitoring:
                 "run",
                 "collect_mem.py",
                 "-i",
-                str(INTERVAL),
+                str(self.interval),
                 "-csv",
                 f"{tmp_csv(MONITOR_MEM)}",
             ],

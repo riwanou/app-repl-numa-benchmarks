@@ -5,6 +5,7 @@ import bench_fio
 import bench_llama
 import bench_micro
 import monitoring
+import pressure
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -12,8 +13,8 @@ parser.add_argument(
     choices=[
         "ann",
         "ann-repl",
-        "ann-pressure",
-        "ann-pressure-repl",
+        "pressure",
+        "pressure-repl",
         "rocksdb",
         "rocksdb-repl",
         "fio",
@@ -42,8 +43,8 @@ parser.add_argument(
 args = parser.parse_args()
 
 
-def bench_and_monitor(bench_fn, label):
-    monitor = monitoring.Monitoring(label)
+def bench_and_monitor(bench_fn, label, interval=monitoring.INTERVAL):
+    monitor = monitoring.Monitoring(label, interval)
     monitor.start()
     try:
         bench_fn()
@@ -58,11 +59,17 @@ if args.run == "ann":
     bench_and_monitor(bench_ann.run_bench_ann, "ann")
 elif args.run == "ann-repl":
     bench_and_monitor(bench_ann.run_bench_ann_repl, "ann-repl")
-elif args.run == "ann-pressure":
-    bench_and_monitor(bench_ann.run_bench_ann_pressure, "ann-pressure-repl")
-elif args.run == "ann-pressure-repl":
+elif args.run == "pressure":
     bench_and_monitor(
-        bench_ann.run_bench_ann_pressure_repl, "ann-pressure-repl"
+        pressure.run_bench_pressure,
+        "ann-pressure",
+        pressure.SAMPLE_INTERVAL,
+    )
+elif args.run == "pressure-repl":
+    bench_and_monitor(
+        pressure.run_bench_pressure_repl,
+        "ann-pressure-repl",
+        pressure.SAMPLE_INTERVAL,
     )
 elif args.run == "rocksdb":
     bench_and_monitor(bench_rocksdb.run_bench_rocksdb, "rocksdb")
