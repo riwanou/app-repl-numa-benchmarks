@@ -21,10 +21,16 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 import pandas as pd
+from dateutil import tz
 
 import config
 
 # ---------------------------------------------------------------- monitoring
+
+# Every monitor, and every bench that stamps its own runs, writes the naive
+# local time of the machine it ran on. Set MONITOR_TZ (e.g. "Europe/Paris")
+# to read a capture from a machine in another timezone than this one.
+MONITOR_TZ = os.environ.get("MONITOR_TZ") or tz.tzlocal()
 
 PCM_DATE = ("System", "Date")
 PCM_TIME = ("System", "Time")
@@ -191,9 +197,7 @@ def per_socket(name: str, column: str, scale: float = 1.0):
     file reads local_pct_skt0, local_pct_skt1, ... then the next metric."""
     for i in range(MAX_SOCKETS):
         stat(f"{name}_skt{i}")(
-            lambda w, s=f"Socket {i}", c=column, k=scale: mean(
-                w.pcm, (s, c), k
-            )
+            lambda w, s=f"Socket {i}", c=column, k=scale: mean(w.pcm, (s, c), k)
         )
 
 
@@ -214,6 +218,7 @@ def upi_pct_cols(df: pd.DataFrame, kind: str) -> list:
         and col[0].endswith(f"{kind} (percent)")
         and str(col[1]).startswith("UPI")
     ]
+
 
 # ---------------------------------------------------------------------- STATS
 # Add a stat here and it shows up as a column, nothing else to touch.
@@ -372,6 +377,13 @@ for _i in range(MAX_SOCKETS):
         )
     )
 
+for _i in range(MAX_SOCKETS):
+    stat(f"mem_write_gb_skt{_i}")(
+        lambda w, s=f"SKT{_i}": mean(
+            w.pcm_memory, (s, "Mem Write (MB/s)"), MB_TO_GB
+        )
+    )
+
 
 # memory
 
@@ -400,6 +412,21 @@ per_node("pagetable_mb", lambda w, n: mean(w.mem, f"{n}_pageTable", KB_TO_MB))
 # ----------------------------------------------------------------------- main
 
 
+Derive = Optional[Callable[[pd.DataFrame], pd.DataFrame]]
+
+
+def read_result(
+    path: str, derive: Derive = None, header_only: bool = False
+) -> pd.DataFrame:
+    """A result CSV, plus the window columns a bench has to derive itself.
+
+    `header_only` still reads the rows when there is a `derive`: which columns
+    the file ends up with is only known once it has run.
+    """
+    df = pd.read_csv(path, nrows=0 if header_only and derive is None else None)
+    return derive(df) if derive else df
+
+
 def compute_stats(
     result_csv: str,
     label: str,
@@ -407,6 +434,7 @@ def compute_stats(
     stats: list[str] | None = None,
     warmup_s: float = 0.0,
     cooldown_s: float = 0.0,
+    derive: Derive = None,
 ) -> pd.DataFrame:
     """Result CSV + one column per stat, computed on each run's time window.
 
@@ -415,7 +443,7 @@ def compute_stats(
     below the steady state the run actually settles at. The `warmup_s` column
     reports what was applied, 0 when trimming would have left no sample.
     """
-    df = pd.read_csv(result_csv)
+    df = read_result(result_csv, derive)
     for col in ("start_time", "end_time"):
         if col not in df.columns:
             raise ValueError(f"{result_csv} has no '{col}' column")
@@ -479,7 +507,16 @@ def write_stats(
     cooldown_s: float = 0.0,
 ) -> str | None:
     """Compute and write one result CSV, return the path written."""
-    df = compute_stats(result_csv, label, arch, stats, warmup_s, cooldown_s)
+    bench = bench_of(result_csv)
+    df = compute_stats(
+        result_csv,
+        label,
+        arch,
+        stats,
+        warmup_s,
+        cooldown_s,
+        bench.derive_window if bench else None,
+    )
     if not keep_uncovered:
         df = pd.DataFrame(df[df["samples"] > 0])
     if df.empty:
@@ -511,6 +548,9 @@ class Bench:
     std_of: tuple[str, ...] = ()
     # per file fixups, e.g. normalizing a column before grouping on it
     prepare: Optional[Callable[[pd.DataFrame], pd.DataFrame]] = None
+    # runs at read time, before the window columns are looked for: a bench
+    # whose tool reports no start_time / end_time builds them here
+    derive_window: Derive = None
     # which CSVs feed the per run details file, defaults to keep_file
     keep_detail_file: Optional[Callable[[str], bool]] = None
     # seconds dropped at the start / end of every run window
@@ -528,6 +568,38 @@ def _rocksdb_prepare(df: pd.DataFrame) -> pd.DataFrame:
         .str.replace(r"\.t\d+", "", regex=True)
         .str.replace(r"\.s\d+", "", regex=True)
     )
+    return df
+
+
+# llama-bench reports one row per (n_prompt, n_gen) test and no run window.
+# `test_time` is stamped when the test is constructed, before the model load
+# and the warmup, and `avg_ns` is the mean of the LLAMA_REPS timed samples that
+# follow. Those samples end when the next test is constructed, so anchoring the
+# window on the *next* test_time keeps the model load out of it: only the first
+# test of an invocation pays one, the model is loaded once and reused.
+LLAMA_REPS = 5  # llama-bench default, bench_llama.py does not pass -r
+
+
+def _llama_window(df: pd.DataFrame) -> pd.DataFrame:
+    """start_time / end_time of each llama-bench test, in monitor local time."""
+    if df.empty or "test_time" not in df.columns:
+        return df
+
+    df = df.sort_values("test_time").copy()
+    # the one stamp of the whole pipeline that is UTC, everything it gets
+    # compared against is naive local time
+    start = (
+        pd.to_datetime(df["test_time"], utc=True)
+        .dt.tz_convert(MONITOR_TZ)
+        .dt.tz_localize(None)
+    )
+    span = pd.to_timedelta(df["avg_ns"] * LLAMA_REPS, unit="ns")
+    # the last test has no next one to anchor on, and needs none: it is not the
+    # one carrying the load
+    end = start.shift(-1).fillna(start + span)
+
+    df["start_time"] = end - span
+    df["end_time"] = end
     return df
 
 
@@ -567,10 +639,20 @@ BENCHES = {
         group_by=["benchmark", "tag", "readratio", "writeratio"],
         std_of=("read_bw_gb", "write_bw_gb"),
     ),
+    "sharing": Bench(
+        labels=["sharing"],
+        keep_file=lambda name: name == "results.csv",
+        group_by=["phase", "overlap"],
+        std_of=("read_gb_s", "mem_write_gb", "llc_rd_miss_lat_ns"),
+        # dirtest reports the window it measured, which already excludes the
+        # first touch, so there is nothing to trim
+    ),
     "llama": Bench(
         labels=["llama", "llama-repl"],
         keep_file=lambda name: True,
+        # one row per test already, nothing to average over
         group_by=None,
+        derive_window=_llama_window,
     ),
 }
 
@@ -578,7 +660,15 @@ BENCHES = {
 DROP_ON_GROUP = ["run", "run_id", "job_id", "start_time", "end_time"]
 
 
-def result_csvs(directory: str, keep_file: Callable[[str], bool]) -> list[str]:
+def bench_of(result_csv: str) -> Optional[Bench]:
+    """results/<arch>/<bench>/<file>.csv -> its BENCHES entry, if there is one."""
+    parent = os.path.basename(os.path.dirname(os.path.abspath(result_csv)))
+    return BENCHES.get(parent)
+
+
+def result_csvs(
+    directory: str, keep_file: Callable[[str], bool], derive: Derive = None
+) -> list[str]:
     """Result CSVs of a bench directory that carry per-run timestamps."""
     paths = []
     for name in sorted(os.listdir(directory)):
@@ -586,7 +676,7 @@ def result_csvs(directory: str, keep_file: Callable[[str], bool]) -> list[str]:
             continue
         path = os.path.join(directory, name)
         try:
-            header = pd.read_csv(path, nrows=0).columns
+            header = read_result(path, derive, header_only=True).columns
         except (pd.errors.EmptyDataError, pd.errors.ParserError):
             continue
         if "start_time" in header and "end_time" in header:
@@ -639,13 +729,14 @@ def bench_stats(
         if monitoring.pcm.empty and monitoring.mem.empty:
             continue
 
-        for path in result_csvs(bench_dir, keep_file):
+        for path in result_csvs(bench_dir, keep_file, bench.derive_window):
             df = compute_stats(
                 path,
                 label,
                 arch,
                 warmup_s=bench.warmup_s,
                 cooldown_s=bench.cooldown_s,
+                derive=bench.derive_window,
             )
             if not keep_uncovered:
                 df = pd.DataFrame(df[df["samples"] > 0])
@@ -719,6 +810,69 @@ COMPARISONS = {
                 "dataset": "gist-960-euclidean",
                 "runner_name": "usearch",
                 "tag": "patched-repl",
+            },
+        },
+    ),
+    "rocksdb-readrandom-imbalanced-vs-balancing-vs-interleaved-vs-repl": (
+        Comparison(
+            bench="rocksdb",
+            # db_bench tags are <variant>-<test>, and _rocksdb_prepare has
+            # already stripped the .t64 off the test name
+            rows={
+                "imbalanced": {
+                    "label": "rocksdb",
+                    "test": "readrandom",
+                    "tag": "imbalanced-readrandom",
+                },
+                "balancing": {
+                    "label": "rocksdb",
+                    "test": "readrandom",
+                    "tag": "balancing-readrandom",
+                },
+                "interleaved": {
+                    "label": "rocksdb",
+                    "test": "readrandom",
+                    "tag": "interleaved-readrandom",
+                },
+                "patched-repl": {
+                    "label": "rocksdb-repl",
+                    "test": "readrandom",
+                    "tag": "patched-repl-readrandom",
+                },
+            },
+        )
+    ),
+    # the control pair: identical thread placement, identical remote fraction,
+    # identical footprint per node, differing only in whether the two sockets
+    # read common cache lines
+    "sharing-local-vs-remote-vs-disjoint-vs-shared": Comparison(
+        bench="sharing",
+        rows={
+            "local": {"label": "sharing", "phase": "local"},
+            "remote": {"label": "sharing", "phase": "remote"},
+            "disjoint": {"label": "sharing", "phase": "shared000"},
+            "shared": {"label": "sharing", "phase": "shared100"},
+        },
+    ),
+    "llama-ngen512-baseline-vs-distribute-vs-repl": Comparison(
+        bench="llama",
+        # the longest generation test, the one that runs long enough to settle
+        # and the most memory bound of the four
+        rows={
+            "baseline": {
+                "label": "llama",
+                "dataset": "baseline",
+                "n_gen": 512,
+            },
+            "distribute": {
+                "label": "llama",
+                "dataset": "distribute",
+                "n_gen": 512,
+            },
+            "patched-repl": {
+                "label": "llama-repl",
+                "dataset": "repl",
+                "n_gen": 512,
             },
         },
     ),
