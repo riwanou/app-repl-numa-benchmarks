@@ -289,13 +289,11 @@ def runner_bench(
             f"elapsed {elapsed_time:.2f}s mean {mean_time:.2f}s +- {std_time:.4f}s"
         )
 
+        # MAX_TIME caps the run-count mode only, --running-time wins
         if running_time:
             if elapsed_time >= running_time:
                 break
         elif nb_runs >= NB_RUNS or elapsed_time > MAX_TIME:
-            break
-
-        if elapsed_time > MAX_TIME:
             break
 
     end_time = get_time()

@@ -61,14 +61,12 @@ REPL_PG_STATS = "/sys/kernel/debug/repl_pt/pg_stats"
 CGROUP_STAT_KEYS = ["anon", "file", "pgscan", "pgsteal", "pgmajfault"]
 PR_SET_PDEATHSIG = 1
 
-# Explanatory only, like the repl_ ones: QPS and bandwidth are what we report,
-# these say *why* a curve moved, by counting the page migration numa balancing
-# does. Machine wide, so a busy machine pollutes them.
+# what numa balancing did and when. machine wide, so a busy machine pollutes
 VMSTAT_KEYS = [
-    "numa_pte_updates",  # scanner arming hinting faults, i.e. the tax
+    "numa_pte_updates",
     "numa_huge_pte_updates",
     "numa_hint_faults",
-    "numa_hint_faults_local",  # vs hint_faults: was the page already home
+    "numa_hint_faults_local",
     "numa_pages_migrated",
     "pgmigrate_success",
     "pgmigrate_fail",

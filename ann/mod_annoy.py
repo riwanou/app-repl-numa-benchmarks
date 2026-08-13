@@ -24,7 +24,7 @@ class Annoy:
         index = self._annoy_index(dims, index_path)
         for i, vec in enumerate(train):
             index.add_item(i, vec.tolist())
-        index.build(trees)
+        index.build(trees, n_jobs=-1)  # the default is not all cores here
         index.save(index_path)
 
         print(f"Index created {index_path}")

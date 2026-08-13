@@ -62,10 +62,9 @@ if args.run == "ann":
 elif args.run == "ann-repl":
     bench_and_monitor(bench_ann.run_bench_ann_repl, "ann-repl")
 elif args.run == "pressure":
+    # 0.5s to catch the reclaim transient at each memory.high step
     bench_and_monitor(
-        pressure.run_bench_pressure,
-        "ann-pressure",
-        pressure.SAMPLE_INTERVAL,
+        pressure.run_bench_pressure, "ann-pressure", pressure.SAMPLE_INTERVAL
     )
 elif args.run == "pressure-repl":
     bench_and_monitor(
