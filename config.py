@@ -71,6 +71,7 @@ MONITOR_DIR = os.path.abspath(os.path.join(RESULT_DIR, PLATFORM, "monitor"))
 MONITOR_PCM = os.path.join(MONITOR_DIR, "pcm")
 MONITOR_PCM_MEMORY = os.path.join(MONITOR_DIR, "pcm_memory")
 MONITOR_MEM = os.path.join(MONITOR_DIR, "mem")
+MONITOR_PCM_RAW = os.path.join(MONITOR_DIR, "pcm_raw")
 
 
 def sh(cmd, cwd=None):

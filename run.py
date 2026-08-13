@@ -45,8 +45,10 @@ parser.add_argument(
 args = parser.parse_args()
 
 
-def bench_and_monitor(bench_fn, label, interval=monitoring.INTERVAL):
-    monitor = monitoring.Monitoring(label, interval)
+def bench_and_monitor(
+    bench_fn, label, interval=monitoring.INTERVAL, raw_events=None
+):
+    monitor = monitoring.Monitoring(label, interval, raw_events)
     monitor.start()
     try:
         bench_fn()
@@ -92,7 +94,11 @@ elif args.run == "llama":
 elif args.run == "llama-repl":
     bench_and_monitor(bench_llama.run_bench_llama_repl, "llama-repl")
 elif args.run == "sharing":
-    bench_and_monitor(bench_sharing.run_bench_sharing, "sharing")
+    bench_and_monitor(
+        bench_sharing.run_bench_sharing,
+        "sharing",
+        raw_events=monitoring.CHA_DIR_EVENTS,
+    )
 elif args.run == "bench-pgtable-own":
     bench_micro.run_bench_pgtable("mmap")
 elif args.run == "bench-pgtable-carrefour":
