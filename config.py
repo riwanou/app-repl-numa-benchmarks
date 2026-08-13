@@ -41,16 +41,28 @@ def get_safe_platform_string():
 NUM_THREADS = multiprocessing.cpu_count()
 PLATFORM = get_safe_platform_string()
 
-HYDRA_DIR = os.path.join("..", "linux-hydra-6.5")
+# Anchor every path to the repo, not to the current working directory. The
+# benches are launched from just, from run.py, and from subprocesses that
+# inherit whatever cwd their caller had, so a bare "results" resolves
+# differently depending on who started it, and silently writes (or reads) the
+# wrong tree. Deriving from __file__ makes the checkout relocatable: it works
+# the same in ~/phd/numa/repl_benches and in /tmp/app-repl-numa-benchmarks.
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+HYDRA_DIR = os.path.join(ROOT_DIR, "..", "linux-hydra-6.5")
 HYDRA_NUMACTL = os.path.join(HYDRA_DIR, "hydra-numactl", "numactl")
 
-MITOSIS_DIR = os.path.join("..", "linux-mitosis-4.17")
+MITOSIS_DIR = os.path.join(ROOT_DIR, "..", "linux-mitosis-4.17")
 MITOSIS_NUMACTL = os.path.join(MITOSIS_DIR, "mitosis-numactl", "numactl")
 
 TMP_DIR = tempfile.gettempdir()
 TMP_DIR_ROCKSDB = os.path.join(TMP_DIR, "rocksdb")
 
-RESULT_DIR = "results"
+# the ann bench's inputs: both are gitignored, so they are per machine
+ANN_DATA_DIR = os.path.join(ROOT_DIR, "ann", "data")
+ANN_INDEX_DIR = os.path.join(ROOT_DIR, "ann", "indices")
+
+RESULT_DIR = os.path.join(ROOT_DIR, "results")
 RESULT_DIR_ANN = os.path.join(RESULT_DIR, PLATFORM, "ann")
 RESULT_DIR_ROCKSDB = os.path.join(RESULT_DIR, PLATFORM, "rocksdb")
 RESULT_DIR_FIO = os.path.join(RESULT_DIR, PLATFORM, "fio")
@@ -59,7 +71,7 @@ RESULT_DIR_LLAMA = os.path.join(RESULT_DIR, PLATFORM, "llama")
 RESULT_DIR_PRESSURE = os.path.join(RESULT_DIR, PLATFORM, "pressure")
 RESULT_DIR_SHARING = os.path.join(RESULT_DIR, PLATFORM, "sharing")
 
-PLOT_DIR = "plots"
+PLOT_DIR = os.path.join(ROOT_DIR, "plots")
 PLOT_DIR_ANN = os.path.join(PLOT_DIR, "ann")
 PLOT_DIR_ROCKSDB = os.path.join(PLOT_DIR, "rocksdb")
 PLOT_DIR_FIO = os.path.join(PLOT_DIR, "fio")
@@ -67,15 +79,23 @@ PLOT_DIR_LLAMA = os.path.join(PLOT_DIR, "llama")
 PLOT_DIR_MONITORING = os.path.join(PLOT_DIR, "monitoring")
 PLOT_DIR_MICROBENCH = os.path.join(PLOT_DIR, "microbench")
 
-MONITOR_DIR = os.path.abspath(os.path.join(RESULT_DIR, PLATFORM, "monitor"))
+MONITOR_DIR = os.path.join(RESULT_DIR, PLATFORM, "monitor")
 MONITOR_PCM = os.path.join(MONITOR_DIR, "pcm")
 MONITOR_PCM_MEMORY = os.path.join(MONITOR_DIR, "pcm_memory")
 MONITOR_MEM = os.path.join(MONITOR_DIR, "mem")
 
 
 def sh(cmd, cwd=None):
+    # default to the repo, not the caller's cwd: these commands run the
+    # benches by relative script name ("uv run run_ann.py")
     print(f"$ {cmd}")
-    subprocess.run(cmd, shell=True, check=True, cwd=cwd, executable="/bin/bash")
+    subprocess.run(
+        cmd,
+        shell=True,
+        check=True,
+        cwd=cwd or ROOT_DIR,
+        executable="/bin/bash",
+    )
 
 
 def get_time():

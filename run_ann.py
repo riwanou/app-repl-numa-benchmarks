@@ -4,8 +4,8 @@ import argparse
 
 TAG = "default"
 NUM_THREADS = config.NUM_THREADS
-DATA_DIR = "ann/data"
-INDEX_DIR = "ann/indices"
+DATA_DIR = config.ANN_DATA_DIR
+INDEX_DIR = config.ANN_INDEX_DIR
 RESULT_DIR = config.RESULT_DIR_ANN
 
 parser = argparse.ArgumentParser()
