@@ -1,4 +1,4 @@
-build: build-rocksdb build-fio build-llama build-micro
+build: build-rocksdb build-fio build-llama build-micro build-dirtest
 
 bench: bench-ann bench-rocksdb bench-llama bench-fio
 bench-repl: bench-ann-repl bench-rocksdb-repl bench-llama-repl bench-fio-repl
@@ -18,6 +18,9 @@ build-micro:
 
 build-fio:
     make -C fio-3.40 -j
+
+build-dirtest:
+    make -C dirtest
 
 build-llama:
     #!/usr/bin/env bash
@@ -85,6 +88,10 @@ bench-llama-repl:
     #!/usr/bin/env bash
     . /opt/intel/oneapi/setvars.sh
     uv run run.py llama-repl
+
+# cross socket line sharing; needs no repl kernel, measures what repl removes
+bench-sharing: build-dirtest
+    uv run run.py sharing
 
 plot-ann:
     uv run run.py plot-ann

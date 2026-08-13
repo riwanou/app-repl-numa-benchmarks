@@ -57,6 +57,7 @@ RESULT_DIR_FIO = os.path.join(RESULT_DIR, PLATFORM, "fio")
 RESULT_DIR_MICROBENCH = os.path.join(RESULT_DIR, PLATFORM, "microbench")
 RESULT_DIR_LLAMA = os.path.join(RESULT_DIR, PLATFORM, "llama")
 RESULT_DIR_PRESSURE = os.path.join(RESULT_DIR, PLATFORM, "pressure")
+RESULT_DIR_SHARING = os.path.join(RESULT_DIR, PLATFORM, "sharing")
 
 PLOT_DIR = "plots"
 PLOT_DIR_ANN = os.path.join(PLOT_DIR, "ann")

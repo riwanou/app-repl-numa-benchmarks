@@ -4,6 +4,7 @@ import bench_rocksdb
 import bench_fio
 import bench_llama
 import bench_micro
+import bench_sharing
 import monitoring
 import pressure
 
@@ -24,6 +25,7 @@ parser.add_argument(
         "fio-pgt-hydra",
         "llama",
         "llama-repl",
+        "sharing",
         "bench-pgtable-own",
         "bench-pgtable-carrefour",
         "bench-alloc-own",
@@ -89,6 +91,8 @@ elif args.run == "llama":
     bench_and_monitor(bench_llama.run_bench_llama, "llama")
 elif args.run == "llama-repl":
     bench_and_monitor(bench_llama.run_bench_llama_repl, "llama-repl")
+elif args.run == "sharing":
+    bench_and_monitor(bench_sharing.run_bench_sharing, "sharing")
 elif args.run == "bench-pgtable-own":
     bench_micro.run_bench_pgtable("mmap")
 elif args.run == "bench-pgtable-carrefour":
