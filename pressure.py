@@ -30,31 +30,24 @@ class Phase:
     seconds: int
 
 
-# A staircase rather than alternating normal/pressure: each step inherits the
-# previous one's state, so this reads as a dose response and alternating would
-# confound limit with number of squeezes survived. Swap the list for a recovery
-# study.
+# A staircase: each step inherits the previous one's state, so this reads as a
+# dose response.
 #
-# Levels are fractions of the fully replicated footprint, ~16G on a 4 node
-# machine (gist index 3.84G x 4 copies + slack): 12G = room for 3 copies,
-# 8G = 2, 4G = 1, i.e. the limit says how many replicas the system can afford.
-# 10G / 6G are the half steps: repl-bound collapses between 12G and 10G, and
-# 4G is the floor where nothing is left to reclaim. normal / release are
-# longer because replication needs ~60s to converge (repl-bound reached only
-# 11.9G of its ~15G steady state in 40s, and repl-firsttouch was still 25%
-# below its converged QPS).
+# One copy of the index is 3.84G, so cN sits just under N copies and the Nth
+# has to go. c1.5 is where repl-bound's QPS actually collapses, halfway down
+# the last copy. normal is short (each variant converges during its settle),
+# release long (re-replicating is the slow direction).
 PLAN = [
-    Phase("normal", "max", 60),
-    Phase("p1", "11G", 40),
-    Phase("p2", "9G", 40),
-    Phase("p3", "7G", 40),
-    Phase("p4", "5G", 40),
-    Phase("p5", "3G", 40),
+    Phase("normal", "max", 30),
+    Phase("c3", "11G", 40),
+    Phase("c2", "7G", 40),
+    Phase("c1.5", "5G", 40),
+    Phase("c1", "3G", 40),
     Phase("release", "max", 60),
 ]
 
-# the bench outlives the plan: index load before, drain after
-SETTLE = 30
+# the bench outlives the plan: settle before (per variant, see PressureVariant)
+# and drain after
 TAIL = 10
 
 # our sampling rate, and the monitoring one run.py passes to Monitoring
@@ -67,6 +60,21 @@ REPL_PG_STATS = "/sys/kernel/debug/repl_pt/pg_stats"
 
 CGROUP_STAT_KEYS = ["anon", "file", "pgscan", "pgsteal", "pgmajfault"]
 PR_SET_PDEATHSIG = 1
+
+# Explanatory only, like the repl_ ones: QPS and bandwidth are what we report,
+# these say *why* a curve moved. numa balancing migrates pages (vmstat) and
+# threads (their node), and neither is visible in the other's counters.
+NODE_DIR = "/sys/devices/system/node"
+INDEX_EXTS = (".usearch", ".ivf", ".ann")  # same set repl_pt registers
+VMSTAT_KEYS = [
+    "numa_pte_updates",  # scanner arming hinting faults, i.e. the tax
+    "numa_huge_pte_updates",
+    "numa_hint_faults",
+    "numa_hint_faults_local",  # vs hint_faults: was the page already home
+    "numa_pages_migrated",
+    "pgmigrate_success",
+    "pgmigrate_fail",
+]
 
 
 def read_text(path: str) -> str:
@@ -118,6 +126,65 @@ def repl_sample() -> dict:
     return {f"repl_{k}": v for k, v in values.items() if v is not None}
 
 
+def cpu_node() -> dict[int, int]:
+    """cpu -> node, from nodeN/cpulist ("0-15,32-47"). Read once at import:
+    the topology does not move under us."""
+    mapping = {}
+    nodes = sorted(os.listdir(NODE_DIR)) if os.path.isdir(NODE_DIR) else []
+    for node in nodes:
+        if not node.startswith("node") or not node[4:].isdigit():
+            continue
+        for span in read_text(f"{NODE_DIR}/{node}/cpulist").split(","):
+            if not span:
+                continue
+            lo, _, hi = span.partition("-")
+            for cpu in range(int(lo), int(hi or lo) + 1):
+                mapping[cpu] = int(node[4:])
+    return mapping
+
+
+CPU_NODE = cpu_node()
+NODES = sorted(set(CPU_NODE.values()))
+
+
+def bench_pids() -> list[str]:
+    if not os.path.isdir("/proc"):
+        return []
+    return [
+        pid
+        for pid in os.listdir("/proc")
+        if pid.isdigit() and "python" in read_text(f"/proc/{pid}/comm")
+    ]
+
+
+def vmstat_sample() -> dict:
+    stat = read_kv("/proc/vmstat")
+    return {f"vm_{key}": stat.get(key, "") for key in VMSTAT_KEYS}
+
+
+def threads_sample() -> dict:
+    """How many of the bench's threads are running on each node. Thread
+    migration is the half of numa balancing that vmstat does not count, and it
+    shows up here as the histogram sloshing between nodes."""
+    counts = dict.fromkeys(NODES, 0)
+    for pid in bench_pids():
+        tasks = f"/proc/{pid}/task"
+        try:
+            tids = os.listdir(tasks)
+        except OSError:
+            continue
+        for tid in tids:
+            # field 39 of /proc/<tid>/stat is the cpu it last ran on; comm
+            # comes second and can hold spaces and parens, so cut it off first
+            stat = read_text(f"{tasks}/{tid}/stat").rpartition(") ")[2]
+            fields = stat.split()
+            if len(fields) > 36:
+                node = CPU_NODE.get(int(fields[36]))
+                if node is not None:
+                    counts[node] += 1
+    return {f"threads_node{node}": n for node, n in counts.items()}
+
+
 def sample(variant, phase: Phase, elapsed: float) -> dict:
     return {
         "time": datetime.datetime.now().isoformat(timespec="milliseconds"),
@@ -127,6 +194,8 @@ def sample(variant, phase: Phase, elapsed: float) -> dict:
         "limit": phase.limit,
         **cgroup_sample(),
         **repl_sample(),
+        **vmstat_sample(),
+        **threads_sample(),
     }
 
 
@@ -141,6 +210,27 @@ def pg_stats() -> str:
         if pid.isdigit() and "python" in read_text(f"/proc/{pid}/comm")
         if (out := read_text(os.path.join(REPL_PG_STATS, pid)))
         and not out.startswith("replication not enabled")
+    )
+
+
+def numa_maps() -> str:
+    """Where the index pages actually sit, per node, for the stock variants:
+    the only way to see numa balancing move the mapping. Kept to phase ends,
+    it walks the page table. See run_phase for why repl variants skip it."""
+    return "\n".join(
+        f"-- pid {pid}\n" + "\n".join(lines)
+        for pid in sorted(bench_pids(), key=lambda p: p.zfill(9))
+        if (
+            lines := [
+                line
+                for line in read_text(f"/proc/{pid}/numa_maps").splitlines()
+                # "<addr> default file=<path> mapped=N N0=n N1=n ..."
+                if any(
+                    tok.startswith("file=") and tok.endswith(INDEX_EXTS)
+                    for tok in line.split()
+                )
+            ]
+        )
     )
 
 
@@ -224,11 +314,18 @@ def run_phase(phase, variant, bench, writer, log, start) -> bool:
 
     setter.join()
     log(f"== pg_stats @ {phase.label} end", pg_stats())
+    # numa_maps walks the main page table only, so under the repl policy it
+    # reports the main copy and is blind to the replicas: pg_stats is what
+    # sees those. Keep it for the stock variants, where it is the only
+    # placement signal we have, and skip the walk (seconds, on this mapping)
+    # everywhere else.
+    if variant.main_placement is None:
+        log(f"== numa_maps @ {phase.label} end", numa_maps())
     return True
 
 
 def run_variant(variant):
-    running_time = SETTLE + sum(p.seconds for p in PLAN) + TAIL
+    running_time = variant.settle + sum(p.seconds for p in PLAN) + TAIL
     print(f"=== {variant.tag}: {len(PLAN)} phases, {running_time}s")
 
     os.makedirs(config.RESULT_DIR_PRESSURE, exist_ok=True)
@@ -264,7 +361,7 @@ def run_variant(variant):
         since = datetime.datetime.now().isoformat()
         bench = start_bench(variant, running_time)
         sh(f"echo 1 > {REPL_STATS}/clear || true")
-        time.sleep(SETTLE)
+        time.sleep(variant.settle)
 
         start = time.monotonic()
         try:

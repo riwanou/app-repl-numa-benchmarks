@@ -36,13 +36,6 @@ PCM_DATE = ("System", "Date")
 PCM_TIME = ("System", "Time")
 PCM_MEM_DATE = ("Unnamed: 0_level_0", "Date")
 PCM_MEM_TIME = ("Unnamed: 1_level_0", "Time")
-# pcm-raw: one column per (CHA box, event), headed SKT<n>C<box> over the event
-# name, plus Date / Time / ms. The counters are raw per interval deltas, so a
-# rate needs the `ms` column, which is the real elapsed time of the sample.
-PCM_RAW_DATE = ("Unnamed: 0_level_0", "Date")
-PCM_RAW_TIME = ("Unnamed: 1_level_0", "Time")
-PCM_RAW_MS = ("Unnamed: 2_level_0", "ms")
-
 
 @dataclass
 class Window:
@@ -51,8 +44,6 @@ class Window:
     pcm: pd.DataFrame
     pcm_memory: pd.DataFrame
     mem: pd.DataFrame
-    # only captured for benches that ask for uncore events, empty otherwise
-    pcm_raw: pd.DataFrame
 
 
 def monitor_dir(arch: str) -> str:
@@ -98,13 +89,10 @@ def load_monitoring(arch: str, label: str) -> Window:
 
     missing = []
 
-    def read(
-        name: str, multi_header: bool, optional: bool = False
-    ) -> pd.DataFrame:
+    def read(name: str, multi_header: bool) -> pd.DataFrame:
         path = os.path.join(directory, f"{name}_{label}.csv")
         if not os.path.exists(path):
-            if not optional:
-                missing.append(path)
+            missing.append(path)
             return pd.DataFrame()
         try:
             return pd.read_csv(path, header=[0, 1] if multi_header else 0)
@@ -115,7 +103,6 @@ def load_monitoring(arch: str, label: str) -> Window:
     pcm = read("pcm", True)
     pcm_memory = read("pcm_memory", True)
     mem = read("mem", False)
-    pcm_raw = read("pcm_raw", True, optional=True)
 
     # a label never run on this arch has all three missing, that is not worth
     # a warning, a partial capture is.
@@ -150,16 +137,7 @@ def load_monitoring(arch: str, label: str) -> Window:
         else None,
     )
     mem = timed(mem, mem["time"] if not mem.empty else None)
-    pcm_raw = timed(
-        pcm_raw,
-        pcm_raw[PCM_RAW_DATE].astype(str)
-        + " "
-        + pcm_raw[PCM_RAW_TIME].astype(str)
-        if not pcm_raw.empty
-        else None,
-    )
-
-    return Window(pcm, pcm_memory, mem, pcm_raw)
+    return Window(pcm, pcm_memory, mem)
 
 
 def slice_window(full: Window, start, end) -> Window:
@@ -169,9 +147,7 @@ def slice_window(full: Window, start, end) -> Window:
         mask = (df["time_dt"] >= start) & (df["time_dt"] <= end)
         return pd.DataFrame(df[mask])
 
-    return Window(
-        cut(full.pcm), cut(full.pcm_memory), cut(full.mem), cut(full.pcm_raw)
-    )
+    return Window(cut(full.pcm), cut(full.pcm_memory), cut(full.mem))
 
 
 # --------------------------------------------------------------- stat helpers
@@ -227,40 +203,6 @@ def per_node(name: str, fn: Callable[[Window, str], float]):
     """Same for the per node stats of the mem CSV."""
     for i in range(MAX_SOCKETS):
         stat(f"{name}_node{i}")(lambda w, n=f"Node{i}": fn(w, n))
-
-
-def raw_event_ms(df: pd.DataFrame, event: str, socket: int | None = None) -> float:
-    """Millions of `event` per second, summed over the CHA boxes of a socket.
-
-    pcm-raw writes one column per (box, event) holding the raw counter delta of
-    the sample, so the rate needs the `ms` column rather than the nominal
-    interval: a sample is 996-998 ms in practice, not 1000.
-    """
-    if df.empty or PCM_RAW_MS not in df.columns:
-        return float("nan")
-
-    prefix = "SKT" if socket is None else f"SKT{socket}C"
-    columns = [
-        col
-        for col in df.columns
-        if isinstance(col, tuple)
-        and col[1] == event
-        and str(col[0]).startswith(prefix)
-    ]
-    if not columns:
-        return float("nan")
-
-    counts = df[columns].apply(pd.to_numeric, errors="coerce").sum(axis=1)
-    seconds = pd.to_numeric(df[PCM_RAW_MS], errors="coerce") / 1000.0
-    return (counts / seconds).mean() / 1e6
-
-
-def per_socket_raw(name: str, event: str):
-    """Register `name`_skt0 .. _skt<MAX_SOCKETS> for a pcm-raw uncore event."""
-    for i in range(MAX_SOCKETS):
-        stat(f"{name}_skt{i}")(
-            lambda w, e=event, s=i: raw_event_ms(w.pcm_raw, e, s)
-        )
 
 
 def upi_pct_cols(df: pd.DataFrame, kind: str) -> list:
@@ -424,26 +366,6 @@ def _(w: Window) -> float:
 @stat("mem_write_gb")
 def _(w: Window) -> float:
     return mean(w.pcm_memory, ("System", "Write"), MB_TO_GB)
-
-
-# coherence directory, straight off the CHA counters. Only populated for a
-# capture that ran pcm-raw with monitoring.CHA_DIR_EVENTS, NaN otherwise.
-# HA and TOR are two distinct sources of directory updates and are kept apart:
-# whether one is a subset of the other is not documented, so summing them would
-# be a guess.
-_DIR_EVENTS = [
-    ("dir_update_ha_ms", "UNC_CHA_DIR_UPDATE.HA"),
-    ("dir_update_tor_ms", "UNC_CHA_DIR_UPDATE.TOR"),
-    ("dir_lookup_snp_ms", "UNC_CHA_DIR_LOOKUP.SNP"),
-    ("dir_lookup_nosnp_ms", "UNC_CHA_DIR_LOOKUP.NO_SNP"),
-]
-for _name, _event in _DIR_EVENTS:
-    stat(_name)(lambda w, e=_event: raw_event_ms(w.pcm_raw, e))
-
-# the updates land on the socket that owns the memory, so the per socket split
-# is what separates a home node effect from a requester effect
-per_socket_raw("dir_update_ha", "UNC_CHA_DIR_UPDATE.HA")
-per_socket_raw("dir_lookup_snp", "UNC_CHA_DIR_LOOKUP.SNP")
 
 
 for _i in range(MAX_SOCKETS):

@@ -85,11 +85,24 @@ class PressureVariant:
     numactl: str = ""
     numa_balancing: bool = False
     main_placement: int | None = None  # None on the stock kernel
+    # Seconds to let the variant reach steady state before the plan starts, so
+    # the first phase measures a converged system and not a ramp. Index load
+    # (~15s) happens inside it. 60s is what replication needs to converge;
+    # static placements need only the load, and AutoNUMA needs far more (see
+    # numa-balancing below).
+    settle: int = 60
 
 
 PRESSURE_VARIANTS = [
-    PressureVariant("numa-balancing", numa_balancing=True),
-    PressureVariant("interleaved", numactl="numactl --interleave=all"),
+    # AutoNUMA does not even start hurting until ~40s after launch: 1s scan
+    # delay, then 256M of address space per pass with a 1s floor on the
+    # period, so a 3.84G index needs a dozen-odd passes before coverage bites.
+    # QPS then decays over another ~30s to a plateau ~40% below the ramp. A
+    # 60s settle would put the knee inside the first phase.
+    PressureVariant("numa-balancing", numa_balancing=True, settle=100),
+    PressureVariant(
+        "interleaved", numactl="numactl --interleave=all", settle=30
+    ),
 ]
 
 PRESSURE_VARIANTS_REPL = [
