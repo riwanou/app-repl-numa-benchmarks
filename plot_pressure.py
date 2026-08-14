@@ -76,6 +76,20 @@ def read_bandwidth(arch: str, variant: str, t0, t1) -> pd.DataFrame:
     return df
 
 
+def read_locality(arch: str, variant: str, t0, t1) -> pd.Series:
+    """Share of memory accesses served by the local socket, from pcm. The
+    hardware view, and unlike pg_stats it exists for the stock variants too."""
+    path = os.path.join(monitor_dir(arch), f"pcm_{monitor_label(variant)}.csv")
+    if not os.path.exists(path):
+        return pd.Series(dtype=float)
+    df = pd.read_csv(path, header=[0, 1])
+    date = df[[c for c in df.columns if c[1] == "Date"][0]].astype(str)
+    time = df[[c for c in df.columns if c[1] == "Time"][0]].astype(str)
+    t = pd.to_datetime(date + " " + time, errors="coerce")
+    inside = (t >= t0) & (t <= t1)
+    return pd.to_numeric(df.loc[inside, ("System", "LOCAL")], errors="coerce")
+
+
 def read_sched_events(arch: str, variant: str, t0, t1) -> pd.DataFrame:
     """perf stat tracepoints. Its timestamps are relative to its own start,
     so the first line of the file anchors them."""
@@ -145,7 +159,18 @@ def read_coverage(arch: str, variant: str) -> pd.DataFrame:
     flush()
     df = pd.DataFrame(rows)
     if not df.empty:
-        df["gb_replicated"] = df.gb_max * df.coverage / 100
+        # coverage is memory weighted: a single copy already reads 1/N local,
+        # so back out the share of pages that actually carry a duplicate.
+        # coverage = 1/N + (1 - 1/N) * duplicated
+        floor = 100 / df.nodes
+        # not "duplicated": that name collides with DataFrame.duplicated
+        df["dup_pct"] = ((df.coverage - floor) / (100 - floor) * 100).clip(
+            lower=0
+        )
+        df["gb_replicated"] = df.gb_max * df.coverage / 100  # whole mapping
+        df["gb_duplicated"] = (
+            df.gb_max * (1 - 1 / df.nodes) * df.dup_pct / 100
+        )
     return df
 
 
@@ -255,7 +280,7 @@ def plot_variant(arch: str, variant: str, full_gb: float = 0):
                 continue
             c = by_phase.loc[r.phase]
             ax.hlines(
-                c.gb_replicated,
+                c.gb_duplicated,
                 r.start_s,
                 r.end_s,
                 color="#1f77b4",
@@ -263,13 +288,13 @@ def plot_variant(arch: str, variant: str, full_gb: float = 0):
             )
             ax.text(
                 (r.start_s + r.end_s) / 2,
-                c.gb_replicated + 0.25,
-                f"{c.coverage:.0f}%",
+                c.gb_duplicated + 0.25,
+                f"{c.dup_pct:.0f}% dup",
                 ha="center",
                 fontsize=8,
                 color="#1f77b4",
             )
-        ax.plot([], [], color="#1f77b4", lw=2, label="replicated (of index)")
+        ax.plot([], [], color="#1f77b4", lw=2, label="duplicates (subset of anon)")
 
     ax.set_ylabel("GB")
     ax.set_ylim(bottom=0)
@@ -387,12 +412,12 @@ def plot_metric(arch: str, variants: list[str], metric: str, full_gb: float = 0)
 def plot_summary(arch: str, variants: list[str]):
     """QPS against the limit it ran under, over how much of the index the
     limit still let us replicate."""
-    fig, (ax, ax_mem, ax_cov) = plt.subplots(
-        3,
+    fig, (ax, ax_mem, ax_loc, ax_cov) = plt.subplots(
+        4,
         1,
-        figsize=(9, 10),
+        figsize=(9, 12),
         sharex=True,
-        gridspec_kw={"height_ratios": [2, 1.2, 1.2]},
+        gridspec_kw={"height_ratios": [2, 1.2, 1.2, 1.2]},
     )
     order = limits = None
     nodes = 0
@@ -420,6 +445,15 @@ def plot_summary(arch: str, variants: list[str]):
             marker="o",
             color=variant_color(variant),
             label=variant,
+        )
+
+        loc = []
+        for _, r in ph.iterrows():
+            begins = r.start_time + (r.end_time - r.start_time) * STEADY_FROM
+            v = read_locality(arch, variant, begins, r.end_time)
+            loc.append(v.median() if not v.empty else float("nan"))
+        ax_loc.plot(
+            range(len(order)), loc, marker="o", color=variant_color(variant)
         )
 
         cg_all = pd.read_csv(f"{base(arch, variant)}-cgroup.csv")
@@ -456,7 +490,7 @@ def plot_summary(arch: str, variants: list[str]):
                 # (all copies, base at max) -> their sum is the fully
                 # replicated footprint the limits are measured against
                 fulls.append((cov.gb_max.median(), bases[0]))
-            by_phase = per_phase.coverage
+            by_phase = per_phase.dup_pct
             ax_cov.plot(
                 range(len(order)),
                 [by_phase.get(p, float("nan")) for p in order],
@@ -484,36 +518,27 @@ def plot_summary(arch: str, variants: list[str]):
     ax.grid(axis="y", alpha=0.3)
     ax.legend(fontsize=8)
 
-    # one copy on N nodes serves 1/N of accesses locally: that is where the
-    # stock variants sit, and where replication ends up once squeezed
-    if nodes:
-        ax_cov.axhline(100 / nodes, color="0.4", ls="--", lw=1)
-        ax_cov.text(
-            0.01,
-            100 / nodes + 3,
-            f"1 copy = {100 / nodes:.0f}%",
-            fontsize=8,
-            color="0.3",
-        )
-
     # the percentage is a share of the index, so pair it with the GB it
     # stands for: 80% is easier to read as "6.0 of 7.5GB of copies"
-    if fulls:
-        copies_gb = sum(f[0] for f in fulls) / len(fulls)
+    if fulls and nodes:
+        dup_gb = sum(f[0] for f in fulls) / len(fulls) * (1 - 1 / nodes)
         ax_gb = ax_cov.secondary_yaxis(
             "right",
             functions=(
-                lambda pct: pct / 100 * copies_gb,
-                lambda gb: gb / copies_gb * 100,
+                lambda pct: pct / 100 * dup_gb,
+                lambda gb: gb / dup_gb * 100,
             ),
         )
-        ax_gb.set_ylabel(f"GB replicated (of {copies_gb:.1f}GB)")
+        ax_gb.set_ylabel(f"GB of duplicates (of {dup_gb:.1f}GB)")
+    ax_loc.set_ylabel("local memory\naccesses (%)")
+    ax_loc.set_ylim(0, 105)
+    ax_loc.grid(axis="y", alpha=0.3)
     ax_mem.set_ylabel("memory used (GB)")
     ax_mem.set_ylim(bottom=0)
     ax_mem.grid(axis="y", alpha=0.3)
     # not "index replicated": at 25% the whole index is still there, just in
     # one copy. This is how much of it each node reaches locally.
-    ax_cov.set_ylabel("pages local per node (%)")
+    ax_cov.set_ylabel("pages actually\nduplicated (%)")
     ax_cov.set_xlabel("memory.high")
     ax_cov.set_ylim(0, 105)
     ax_cov.grid(axis="y", alpha=0.3)

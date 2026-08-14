@@ -1,18 +1,18 @@
 == pg_stats @ normal end
-== pg_stats @ 10G end
-== pg_stats @ 8G end
+== pg_stats @ 7G end
 == pg_stats @ 6G end
+== pg_stats @ 5G end
 == pg_stats @ 4G end
 == pg_stats @ 3G end
 == pg_stats @ release end
 == cgroup summary
 low 0
-high 3376
+high 0
 max 0
 oom 0
 oom_kill 0
 oom_group_kill 0
-peak 7978995712
+peak 2444615680
 == repl stats
 repl_fail_events 0
 repl_lock_main_lost 0
