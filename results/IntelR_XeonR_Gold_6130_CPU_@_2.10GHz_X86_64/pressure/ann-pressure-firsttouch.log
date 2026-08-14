@@ -1,0 +1,30 @@
+== pg_stats @ normal end
+== pg_stats @ c3 end
+== pg_stats @ c2 end
+== pg_stats @ c1.5 end
+== pg_stats @ c1 end
+== pg_stats @ release end
+== cgroup summary
+low 0
+high 868
+max 0
+oom 0
+oom_kill 0
+oom_group_kill 0
+peak 7978659840
+== repl stats
+repl_fail_events 0
+repl_lock_main_lost 0
+repl_pg_private_alloc 0
+repl_pg_private_free 0
+repl_pte_miss_events 0
+repl_rdprotect_handled 0
+repl_reclaimed 0
+repl_reclaimed_replicas 0
+repl_remote_faults_on_main 0
+repl_repl_allocated 0
+repl_repl_copy_events 0
+repl_tlb_flushed 0
+repl_total_faults 0
+repl_unreplicated 0
+repl_writes_to_replicated 0
