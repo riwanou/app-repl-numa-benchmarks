@@ -30,16 +30,8 @@ class Phase:
     seconds: int
 
 
-# A staircase: each step inherits the previous one's state, so this reads as a
-# dose response.
-#
-# Fully replicated costs 7.8G: 4 copies of the 1.9G index plus the ~0.3G the
-# process actually works in. So a limit is worth limit/7.8 of it: 7G leaves
-# 90%, then 77, 64, 51, 38. Below ~2.2G not even one copy fits. Every step
-# binds, which the old 10G/8G did not: they only looked like they bit because
-# the bench used to hold 3.8G of a numpy array it never read again, and
-# reclaim took replicas alongside it. normal is short (each variant converges
-# during its settle), release long (re-replicating is the slow direction).
+# a staircase, each step inheriting the previous one's state. Fully replicated
+# costs ~7.8G, so 7G leaves 90% of it, down to 38% at 3G
 PLAN = [
     Phase("normal", "max", 30),
     Phase("7G", "7G", 60),
@@ -50,9 +42,8 @@ PLAN = [
     Phase("release", "max", 60),
 ]
 
-# the bench outlives the plan: settle before (per variant, see PressureVariant)
-# and drain after
-TAIL = 10
+TAIL = 10  # the bench outlives the plan, settle is per variant
+QUIESCE = 20  # let the previous variant's teardown finish
 
 # our sampling rate, and the monitoring one run.py passes to Monitoring
 SAMPLE_INTERVAL = 0.5
@@ -158,6 +149,12 @@ def pg_stats() -> str:
     )
 
 
+def reset_machine():
+    # bench.wait() returns when it exits, not when the kernel is done with it
+    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
+    time.sleep(QUIESCE)
+
+
 def start_bench(variant, running_time: int) -> subprocess.Popen:
     cmd = bench_ann.run_bench_pressure(variant, running_time)
 
@@ -249,6 +246,8 @@ def run_variant(variant):
     base = os.path.join(
         config.RESULT_DIR_PRESSURE, f"ann-pressure-{variant.tag}"
     )
+
+    reset_machine()
 
     sh(f"echo +memory > {CGROUP_ROOT}/cgroup.subtree_control")
     # recreate rather than reuse: memory.events cannot be reset, and a stale

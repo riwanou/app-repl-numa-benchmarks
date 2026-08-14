@@ -12,7 +12,7 @@ max 0
 oom 0
 oom_kill 0
 oom_group_kill 0
-peak 2426818560
+peak 2426523648
 == repl stats
 repl_fail_events 0
 repl_lock_main_lost 0
