@@ -84,7 +84,7 @@ def runner_create_index(
     runner, index_path, config, _ = create_f(index_dir, dataset, dataset_config)
     if not recreate_index and os.path.exists(index_path):
         return
-    runner.create_index(train, index_path, config)
+    runner.create_index(train[:], index_path, config)
     pass
 
 
@@ -372,7 +372,9 @@ def run(
 
             dataset_base, _ = os.path.splitext(dataset)
             dataset_config = CONFIG.get(dataset, {})
-            train = train[:]
+            # train stays lazy: the bench only reads its shape, and
+            # materialising it costs 3.8G of anon that nothing ever touches
+            # again. runner_create_index pulls it in when it has to build.
             test = test[:]
             neighbors = neighbors[:]
 

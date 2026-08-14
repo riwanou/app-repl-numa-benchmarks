@@ -33,18 +33,18 @@ class Phase:
 # A staircase: each step inherits the previous one's state, so this reads as a
 # dose response.
 #
-# Fully replicated is 11.6G (4 copies of the 1.9G index plus 4G the process
-# needs anyway), so a limit is worth limit/11.6 of it: 10G leaves 86%, then
-# 69, 52, 34, 26. Below ~2.4G not even one copy fits, and the stock variants
-# only hold 5.9G so nothing squeezes them until 5G. Even steps across that
-# band rather than jumping from 100% to 60%, which is what 11G/7G did and it
-# hid where the curve bends. normal is short (each variant converges during
-# its settle), release long (re-replicating is the slow direction).
+# Fully replicated costs 7.8G: 4 copies of the 1.9G index plus the ~0.3G the
+# process actually works in. So a limit is worth limit/7.8 of it: 7G leaves
+# 90%, then 77, 64, 51, 38. Below ~2.2G not even one copy fits. Every step
+# binds, which the old 10G/8G did not: they only looked like they bit because
+# the bench used to hold 3.8G of a numpy array it never read again, and
+# reclaim took replicas alongside it. normal is short (each variant converges
+# during its settle), release long (re-replicating is the slow direction).
 PLAN = [
     Phase("normal", "max", 30),
-    Phase("10G", "10G", 60),
-    Phase("8G", "8G", 60),
+    Phase("7G", "7G", 60),
     Phase("6G", "6G", 60),
+    Phase("5G", "5G", 60),
     Phase("4G", "4G", 60),
     Phase("3G", "3G", 60),
     Phase("release", "max", 60),

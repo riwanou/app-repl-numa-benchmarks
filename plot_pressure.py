@@ -245,6 +245,32 @@ def plot_variant(arch: str, variant: str, full_gb: float = 0):
         label="file (index)",
         color="#8c564b",
     )
+    # how much of that is copies, from pg_stats. One dump per phase, so it is
+    # a step, and the label is the share of the index it stands for
+    cov = read_coverage(arch, variant)
+    if not cov.empty:
+        by_phase = cov.set_index("phase")
+        for _, r in ph.iterrows():
+            if r.phase not in by_phase.index:
+                continue
+            c = by_phase.loc[r.phase]
+            ax.hlines(
+                c.gb_replicated,
+                r.start_s,
+                r.end_s,
+                color="#1f77b4",
+                lw=2,
+            )
+            ax.text(
+                (r.start_s + r.end_s) / 2,
+                c.gb_replicated + 0.25,
+                f"{c.coverage:.0f}%",
+                ha="center",
+                fontsize=8,
+                color="#1f77b4",
+            )
+        ax.plot([], [], color="#1f77b4", lw=2, label="replicated (of index)")
+
     ax.set_ylabel("GB")
     ax.set_ylim(bottom=0)
     ax.legend(loc="upper right", fontsize=8)
@@ -327,6 +353,9 @@ def plot_metric(arch: str, variants: list[str], metric: str, full_gb: float = 0)
             if df.empty:
                 continue
             x, y = df.elapsed, df.read_gb.rolling(10, center=True).median()
+        elif metric == "memory":
+            df = pd.read_csv(f"{base(arch, variant)}-cgroup.csv")
+            x, y = df.elapsed, df.current_mb / 1024  # already a step, no smoothing
         else:
             df = pd.read_csv(
                 f"{base(arch, variant)}-ann.csv", parse_dates=["start_time"]
@@ -338,7 +367,10 @@ def plot_metric(arch: str, variants: list[str], metric: str, full_gb: float = 0)
 
     ax.set_xlabel("time (s)")
     ax.set_ylabel(
-        "memory read bandwidth (GB/s)" if metric == "bandwidth" else "QPS"
+        {
+            "bandwidth": "memory read bandwidth (GB/s)",
+            "memory": "cgroup memory.current (GB)",
+        }.get(metric, "QPS")
     )
     ax.set_ylim(bottom=0)
     ax.grid(axis="y", alpha=0.25)
@@ -355,12 +387,12 @@ def plot_metric(arch: str, variants: list[str], metric: str, full_gb: float = 0)
 def plot_summary(arch: str, variants: list[str]):
     """QPS against the limit it ran under, over how much of the index the
     limit still let us replicate."""
-    fig, (ax, ax_cov) = plt.subplots(
-        2,
+    fig, (ax, ax_mem, ax_cov) = plt.subplots(
+        3,
         1,
-        figsize=(9, 8),
+        figsize=(9, 10),
         sharex=True,
-        gridspec_kw={"height_ratios": [2, 1]},
+        gridspec_kw={"height_ratios": [2, 1.2, 1.2]},
     )
     order = limits = None
     nodes = 0
@@ -388,6 +420,19 @@ def plot_summary(arch: str, variants: list[str]):
             marker="o",
             color=variant_color(variant),
             label=variant,
+        )
+
+        cg_all = pd.read_csv(f"{base(arch, variant)}-cgroup.csv")
+        ax_mem.plot(
+            range(len(order)),
+            [
+                cg_all[cg_all.phase == p].current_mb.iloc[-1] / 1024
+                if not cg_all[cg_all.phase == p].empty
+                else float("nan")
+                for p in order
+            ],
+            marker="o",
+            color=variant_color(variant),
         )
 
         cov = read_coverage(arch, variant)
@@ -423,15 +468,17 @@ def plot_summary(arch: str, variants: list[str]):
     # footprint, so label each one with the share of it that still fits
     full_gb = sum(f[0] + f[1] for f in fulls) / len(fulls) if fulls else 0
     if order:
-        ticks = []
-        for p, limit in zip(order, limits):
-            if limit == "max" or not full_gb:
-                ticks.append(f"{p}\n{limit}\n100%")
-            else:
-                fits = min(100, float(limit.rstrip("G")) / full_gb * 100)
-                ticks.append(f"{p}\n{limit}\n{fits:.0f}%")
         ax.set_xticks(range(len(order)))
-        ax.set_xticklabels(ticks)
+        ax.set_xticklabels(
+            [limit if p == limit else f"{p}\n{limit}" for p, limit in zip(order, limits)]
+        )
+        # the budget gets its own axis on top, so the only percentage on the
+        # left is the one the curves are plotted against
+        if full_gb:
+            top = ax.secondary_xaxis("top")
+            top.set_xticks(range(len(order)))
+            top.set_xticklabels([fits_pct(x, full_gb) for x in limits])
+            top.set_xlabel(f"% of the {full_gb:.1f}GB full replication needs")
     ax.set_ylabel("median QPS (steady state)")
     ax.set_ylim(bottom=0)
     ax.grid(axis="y", alpha=0.3)
@@ -444,16 +491,30 @@ def plot_summary(arch: str, variants: list[str]):
         ax_cov.text(
             0.01,
             100 / nodes + 3,
-            f"no replication, 1 copy / {nodes} nodes",
+            f"1 copy = {100 / nodes:.0f}%",
             fontsize=8,
             color="0.3",
         )
 
-    ax_cov.set_ylabel("index replicated (%)")
-    ax_cov.set_xlabel(
-        f"phase / memory.high / share of the {full_gb:.1f}GB fully "
-        "replicated footprint that fits"
-    )
+    # the percentage is a share of the index, so pair it with the GB it
+    # stands for: 80% is easier to read as "6.0 of 7.5GB of copies"
+    if fulls:
+        copies_gb = sum(f[0] for f in fulls) / len(fulls)
+        ax_gb = ax_cov.secondary_yaxis(
+            "right",
+            functions=(
+                lambda pct: pct / 100 * copies_gb,
+                lambda gb: gb / copies_gb * 100,
+            ),
+        )
+        ax_gb.set_ylabel(f"GB replicated (of {copies_gb:.1f}GB)")
+    ax_mem.set_ylabel("memory used (GB)")
+    ax_mem.set_ylim(bottom=0)
+    ax_mem.grid(axis="y", alpha=0.3)
+    # not "index replicated": at 25% the whole index is still there, just in
+    # one copy. This is how much of it each node reaches locally.
+    ax_cov.set_ylabel("pages local per node (%)")
+    ax_cov.set_xlabel("memory.high")
     ax_cov.set_ylim(0, 105)
     ax_cov.grid(axis="y", alpha=0.3)
 
@@ -472,72 +533,6 @@ def read_node_mem(arch: str, variant: str) -> pd.DataFrame:
         return pd.DataFrame()
     df = pd.read_csv(path)
     df["t"] = pd.to_datetime(df.time)
-    return df
-
-
-def write_stats(arch: str, variants: list[str]):
-    """One row per variant per plateau: what it ran at, what it held, and
-    where. Steady state only, same window the summary plot uses."""
-    gb, rows = 1024**3, []
-    for variant in variants:
-        ph = phases(arch, variant)
-        cov = read_coverage(arch, variant)
-        cov = cov.set_index("phase") if not cov.empty else pd.DataFrame()
-        cg = pd.read_csv(f"{base(arch, variant)}-cgroup.csv")
-        runs = pd.read_csv(
-            f"{base(arch, variant)}-ann.csv", parse_dates=["start_time"]
-        ).dropna(subset=["phase"])
-        mem = read_node_mem(arch, variant)
-
-        for _, r in ph.iterrows():
-            begins = r.start_time + (r.end_time - r.start_time) * STEADY_FROM
-            q = runs[(runs.start_time >= begins) & (runs.phase == r.phase)]
-            c = cg[cg.phase == r.phase]
-            bw = read_bandwidth(arch, variant, begins, r.end_time)
-            row = {
-                "variant": variant,
-                "phase": r.phase,
-                "limit": r.limit,
-                "qps": round(q.qps.median(), 1) if not q.empty else None,
-                "qps_std": round(q.qps.std(), 1) if len(q) > 1 else None,
-                "runs": len(q),
-                "read_gb_s": round(bw.read_gb.median(), 1)
-                if not bw.empty
-                else None,
-                "current_gb": round(c.current_mb.iloc[-1] / 1024, 2)
-                if not c.empty
-                else None,
-                "anon_gb": round(
-                    pd.to_numeric(c.anon, errors="coerce").iloc[-1] / gb, 2
-                )
-                if not c.empty
-                else None,
-                "file_gb": round(
-                    pd.to_numeric(c.file, errors="coerce").iloc[-1] / gb, 2
-                )
-                if not c.empty
-                else None,
-            }
-            if r.phase in cov.index:
-                row["replicated_pct"] = round(cov.loc[r.phase].coverage, 1)
-                row["gb_replicated"] = round(cov.loc[r.phase].gb_replicated, 2)
-                row["gb_all_copies"] = round(cov.loc[r.phase].gb_max, 2)
-            if not mem.empty:
-                m = mem[(mem.t >= begins) & (mem.t <= r.end_time)]
-                for i in range(4):
-                    for kind in ("anon", "mapped"):
-                        col = f"Node{i}_{kind}"
-                        if col in m.columns and not m.empty:
-                            row[f"n{i}_{kind}_gb"] = round(
-                                m[col].median() / 1024**2, 2
-                            )
-            rows.append(row)
-
-    df = pd.DataFrame(rows)
-    os.makedirs(config.PLOT_DIR_PRESSURE, exist_ok=True)
-    out = os.path.join(config.PLOT_DIR_PRESSURE, f"{short(arch)}_stats.csv")
-    df.to_csv(out, index=False)
-    print(f"[OK] {out} ({len(df)} rows)")
     return df
 
 
@@ -561,7 +556,7 @@ def make_plot_pressure():
             plot_variant(arch, variant, full_gb)
         plot_metric(arch, available, "qps", full_gb)
         plot_metric(arch, available, "bandwidth", full_gb)
+        plot_metric(arch, available, "memory", full_gb)
         plot_summary(arch, available)
-        write_stats(arch, available)
     if not found:
         print(f"[WARN] no pressure results under {RESULT_DIR}/*/pressure")
