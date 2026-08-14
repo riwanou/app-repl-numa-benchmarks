@@ -33,16 +33,20 @@ class Phase:
 # A staircase: each step inherits the previous one's state, so this reads as a
 # dose response.
 #
-# One copy of the index is 3.84G, so cN sits just under N copies and the Nth
-# has to go. c1.5 is where repl-bound's QPS actually collapses, halfway down
-# the last copy. normal is short (each variant converges during its settle),
-# release long (re-replicating is the slow direction).
+# Fully replicated is 11.6G (4 copies of the 1.9G index plus 4G the process
+# needs anyway), so a limit is worth limit/11.6 of it: 10G leaves 86%, then
+# 69, 52, 34, 26. Below ~2.4G not even one copy fits, and the stock variants
+# only hold 5.9G so nothing squeezes them until 5G. Even steps across that
+# band rather than jumping from 100% to 60%, which is what 11G/7G did and it
+# hid where the curve bends. normal is short (each variant converges during
+# its settle), release long (re-replicating is the slow direction).
 PLAN = [
     Phase("normal", "max", 30),
-    Phase("c3", "11G", 40),
-    Phase("c2", "7G", 40),
-    Phase("c1.5", "5G", 40),
-    Phase("c1", "3G", 40),
+    Phase("10G", "10G", 60),
+    Phase("8G", "8G", 60),
+    Phase("6G", "6G", 60),
+    Phase("4G", "4G", 60),
+    Phase("3G", "3G", 60),
     Phase("release", "max", 60),
 ]
 

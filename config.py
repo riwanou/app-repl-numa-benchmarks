@@ -77,6 +77,7 @@ PLOT_DIR_ROCKSDB = os.path.join(PLOT_DIR, "rocksdb")
 PLOT_DIR_FIO = os.path.join(PLOT_DIR, "fio")
 PLOT_DIR_LLAMA = os.path.join(PLOT_DIR, "llama")
 PLOT_DIR_MONITORING = os.path.join(PLOT_DIR, "monitoring")
+PLOT_DIR_PRESSURE = os.path.join(PLOT_DIR, "pressure")
 PLOT_DIR_MICROBENCH = os.path.join(PLOT_DIR, "microbench")
 
 MONITOR_DIR = os.path.join(RESULT_DIR, PLATFORM, "monitor")

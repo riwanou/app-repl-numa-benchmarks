@@ -37,6 +37,7 @@ parser.add_argument(
         "plot-llama",
         "plot-fio",
         "plot-monitoring",
+        "plot-pressure",
         "plot-microbench",
         "stats-monitoring",
     ],
@@ -124,6 +125,10 @@ elif args.run == "plot-monitoring":
     import plot_monitoring
 
     plot_monitoring.make_plot_monitoring()
+elif args.run == "plot-pressure":
+    import plot_pressure
+
+    plot_pressure.make_plot_pressure()
 elif args.run == "plot-microbench":
     import plot_microbench
 
