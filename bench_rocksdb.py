@@ -4,8 +4,8 @@ import shutil
 import config
 from config import sh, get_time
 
-# all path are from rocksdb/build
-BUILD_DIR = os.path.join("rocksdb", "build")
+# benchmark.sh invokes ./db_bench, so it must run from rocksdb/build
+BUILD_DIR = os.path.join(config.ROOT_DIR, "rocksdb", "build")
 
 RESULT_DIR = os.path.abspath(config.RESULT_DIR_ROCKSDB)
 CSV_PATH = os.path.join(RESULT_DIR, "results.csv")
@@ -79,7 +79,8 @@ def _load_db(output_tag: str, numactl_invoc: str = ""):
     os.makedirs(output_dir, exist_ok=True)
 
     sh(
-        f"{LOAD_ENV} OUTPUT_DIR={output_dir} {numactl_invoc} {BENCHMARK_SCRIPT} bulkload"
+        f"{LOAD_ENV} OUTPUT_DIR={output_dir} {numactl_invoc} {BENCHMARK_SCRIPT} bulkload",
+        cwd=BUILD_DIR,
     )
     sh("sync; echo 3 > /proc/sys/vm/drop_caches")
 
@@ -108,7 +109,7 @@ def _do_bench(
         variant, BENCH_ENV, f"OUTPUT_DIR={output_dir}", numactl_invoc
     )
     start_time = get_time()
-    sh(f"{repl_start} {bench_cmd} {repl_end}")
+    sh(f"{repl_start} {bench_cmd} {repl_end}", cwd=BUILD_DIR)
     end_time = get_time()
 
     with open(report_path, mode="r", newline="") as f:
@@ -163,7 +164,6 @@ def _do_bench(
 def prepare_dirs():
     os.makedirs(DB_DIR, exist_ok=True)
     os.makedirs(WAL_DIR, exist_ok=True)
-    os.chdir(BUILD_DIR)
 
 
 def run_bench_rocksdb():
