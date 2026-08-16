@@ -16,8 +16,8 @@ NUM_KEYS = 32_000_000  # 8 GB of keys
 CACHE_SIZE = 16_000_000_000  # 16 GB
 MB_WRITE_PER_SEC = 2
 COMPRESSION_TYPE = "none"
-DURATION = 75
-RAMP_SECS = 45
+DURATION = 120
+RAMP_SECS = 60
 STAT_INTERVAL_SECONDS = 5
 NB_RUNS = 5
 
@@ -41,6 +41,16 @@ BENCHES = [
     "fwdrangewhilewriting",
     "revrangewhilewriting",
 ]
+
+# These never mutate the DB, so one bulkload serves every round: reloading is
+# ~90s of pure overhead per round, more than the measurement itself. The
+# write-mixed benches do mutate it and must start from a fresh load each round.
+READ_ONLY_BENCHES = {
+    "readrandom",
+    "multireadrandom",
+    "fwdrange",
+    "revrange",
+}
 
 
 def decomment(csvfile):
@@ -72,8 +82,12 @@ def _bench_cmd(
     return cmds[variant]
 
 
+def _drop_caches():
+    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
+
+
 def _load_db(output_tag: str, numactl_invoc: str = ""):
-    """Drop caches and load the database. Call once per round before running benches."""
+    """Bulkload the database. Callers drop the caches afterwards."""
     output_dir = os.path.join(RESULT_DIR, "outputs", f"{output_tag}_load")
     shutil.rmtree(output_dir, ignore_errors=True)
     os.makedirs(output_dir, exist_ok=True)
@@ -82,7 +96,19 @@ def _load_db(output_tag: str, numactl_invoc: str = ""):
         f"{LOAD_ENV} OUTPUT_DIR={output_dir} {numactl_invoc} {BENCHMARK_SCRIPT} bulkload",
         cwd=BUILD_DIR,
     )
-    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
+
+
+def _prepare_round(
+    bench: str, output_tag: str, run_idx: int, numactl_invoc: str = ""
+):
+    """Bulkload if this round needs a fresh DB, otherwise just reset the caches.
+
+    Either way the bench starts from a cold page cache, so the runs stay
+    comparable with each other and with the per-round-reload results.
+    """
+    if run_idx == 0 or bench not in READ_ONLY_BENCHES:
+        _load_db(output_tag, numactl_invoc)
+    _drop_caches()
 
 
 def _do_bench(
@@ -188,7 +214,12 @@ def run_bench_rocksdb():
             for run_idx in range(NB_RUNS):
                 if setup:
                     setup()
-                _load_db(f"{variant_tag}-{bench}-round{run_idx}", numactl)
+                _prepare_round(
+                    bench,
+                    f"{variant_tag}-{bench}-round{run_idx}",
+                    run_idx,
+                    numactl,
+                )
                 _do_bench(
                     f"{variant_tag}-{bench}",
                     bench,
@@ -219,7 +250,9 @@ def run_bench_rocksdb_repl():
     # patched-repl variant: with normal replication
     for bench in BENCHES:
         for run_idx in range(NB_RUNS):
-            _load_db(f"patched-repl-{bench}-round{run_idx}")
+            _prepare_round(
+                bench, f"patched-repl-{bench}-round{run_idx}", run_idx
+            )
             sh("echo 1 > /sys/kernel/debug/repl_pt/clear_registered")
             sh("echo .sst > /sys/kernel/debug/repl_pt/registered")
             sh("echo 1 > /sys/kernel/debug/repl_pt/write_unreplication")
