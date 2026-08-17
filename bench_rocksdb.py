@@ -1,5 +1,6 @@
 import os
 import csv
+import glob
 import shutil
 import config
 from config import sh, get_time
@@ -13,11 +14,11 @@ NUM_THREADS = config.NUM_THREADS
 DB_DIR = os.path.join(config.TMP_DIR_ROCKSDB, "db")
 WAL_DIR = os.path.join(config.TMP_DIR_ROCKSDB, "wal")
 NUM_KEYS = 32_000_000  # 8 GB of keys
-CACHE_SIZE = 16_000_000_000  # 16 GB
+CACHE_SIZE = 32_000_000_000  # 32 GB
 MB_WRITE_PER_SEC = 2
 COMPRESSION_TYPE = "none"
 DURATION = 120
-RAMP_SECS = 60
+RAMP_SECS = 75
 STAT_INTERVAL_SECONDS = 5
 NB_RUNS = 5
 
@@ -141,14 +142,22 @@ def _do_bench(
     with open(report_path, mode="r", newline="") as f:
         result = list(csv.DictReader(decomment(f), delimiter="\t"))[0]
 
-    # report.tsv averages over the full run including the ~9s ramp-up.
-    # Recompute ops_sec / mb_sec from the last STABLE_WINDOW seconds of the
-    # per-second CSV, which is always past the ramp-up.
-    per_sec_csv = os.path.join(
-        output_dir, f"benchmark_{variant}.t{NUM_THREADS}.log.r.csv"
+    # report.tsv averages over the whole run, ramp-up included. Recompute
+    # ops_sec / mb_sec from the per-second CSV, keeping only what is past
+    # RAMP_SECS.
+    #
+    # benchmark.sh names that CSV benchmark_<bench>.t<threads>.log.r.csv for the
+    # read benches, but run_change (overwrite) inserts a .s<syncval> before the
+    # .log. Match both: an exact name misses overwrite, which then silently
+    # keeps report.tsv's full-run average while every other bench reports a
+    # steady-state window.
+    per_sec_csv = glob.glob(
+        os.path.join(
+            output_dir, f"benchmark_{variant}.t{NUM_THREADS}*.log.r.csv"
+        )
     )
-    if os.path.exists(per_sec_csv):
-        with open(per_sec_csv, newline="") as f:
+    if per_sec_csv:
+        with open(per_sec_csv[0], newline="") as f:
             rows = list(csv.DictReader(f))
         stable = [r for r in rows if int(r["secs_elapsed"]) > RAMP_SECS]
         if stable:
