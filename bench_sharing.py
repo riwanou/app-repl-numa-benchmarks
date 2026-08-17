@@ -1,13 +1,19 @@
 """Cross socket cache line sharing microbenchmark.
 
-Read-only threads sweeping a buffer pinned to one node. The phases differ only
-in where the readers sit and how much of the buffer the two groups share, so
-any DRAM write traffic the monitors record cannot have come from the workload:
-it is coherence directory traffic.
+Read-only threads sweeping a buffer. The phases differ only in where the
+readers sit and how much of the buffer the two groups share, so any DRAM write
+traffic the monitors record cannot have come from the workload: it is coherence
+directory traffic. Every phase runs under both memory policies.
 
-    local        every reader on the node holding the memory
+    local        every reader on one node
     remote       every reader on the other node, nothing shared
     shared<pct>  half the readers on each node, windows overlapping by <pct>
+
+    membind      the whole buffer on one node, so one directory pays and the
+                 per socket columns say which
+    interleaved  every line's home node is its address, so both directories
+                 churn, and `local` and `remote` stop differing: each reads
+                 half its lines from the far node
 
 `shared0` and `shared100` are the pair that matters: same thread placement,
 same remote fraction, same footprint per node, differing only in whether the
@@ -25,19 +31,30 @@ import subprocess
 import config
 from config import sh
 
-DIRTEST_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dirtest")
+DIRTEST_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "dirtest"
+)
 BIN = os.path.join(DIRTEST_DIR, "dirtest")
 CSV_PATH = os.path.join(config.RESULT_DIR_SHARING, "results.csv")
 
 GB = 8  # must dwarf the LLC, and fit on one node
+# the readers fall into lockstep around 10s in and start hitting in LLC, so the
+# second half of the window sees less DRAM traffic than the first
 SECS = 30
 THREADS = 16  # total readers, kept equal across phases, even
-MEM_NODE = 0  # the node the buffer is pinned to
+MEM_NODE = 0  # the two nodes: the buffer goes on them, the readers sit on them
 FAR_NODE = 1
-RUNS = 3
+RUNS = 1
 OVERLAPS = (0, 25, 50, 75, 100)
 
+# where the buffer goes. Both run in the same pass, one more column
+POLICIES = {
+    "membind": [f"--membind={MEM_NODE}"],
+    "interleaved": [f"--interleave={MEM_NODE},{FAR_NODE}"],
+}
+
 FIELDS = [
+    "policy",
     "phase",
     "overlap",
     "run_id",
@@ -86,10 +103,12 @@ def phases() -> list[tuple[str, list[int], int | None]]:
     ]
 
 
-def run_phase(name: str, cpus: list[int], overlap: int | None, run_id: int):
+def run_phase(
+    name: str, cpus: list[int], overlap: int | None, run_id: int, policy: str
+):
     cmd = [
         "numactl",
-        f"--membind={MEM_NODE}",
+        *POLICIES[policy],
         BIN,
         str(GB),
         str(SECS),
@@ -109,6 +128,7 @@ def run_phase(name: str, cpus: list[int], overlap: int | None, run_id: int):
     result = dict(kv.split("=", 1) for kv in match.group(1).split())
 
     return {
+        "policy": policy,
         "phase": name,
         "overlap": "" if overlap is None else overlap,
         "run_id": run_id,
@@ -133,15 +153,16 @@ def run_bench_sharing():
 
     rows = []
     for run_id in range(1, RUNS + 1):
-        for name, cpus, overlap in phases():
-            rows.append(run_phase(name, cpus, overlap, run_id))
-            # let the counters fall back to idle so a phase never bleeds into
-            # the next one's window
-            sh("sleep 5")
+        for policy in POLICIES:
+            for name, cpus, overlap in phases():
+                rows.append(run_phase(name, cpus, overlap, run_id, policy))
+                # let the counters fall back to idle so a phase never bleeds
+                # into the next one's window
+                sh("sleep 5")
 
-            with open(CSV_PATH, "w", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=FIELDS)
-                writer.writeheader()
-                writer.writerows(rows)
+                with open(CSV_PATH, "w", newline="") as f:
+                    writer = csv.DictWriter(f, fieldnames=FIELDS)
+                    writer.writeheader()
+                    writer.writerows(rows)
 
     print(f"[OK] {len(rows)} phases -> {CSV_PATH}")

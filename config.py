@@ -85,6 +85,8 @@ MONITOR_PCM = os.path.join(MONITOR_DIR, "pcm")
 MONITOR_PCM_MEMORY = os.path.join(MONITOR_DIR, "pcm_memory")
 MONITOR_MEM = os.path.join(MONITOR_DIR, "mem")
 MONITOR_PERF = os.path.join(MONITOR_DIR, "perf")
+# the coherence directory counters, only the sharing bench turns them on
+MONITOR_PERF_COHERENCE = os.path.join(MONITOR_DIR, "perf_coherence")
 
 
 def sh(cmd, cwd=None):

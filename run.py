@@ -46,8 +46,10 @@ parser.add_argument(
 args = parser.parse_args()
 
 
-def bench_and_monitor(bench_fn, label, interval=monitoring.INTERVAL):
-    monitor = monitoring.Monitoring(label, interval)
+def bench_and_monitor(
+    bench_fn, label, interval=monitoring.INTERVAL, coherence=False
+):
+    monitor = monitoring.Monitoring(label, interval, coherence)
     monitor.start()
     try:
         bench_fn()
@@ -92,7 +94,9 @@ elif args.run == "llama":
 elif args.run == "llama-repl":
     bench_and_monitor(bench_llama.run_bench_llama_repl, "llama-repl")
 elif args.run == "sharing":
-    bench_and_monitor(bench_sharing.run_bench_sharing, "sharing")
+    # the whole point of this bench is the coherence directory, so it is the
+    # one run that pays for the uncore counters
+    bench_and_monitor(bench_sharing.run_bench_sharing, "sharing", coherence=True)
 elif args.run == "bench-pgtable-own":
     bench_micro.run_bench_pgtable("mmap")
 elif args.run == "bench-pgtable-carrefour":
