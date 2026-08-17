@@ -1,27 +1,15 @@
 /* dirtest - what does cross socket cache line sharing cost?
  *
- * Allocates one buffer, first-touches it under whatever numactl policy is in
- * effect (so `numactl --membind=0` pins every page to node 0), then hammers it
- * with read-only streaming loads from a chosen set of CPUs.
+ * Streams one buffer from a chosen set of CPUs and never writes
+ * it, so any DRAM write bandwidth a monitor reports is not from this program.
  *
- * The read loop never stores to the buffer. Any DRAM write bandwidth a monitor
- * reports on the node holding it therefore does not come from this program.
+ * `overlap=<0..100>` splits the CPUs in two groups reading len/2 each and
+ * sharing that percentage of their lines. Same footprint per group either way.
  *
- * With `overlap=<0..100>` the cpu list is split in two groups, the first half
- * and the second half. Each group reads its own window of len/2 bytes, and the
- * windows overlap by that percentage: 0 means the groups never touch a common
- * cache line, 100 means they read exactly the same ones. Each group's
- * footprint stays len/2 either way, so cache behaviour per socket is constant
- * and sharing is the only thing that varies.
- *
- * Driven by bench_sharing.py (`just bench-sharing`), which records each phase
- * window so the monitor CSVs can be sliced per phase. To poke at it by hand:
- *
- *   make -C dirtest
  *   numactl --membind=0 ./dirtest/dirtest 8 30 0,1,2,16,17,18 overlap=50
  *
- * The RESULT line reports the window actually measured, which starts after the
- * first touch: the memset is a real 8 GB of writes and must not land inside it.
+ * Driven by bench_sharing.py. RESULT reports the measured window, which starts
+ * after the first touch: the memset is 8 GB of real writes.
  */
 
 #define _GNU_SOURCE
@@ -36,8 +24,7 @@
 #include <unistd.h>
 
 #define LINE 64
-/* lines read between two checks of `stop`: 64 MB, a few ms at any plausible
- * bandwidth, so the run stops promptly without polling in the inner loop */
+/* lines between two checks of `stop`: 64 MB, so a run stops promptly */
 #define CHUNK (1u << 20)
 
 static uint8_t *buf;
@@ -47,9 +34,9 @@ static volatile int stop;
 struct worker {
     pthread_t th;
     int cpu;
-    size_t start; /* first line this thread reads */
-    size_t base;  /* region it is confined to, [base, end) */
+    size_t base; /* window it reads, [base, end) */
     size_t end;
+    size_t start; /* where in the window it starts */
     uint64_t lines;
     uint64_t sum;
 };
@@ -82,9 +69,7 @@ static void *reader(void *arg) {
         exit(1);
     }
 
-    /* one 8 byte load per 64 byte line: every iteration pulls a whole line
-     * from DRAM, which is what makes lines/s the interesting rate here. The
-     * volatile keeps the compiler from hoisting or vectorising it away. */
+    /* one load per line, volatile so the compiler keeps it */
     size_t off = w->start, base = w->base, end = w->end;
     uint64_t sum = 0, lines = 0;
 
@@ -183,20 +168,14 @@ int main(int argc, char **argv) {
     for (int i = 0; i < n; i++) {
         w[i].cpu = cpus[i];
 
-        size_t base = 0;
-        int rank = i, peers = n;
-        if (overlap >= 0) {
-            int second = i >= half;
-            base = second ? span - slide : 0;
-            rank = i - (second ? half : 0);
-            peers = second ? n - half : half;
-        }
+        /* the second group's window slides up by the overlap */
+        size_t base = (overlap >= 0 && i >= half) ? span - slide : 0;
 
         w[i].base = base;
         w[i].end = base + span;
-        /* spread the start offsets so the threads of a group do not march over
-         * the same lines together, which would let the LLC serve most of them */
-        w[i].start = base + (((span / peers) * rank) & ~(size_t)(LINE - 1));
+        /* spread the threads out, or they all read the same line at once and
+         * the LLC serves nearly everything */
+        w[i].start = base + (((span / n) * i) & ~(size_t)(LINE - 1));
     }
 
     for (int i = 0; i < n; i++)

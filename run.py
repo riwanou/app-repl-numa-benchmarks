@@ -37,6 +37,7 @@ parser.add_argument(
         "plot-llama",
         "plot-fio",
         "plot-monitoring",
+        "plot-sharing",
         "plot-pressure",
         "plot-microbench",
         "stats-monitoring",
@@ -125,6 +126,10 @@ elif args.run == "plot-fio":
     import plot_fio
 
     plot_fio.make_plot_fio()
+elif args.run == "plot-sharing":
+    import plot_sharing
+
+    plot_sharing.make_plot_sharing()
 elif args.run == "plot-monitoring":
     import plot_monitoring
 

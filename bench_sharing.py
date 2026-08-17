@@ -1,24 +1,17 @@
 """Cross socket cache line sharing microbenchmark.
 
-Read-only threads sweeping a buffer. The phases differ only in where the
-readers sit and how much of the buffer the two groups share, so any DRAM write
-traffic the monitors record cannot have come from the workload: it is coherence
-directory traffic. Every phase runs under both memory policies.
+Threads stream reads and never write, so any DRAM write the monitors
+record is coherence directory traffic. It decays over a run as the directory
+settles.
 
-    local        every reader on one node
-    remote       every reader on the other node, nothing shared
-    shared<pct>  half the readers on each node, windows overlapping by <pct>
+    local     every reader on one node
+    remote    every reader on the other node
+    disjoint  half the readers on each node, on different lines
+    shared    half the readers on each node, on the same lines
 
-    membind      the whole buffer on one node, so one directory pays and the
-                 per socket columns say which
-    interleaved  every line's home node is its address, so both directories
-                 churn, and `local` and `remote` stop differing: each reads
-                 half its lines from the far node
-
-`shared0` and `shared100` are the pair that matters: same thread placement,
-same remote fraction, same footprint per node, differing only in whether the
-two sockets touch common cache lines. The sweep between them is the dose
-response.
+disjoint and shared are the pair that matters: same placement, same remote
+fraction, same footprint, differing only in whether the two sockets read common
+lines. Every phase runs under both policies.
 
     uv run run.py sharing
 """
@@ -38,16 +31,13 @@ BIN = os.path.join(DIRTEST_DIR, "dirtest")
 CSV_PATH = os.path.join(config.RESULT_DIR_SHARING, "results.csv")
 
 GB = 8  # must dwarf the LLC, and fit on one node
-# the readers fall into lockstep around 10s in and start hitting in LLC, so the
-# second half of the window sees less DRAM traffic than the first
-SECS = 30
+SECS = 120
 THREADS = 16  # total readers, kept equal across phases, even
-MEM_NODE = 0  # the two nodes: the buffer goes on them, the readers sit on them
+MEM_NODE = 0  # the buffer goes on these two nodes, the readers sit on them
 FAR_NODE = 1
 RUNS = 1
-OVERLAPS = (0, 25, 50, 75, 100)
 
-# where the buffer goes. Both run in the same pass, one more column
+# where the buffer goes, both in the same pass
 POLICIES = {
     "membind": [f"--membind={MEM_NODE}"],
     "interleaved": [f"--interleave={MEM_NODE},{FAR_NODE}"],
@@ -98,8 +88,8 @@ def phases() -> list[tuple[str, list[int], int | None]]:
     return [
         ("local", near[:THREADS], None),
         ("remote", far[:THREADS], None),
-        # zero padded so the summary CSV sorts the sweep in numeric order
-        *[(f"shared{pct:03d}", mixed, pct) for pct in OVERLAPS],
+        ("disjoint", mixed, 0),
+        ("shared", mixed, 100),
     ]
 
 

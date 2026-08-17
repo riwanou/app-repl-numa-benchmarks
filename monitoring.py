@@ -21,13 +21,16 @@ PR_SET_PDEATHSIG = 1
 # swap = two tasks exchanged, stick = the balancer gave up on a move
 NUMA_SCHED_EVENTS = ["sched_move_numa", "sched_swap_numa", "sched_stick_numa"]
 
-# Coherence directory counters for the sharing bench: the transitions and the
-# lookups they came out of, then the same lookups at the cache agent, split by
-# whether they forced a snoop. The write bandwidth follows the transitions, not
-# the states the lookups found, so the states are not here.
+# Coherence directory counters for the sharing bench: the transitions, the
+# state each lookup found, and the same lookups at the cache agent split by
+# whether they forced a snoop. Four on the m2m box, two on the cha, which is
+# what each has. The states are for the plot, the write bandwidth follows the
+# transitions.
 COHERENCE_EVENTS = [
     "UNC_M2M_DIRECTORY_UPDATE.ANY",
-    "UNC_M2M_DIRECTORY_LOOKUP.ANY",
+    "UNC_M2M_DIRECTORY_LOOKUP.STATE_I",
+    "UNC_M2M_DIRECTORY_LOOKUP.STATE_S",
+    "UNC_M2M_DIRECTORY_LOOKUP.STATE_A",
     "UNC_CHA_DIR_LOOKUP.SNP",
     "UNC_CHA_DIR_LOOKUP.NO_SNP",
 ]

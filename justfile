@@ -3,7 +3,7 @@ build: build-rocksdb build-fio build-llama build-micro build-dirtest
 bench: bench-ann bench-rocksdb bench-llama bench-fio
 bench-repl: bench-ann-repl bench-rocksdb-repl bench-llama-repl bench-fio-repl
 
-plot: plot-ann plot-rocksdb plot-llama plot-fio plot-microbench plot-pressure
+plot: plot-ann plot-rocksdb plot-llama plot-fio plot-microbench plot-pressure plot-sharing
 
 build-rocksdb:
     #!/usr/bin/env bash
@@ -113,6 +113,9 @@ plot-pressure:
 
 plot-monitoring:
     uv run run.py plot-monitoring
+
+plot-sharing:
+    uv run run.py plot-sharing
 
 stats:
     uv run run.py stats-monitoring
