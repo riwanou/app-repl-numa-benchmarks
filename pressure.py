@@ -31,8 +31,8 @@ class Phase:
 
 
 # a staircase, each step inheriting the previous one's state. Fully replicated
-# costs ~7.8G, so 7G leaves 90% of it, down to 38% at 3G
-PLAN = [
+# costs ~7.9G on 4 nodes, so 7G leaves 88% of it, down to 38% at 3G
+PLAN_4 = [
     Phase("normal", "max", 30),
     Phase("7G", "7G", 60),
     Phase("6G", "6G", 60),
@@ -41,6 +41,19 @@ PLAN = [
     Phase("3G", "3G", 60),
     Phase("release", "max", 60),
 ]
+
+# two copies instead of four, so ~4.2G fully replicated and 2.3G for a single
+# copy. 2.5G is the last step that still holds one, and leaves as few
+# duplicates as 3G does on 4 nodes. Written in M, memory.high rejects "2.5G"
+PLAN_2 = [
+    Phase("normal", "max", 30),
+    Phase("4G", "4G", 60),
+    Phase("3G", "3G", 60),
+    Phase("2.5G", "2560M", 60),
+    Phase("release", "max", 60),
+]
+
+PLANS = {2: PLAN_2, 4: PLAN_4}
 
 TAIL = 10  # the bench outlives the plan, settle is per variant
 QUIESCE = 20  # let the previous variant's teardown finish
@@ -89,6 +102,16 @@ def read_kv(path: str) -> dict[str, str]:
         for line in read_text(path).splitlines()
         if " " in line
     )
+
+
+def get_plan() -> list[Phase]:
+    """The staircase for this machine, picked on its node count."""
+    nodes = len(
+        [n for n in os.listdir("/sys/devices/system/node") if n[:4] == "node"]
+    )
+    if nodes not in PLANS:
+        raise RuntimeError(f"no plan for {nodes} nodes, add one to PLANS")
+    return PLANS[nodes]
 
 
 def cgroup_sample() -> dict:
@@ -239,8 +262,9 @@ def run_phase(phase, variant, bench, writer, log, start) -> bool:
 
 
 def run_variant(variant):
-    running_time = variant.settle + sum(p.seconds for p in PLAN) + TAIL
-    print(f"=== {variant.tag}: {len(PLAN)} phases, {running_time}s")
+    plan = get_plan()
+    running_time = variant.settle + sum(p.seconds for p in plan) + TAIL
+    print(f"=== {variant.tag}: {len(plan)} phases, {running_time}s")
 
     os.makedirs(config.RESULT_DIR_PRESSURE, exist_ok=True)
     base = os.path.join(
@@ -254,7 +278,7 @@ def run_variant(variant):
     # cgroup carries the previous variant's (or run's) counters in
     sh(f"rmdir {CGROUP} 2>/dev/null || true")
     sh(f"mkdir -p {CGROUP}")
-    sh(f"echo {PLAN[0].limit} > {CGROUP}/memory.high")
+    sh(f"echo {plan[0].limit} > {CGROUP}/memory.high")
 
     windows = []
     with (
@@ -264,7 +288,7 @@ def run_variant(variant):
         open(f"{base}.log", "w") as log_file,
     ):
         writer = csv.DictWriter(
-            csv_file, fieldnames=list(sample(variant, PLAN[0], 0))
+            csv_file, fieldnames=list(sample(variant, plan[0], 0))
         )
         writer.writeheader()
 
@@ -281,7 +305,7 @@ def run_variant(variant):
 
         start = time.monotonic()
         try:
-            for phase in PLAN:
+            for phase in plan:
                 began = datetime.datetime.now()
                 ok = run_phase(phase, variant, bench, writer, log, start)
                 windows.append(
