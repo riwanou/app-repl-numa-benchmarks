@@ -77,6 +77,7 @@ def run_bench_ann_repl():
 MAIN_BOUND = 0
 MAIN_FIRSTTOUCH = 1
 MAIN_INTERLEAVED = 2
+MAIN_DYNAMIC = 3  # bound while there is room, interleaved once there is not
 
 
 @dataclass(frozen=True)
@@ -103,6 +104,7 @@ PRESSURE_VARIANTS_REPL = [
     PressureVariant("repl-bound", main_placement=MAIN_BOUND),
     PressureVariant("repl-firsttouch", main_placement=MAIN_FIRSTTOUCH),
     PressureVariant("repl-interleaved", main_placement=MAIN_INTERLEAVED),
+    PressureVariant("repl-dynamic", main_placement=MAIN_DYNAMIC),
 ]
 
 
@@ -119,8 +121,10 @@ def run_bench_pressure(variant: PressureVariant, running_time: int) -> str:
         cmd = f"{variant.numactl} {cmd}"
 
     if variant.main_placement is not None:
-        sh(f"echo {variant.main_placement} >"
-           " /sys/kernel/debug/repl_pt/main_placement")
+        sh(
+            f"echo {variant.main_placement} >"
+            " /sys/kernel/debug/repl_pt/main_placement"
+        )
         sh("echo 1 > /sys/kernel/debug/repl_pt/clear_registered")
         sh("echo .ivf > /sys/kernel/debug/repl_pt/registered")
         sh("echo .ann > /sys/kernel/debug/repl_pt/registered")
