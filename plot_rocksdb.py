@@ -2,6 +2,7 @@ import os
 import config
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
+from matplotlib.transforms import blended_transform_factory
 import seaborn as sns
 import pandas as pd
 import numpy as np
@@ -42,6 +43,9 @@ def get_std():
                     )
 
 
+YLABEL_SIZE = 6.5
+UPI_LABEL_SIZE = 6
+
 METHODS = [
     "readrandom",
     "multireadrandom",
@@ -76,6 +80,23 @@ TAG_LABELS = {
 }
 
 
+def _load_upi(arch):
+    """upi_out_gb per <variant>-<test> tag, from the stats pipeline.
+
+    Written by `just stats`; absent until that has been run, in which case the
+    bars simply carry no UPI annotation.
+    """
+    path = os.path.join(RESULT_DIR, arch, "stats", "rocksdb.csv")
+    if not os.path.exists(path):
+        return None
+
+    df = pd.read_csv(path)
+    if "upi_out_gb" not in df.columns:
+        return None
+
+    return df[["tag", "upi_out_gb"]].drop_duplicates(subset="tag")
+
+
 def _load_data():
     all_data = []
     for arch in os.listdir(RESULT_DIR):
@@ -107,6 +128,12 @@ def _load_data():
             df["mb_sec_std"] = float("nan")
             df = df[["tag", "test", "arch", "mb_sec_mean", "mb_sec_std"]]
 
+        upi = _load_upi(arch)
+        if upi is not None:
+            df = df.merge(upi, on="tag", how="left")
+        else:
+            df["upi_out_gb"] = float("nan")
+
         all_data.append(df)
 
     return pd.concat(all_data, ignore_index=True)
@@ -128,7 +155,7 @@ def _normalize_relative_to_default(group):
     return group
 
 
-def _plot_bars(ax, arch_data, show_absolute=False):
+def _plot_bars(ax, arch_data, show_absolute=False, strip_ax=None):
     bar_width = 0.11
     bar_gap = 0.0
     n_bars = len(TAGS_ORDER)
@@ -149,6 +176,7 @@ def _plot_bars(ax, arch_data, show_absolute=False):
         stds = []
         abs_values = []
         abs_stds = []
+        upi_values = []
 
         for method in METHODS:
             if tag:
@@ -167,11 +195,13 @@ def _plot_bars(ax, arch_data, show_absolute=False):
                     if pd.notna(row.iloc[0]["mb_sec_std"])
                     else 0
                 )
+                upi_values.append(row.iloc[0].get("upi_out_gb", float("nan")))
             else:
                 means.append(0)
                 stds.append(0)
                 abs_values.append(0)
                 abs_stds.append(0)
+                upi_values.append(float("nan"))
 
         positions = [
             pos - group_width / 2 + i * (bar_width + bar_gap) + bar_width / 2
@@ -205,7 +235,21 @@ def _plot_bars(ax, arch_data, show_absolute=False):
             linewidth=0.25,
         )
 
-        for rect, pct, abs_val in zip(bars, means, abs_values):
+        # cross-socket traffic each bar is paying for, on its own strip below
+        # so the throughput axis keeps its natural scale
+        if strip_ax is not None:
+            strip_ax.bar(
+                positions,
+                [0 if pd.isna(v) else v for v in upi_values],
+                width=bar_width,
+                color=palettes[tag],
+                edgecolor=palettes[tag],
+                linewidth=0.25,
+            )
+
+        for rect, pct, abs_val, upi, err in zip(
+            bars, means, abs_values, upi_values, bar_stds
+        ):
             h = rect.get_height()
             if h == 0:
                 continue
@@ -253,14 +297,23 @@ def _make_plot_rocksdb_variant(absolute=False):
             {"font.family": "serif", "font.serif": "DejaVu Serif"}
         )
 
-        fig, ax = plt.subplots(
-            nrows=1,
-            ncols=1,
-            figsize=(3.3, 1.47),
-            sharey=True,
-        )
+        # machines with no UPI stats get the plain single-axis layout rather
+        # than an empty strip
+        has_upi = arch_data["upi_out_gb"].fillna(0).gt(0).any()
+        if absolute or not has_upi:
+            fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(3.3, 1.47))
+            strip_ax = None
+        else:
+            # thin UPI strip under the bars, sharing their x
+            fig, (ax, strip_ax) = plt.subplots(
+                nrows=2,
+                ncols=1,
+                figsize=(3.3, 2.0),
+                sharex=True,
+                gridspec_kw={"height_ratios": [1, 0.26], "hspace": 0.12},
+            )
 
-        _plot_bars(ax, arch_data, show_absolute=absolute)
+        _plot_bars(ax, arch_data, show_absolute=absolute, strip_ax=strip_ax)
 
         sns.despine(ax=ax)
         if not absolute:
@@ -271,18 +324,31 @@ def _make_plot_rocksdb_variant(absolute=False):
         ax.tick_params(axis="y", labelsize=6, length=2)
         ax.tick_params(axis="x", labelsize=6, length=2)
 
-        ax.set_xticks(np.arange(len(METHODS)) * 0.63)
-        ax.set_xticklabels(METHODS_LABELS, fontsize=7, rotation=25)
+        label_ax = ax if strip_ax is None else strip_ax
+        label_ax.set_xticks(np.arange(len(METHODS)) * 0.63)
+        label_ax.set_xticklabels(METHODS_LABELS, fontsize=7, rotation=25)
+        if strip_ax is not None:
+            ax.tick_params(labelbottom=False)
 
         ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
         ax.set_ylabel(
             "Throughput (MB/s)"
             if absolute
-            else "Improvement over \n NUMA Balancing (%)",
-            fontsize=7,
+            else "Improvement over \nNUMA Balancing (%)",
+            fontsize=YLABEL_SIZE,
         )
+        if strip_ax is not None:
+            sns.despine(ax=strip_ax)
+            strip_ax.tick_params(axis="y", labelsize=6, length=2)
+            strip_ax.tick_params(axis="x", labelsize=6, length=2)
+            strip_ax.yaxis.set_major_locator(MaxNLocator(nbins=2))
+            strip_ax.set_ylim(bottom=0)
+            strip_ax.set_ylabel("UPI out\n(GB/s)", fontsize=UPI_LABEL_SIZE)
+            # same column, but placed clear of each row's tick labels
+            fig.align_ylabels([ax, strip_ax])
 
-        fig.tight_layout(pad=0)
+        if strip_ax is None:
+            fig.tight_layout(pad=0)
         suffix = "_rocksdb_abs" if absolute else "_rocksdb"
         path = os.path.join(
             config.PLOT_DIR_ROCKSDB, f"{config.ARCH_SUBNAMES[arch]}{suffix}.pdf"

@@ -183,6 +183,12 @@ def get_data_jsonl(dir: str) -> list:
                         "run": int(record.get("run", 1)),
                         "benchmark": f"{match['benchmark']}_{match['distrib']}",
                         "tag": record.get("tag", ""),
+                        # epoch seconds, as stamped on the bench machine.
+                        # stats_monitoring turns them into the monitor's local
+                        # time; converting here would use the *plotting*
+                        # machine's timezone instead.
+                        "ts_start": record.get("ts_start"),
+                        "ts_end": record.get("ts_end"),
                         **bw_from_fio_output(record.get("data", {})),
                     }
                 )

@@ -1,0 +1,80 @@
+== pg_stats @ normal end
+-- pid 37052
+range 0x7f0000000000-0x7f8000000000 | main node 0
+node 0(main): locality=0.5 ptes=492.94K mapped=492.94K rdprot=0     wrprot=492.94K unrepl=0     remotemain=0     [ n0=275.92K(local) n1=217.01K       ]
+node 1      : locality=1.0 ptes=492.88K mapped=492.88K rdprot=0     wrprot=492.88K unrepl=0     remotemain=0     [ n0=0             n1=492.88K(local)]
+cross-node sharing:
+  node 0: local=275.92K unique=275.92K shared: n1=217.01K
+  node 1: local=492.88K unique=275.86K shared: n0=217.01K
+page tables:
+  node 0: root=n0 locality=100.0 tables=990    [ n0=990   (local) n1=0            ]
+  node 1: root=n1 locality=100.0 tables=990    [ n0=0             n1=990   (local)]
+== pg_stats @ 4G end
+-- pid 37052
+range 0x7f0000000000-0x7f8000000000 | main node 0
+node 0(main): locality=0.5 ptes=492.94K mapped=492.94K rdprot=0     wrprot=492.94K unrepl=0     remotemain=0     [ n0=275.92K(local) n1=217.01K       ]
+node 1      : locality=1.0 ptes=492.93K mapped=492.93K rdprot=0     wrprot=492.93K unrepl=0     remotemain=0     [ n0=0             n1=492.93K(local)]
+cross-node sharing:
+  node 0: local=275.92K unique=275.92K shared: n1=217.01K
+  node 1: local=492.93K unique=275.92K shared: n0=217.01K
+page tables:
+  node 0: root=n0 locality=100.0 tables=990    [ n0=990   (local) n1=0            ]
+  node 1: root=n1 locality=100.0 tables=990    [ n0=0             n1=990   (local)]
+== pg_stats @ 3G end
+-- pid 37052
+range 0x7f0000000000-0x7f8000000000 | main node 0
+node 0(main): locality=0.5 ptes=492.46K mapped=492.46K rdprot=0     wrprot=492.46K unrepl=0     remotemain=0     [ n0=275.79K(local) n1=216.66K       ]
+node 1      : locality=0.8 ptes=492.46K mapped=492.46K rdprot=0     wrprot=492.46K unrepl=0     remotemain=0     [ n0=78.94K        n1=413.51K(local)]
+cross-node sharing:
+  node 0: local=275.79K unique=196.85K shared: n1=295.61K
+  node 1: local=413.51K unique=196.85K shared: n0=295.61K
+page tables:
+  node 0: root=n0 locality=100.0 tables=990    [ n0=990   (local) n1=0            ]
+  node 1: root=n1 locality=100.0 tables=990    [ n0=0             n1=990   (local)]
+== pg_stats @ 2.5G end
+-- pid 37052
+range 0x7f0000000000-0x7f8000000000 | main node 0
+node 0(main): locality=0.5 ptes=492.46K mapped=492.46K rdprot=0     wrprot=492.46K unrepl=0     remotemain=0     [ n0=256.11K(local) n1=236.35K       ]
+node 1      : locality=0.6 ptes=492.46K mapped=492.46K rdprot=0     wrprot=492.46K unrepl=0     remotemain=0     [ n0=170.16K        n1=322.29K(local)]
+cross-node sharing:
+  node 0: local=256.11K unique=85.94K shared: n1=406.52K
+  node 1: local=322.29K unique=85.94K shared: n0=406.52K
+page tables:
+  node 0: root=n0 locality=100.0 tables=990    [ n0=990   (local) n1=0            ]
+  node 1: root=n1 locality=100.0 tables=990    [ n0=0             n1=990   (local)]
+== pg_stats @ release end
+-- pid 37052
+range 0x7f0000000000-0x7f8000000000 | main node 0
+node 0(main): locality=0.5 ptes=492.46K mapped=492.46K rdprot=0     wrprot=492.46K unrepl=0     remotemain=0     [ n0=256.11K(local) n1=236.35K       ]
+node 1      : locality=1.0 ptes=492.46K mapped=492.46K rdprot=0     wrprot=492.46K unrepl=0     remotemain=0     [ n0=0             n1=492.46K(local)]
+cross-node sharing:
+  node 0: local=256.11K unique=256.11K shared: n1=236.35K
+  node 1: local=492.46K unique=256.11K shared: n0=236.35K
+page tables:
+  node 0: root=n0 locality=100.0 tables=990    [ n0=990   (local) n1=0            ]
+  node 1: root=n1 locality=100.0 tables=990    [ n0=0             n1=990   (local)]
+== cgroup summary
+low 0
+high 2204
+max 0
+oom 0
+oom_kill 0
+oom_group_kill 0
+peak 3516461056
+== repl stats
+repl_fail_events 650712
+repl_lock_main_lost 86
+repl_pg_private_alloc 0
+repl_pg_private_free 0
+repl_pte_miss_events 2060707
+repl_rdprotect_handled 0
+repl_reclaimed 188628
+repl_reclaimed_replicas 136444
+repl_remote_faults_on_main 608840
+repl_repl_allocated 480520
+repl_repl_copy_events 480520
+repl_skipped_pressure 267817
+repl_tlb_flushed 1667323
+repl_total_faults 2629076
+repl_unreplicated 0
+repl_writes_to_replicated 0

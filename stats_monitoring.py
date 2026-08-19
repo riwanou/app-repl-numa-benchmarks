@@ -27,15 +27,17 @@ import config
 
 # ---------------------------------------------------------------- monitoring
 
-# Every monitor, and every bench that stamps its own runs, writes the naive
-# local time of the machine it ran on. Set MONITOR_TZ (e.g. "Europe/Paris")
-# to read a capture from a machine in another timezone than this one.
+# every monitor writes the naive local time of the machine it ran on
 MONITOR_TZ = os.environ.get("MONITOR_TZ") or tz.tzlocal()
 
 PCM_DATE = ("System", "Date")
 PCM_TIME = ("System", "Time")
 PCM_MEM_DATE = ("Unnamed: 0_level_0", "Date")
 PCM_MEM_TIME = ("Unnamed: 1_level_0", "Time")
+
+# perf timestamps relative to its own start, so monitoring.py writes an anchor
+COHERENCE_ANCHOR = "# start "
+
 
 @dataclass
 class Window:
@@ -44,15 +46,15 @@ class Window:
     pcm: pd.DataFrame
     pcm_memory: pd.DataFrame
     mem: pd.DataFrame
+    # only the benches that ask for it, empty elsewhere and its stats read NaN
+    perf_coherence: pd.DataFrame
 
 
 def monitor_dir(arch: str) -> str:
     return os.path.join(config.RESULT_DIR, arch, "monitor")
 
 
-# No Xeon socket reads anywhere near this (8 channel DDR5 peaks around 350
-# GB/s), but pcm regularly emits ~1 TB/s samples that are counter artifacts.
-# They are ~11% of the samples of some captures, enough to double a mean.
+# no Xeon socket reads near this, but pcm emits ~1 TB/s counter artifacts
 MAX_BW_MBS = 500 * 1024
 
 
@@ -82,6 +84,59 @@ def drop_bogus_bandwidth(
     return df
 
 
+def read_perf_coherence(path: str) -> pd.DataFrame:
+    """A perf stat -x, --per-socket capture as one column per (socket, event),
+    in events per second, in the tuple columns the pcm frames use."""
+    with open(path) as file:
+        lines = file.read().splitlines()
+
+    anchor = None
+    rows = []
+    for line in lines:
+        if line.startswith(COHERENCE_ANCHOR):
+            anchor = pd.to_datetime(line[len(COHERENCE_ANCHOR) :].strip())
+            continue
+        if line.startswith("#") or not line.strip():
+            continue
+        fields = line.split(",")
+        # a monitor killed mid write leaves the last line truncated
+        if len(fields) < 6:
+            continue
+        try:
+            offset = float(fields[0])
+        except ValueError:
+            continue
+        rows.append(
+            (
+                offset,
+                fields[1].strip(),
+                fields[5].strip(),
+                # <not counted> reads NaN, which is not a zero rate
+                pd.to_numeric(fields[3].strip(), errors="coerce"),
+            )
+        )
+
+    if anchor is None or not rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows, columns=["offset", "socket", "event", "value"])
+    df = df.sort_values("offset")
+    gap = df.groupby(["socket", "event"])["offset"].diff()
+    # per interval counts, and the first sample's gap is its own offset
+    df["rate"] = df["value"] / gap.fillna(df["offset"])
+
+    wide = df.pivot_table(
+        index="offset", columns=["socket", "event"], values="rate"
+    )
+    # the machine total, so a stat reads the same whatever the socket count
+    for event in df["event"].unique():
+        columns = [col for col in wide.columns if col[1] == event]
+        wide[("System", event)] = wide[columns].sum(axis=1, min_count=1)
+
+    times = anchor + pd.to_timedelta(wide.index.to_series(), unit="s")
+    return wide.reset_index(drop=True).assign(time_dt=times.to_numpy())
+
+
 @functools.lru_cache(maxsize=None)
 def load_monitoring(arch: str, label: str) -> Window:
     """Load the whole monitoring run for `label`, with a `time_dt` column."""
@@ -104,8 +159,7 @@ def load_monitoring(arch: str, label: str) -> Window:
     pcm_memory = read("pcm_memory", True)
     mem = read("mem", False)
 
-    # a label never run on this arch has all three missing, that is not worth
-    # a warning, a partial capture is.
+    # all three missing is a label never run here, a partial capture is not
     if missing and len(missing) < 3:
         for path in missing:
             print(f"[WARN] missing monitoring file: {path}")
@@ -137,7 +191,17 @@ def load_monitoring(arch: str, label: str) -> Window:
         else None,
     )
     mem = timed(mem, mem["time"] if not mem.empty else None)
-    return Window(pcm, pcm_memory, mem)
+
+    # opt in per bench, so a label without one is normal, not a partial capture
+    coherence_path = os.path.join(directory, f"perf_coherence_{label}.csv")
+    coherence = pd.DataFrame()
+    if os.path.exists(coherence_path):
+        try:
+            coherence = read_perf_coherence(coherence_path)
+        except (OSError, ValueError) as e:
+            print(f"[WARN] unreadable monitoring file {coherence_path}: {e}")
+
+    return Window(pcm, pcm_memory, mem, coherence)
 
 
 def slice_window(full: Window, start, end) -> Window:
@@ -147,7 +211,12 @@ def slice_window(full: Window, start, end) -> Window:
         mask = (df["time_dt"] >= start) & (df["time_dt"] <= end)
         return pd.DataFrame(df[mask])
 
-    return Window(cut(full.pcm), cut(full.pcm_memory), cut(full.mem))
+    return Window(
+        cut(full.pcm),
+        cut(full.pcm_memory),
+        cut(full.mem),
+        cut(full.perf_coherence),
+    )
 
 
 # --------------------------------------------------------------- stat helpers
@@ -184,9 +253,8 @@ MB_TO_GB = 1 / 1024
 KB_TO_GB = 1 / (1024 * 1024)
 KB_TO_MB = 1 / 1024
 
-# The gold 6130 has 4 sockets with 3 UPI links each, the others 2 sockets with
-# 2 links. Per socket stats are registered for every socket up to this, and the
-# columns a machine does not have come out empty and are dropped when writing.
+# the gold 6130 has 4 sockets, the others 2. Columns a machine lacks are
+# empty and get dropped when writing.
 MAX_SOCKETS = 4
 
 
@@ -197,12 +265,6 @@ def per_socket(name: str, column: str, scale: float = 1.0):
         stat(f"{name}_skt{i}")(
             lambda w, s=f"Socket {i}", c=column, k=scale: mean(w.pcm, (s, c), k)
         )
-
-
-def per_node(name: str, fn: Callable[[Window, str], float]):
-    """Same for the per node stats of the mem CSV."""
-    for i in range(MAX_SOCKETS):
-        stat(f"{name}_node{i}")(lambda w, n=f"Node{i}": fn(w, n))
 
 
 def upi_pct_cols(df: pd.DataFrame, kind: str) -> list:
@@ -236,9 +298,8 @@ def _(w: Window) -> float:
     return mean(w.pcm, ("System", "LOCAL"))
 
 
-# local_pct_skt<i> is memory side: of the traffic served by this socket's
-# memory controller, the share that came from its own cores. Under --membind=0
-# node 0 serves both sockets and reads 50%, not 100%.
+# memory side: of what this socket's controller served, the share from its own
+# cores. Under --membind=0 node 0 serves both sockets and reads 50%.
 per_socket("local_pct", "LOCAL")
 per_socket("lmb_gb", "LMB", MB_TO_GB)
 per_socket("rmb_gb", "RMB", MB_TO_GB)
@@ -259,13 +320,7 @@ def _(w: Window) -> float:
     return mean(w.pcm, ("System", "INST"))
 
 
-@stat("exec")
-def _(w: Window) -> float:
-    return mean(w.pcm, ("System", "EXEC"))
-
-
 per_socket("inst", "INST")
-per_socket("exec", "EXEC")
 
 
 @stat("cpu_balance")
@@ -313,17 +368,7 @@ def _(w: Window) -> float:
     return mean(w.pcm, ("System", "L3MPI"))
 
 
-@stat("l2mpi")
-def _(w: Window) -> float:
-    return mean(w.pcm, ("System", "L2MPI"))
-
-
 # interconnect
-
-
-@stat("upi_to_mc")
-def _(w: Window) -> float:
-    return mean(w.pcm, ("System", "UPItoMC"))
 
 
 @stat("upi_in_gb")
@@ -383,28 +428,52 @@ for _i in range(MAX_SOCKETS):
     )
 
 
-# memory
+# coherence directory
+# what is left to explain the writes, since dirtest never writes its buffer
+DIR_UPDATE = "UNC_M2M_DIRECTORY_UPDATE.ANY"
+DIR_SNP = "UNC_CHA_DIR_LOOKUP.SNP"
+DIR_NO_SNP = "UNC_CHA_DIR_LOOKUP.NO_SNP"
+
+PER_M = 1e-6  # events per second -> millions per second
 
 
-@stat("data_mem_gb")
+def coherence(
+    w: Window, event: str, socket: str = "System", scale=1.0
+) -> float:
+    """Rate of one event, NaN when the capture does not have it."""
+    return mean(w.perf_coherence, (socket, event), scale)
+
+
+def per_socket_coherence(name: str, event: str, scale=1.0):
+    """`name`_skt0 and _skt1: the bench uses two nodes."""
+    for i in range(2):
+        stat(f"{name}_skt{i}")(
+            lambda w, s=f"S{i}", e=event, k=scale: coherence(w, e, s, k)
+        )
+
+
+@stat("dir_update_m_s")
 def _(w: Window) -> float:
-    """The workload's footprint: anonymous plus mapped file pages."""
-    return mean(w.mem, "anon", KB_TO_GB) + mean(w.mem, "mapped", KB_TO_GB)
+    """Directory state transitions: a flip is a write back to DRAM."""
+    return coherence(w, DIR_UPDATE, scale=PER_M)
 
 
-per_node(
-    "data_mem_gb",
-    lambda w, n: mean(w.mem, f"{n}_anon", KB_TO_GB)
-    + mean(w.mem, f"{n}_mapped", KB_TO_GB),
-)
+per_socket_coherence("dir_update_m_s", DIR_UPDATE, PER_M)
 
 
-@stat("pagetable_mb")
+@stat("dir_lookup_snp_m_s")
 def _(w: Window) -> float:
-    return mean(w.mem, "pageTable", KB_TO_MB)
+    """Lookups that had to snoop, at the cache agent."""
+    return coherence(w, DIR_SNP, scale=PER_M)
 
 
-per_node("pagetable_mb", lambda w, n: mean(w.mem, f"{n}_pageTable", KB_TO_MB))
+per_socket_coherence("dir_lookup_snp_m_s", DIR_SNP, PER_M)
+
+
+@stat("dir_lookup_no_snp_m_s")
+def _(w: Window) -> float:
+    """Lookups that did not."""
+    return coherence(w, DIR_NO_SNP, scale=PER_M)
 
 
 # ----------------------------------------------------------------------- main
@@ -416,11 +485,8 @@ Derive = Optional[Callable[[pd.DataFrame], pd.DataFrame]]
 def read_result(
     path: str, derive: Derive = None, header_only: bool = False
 ) -> pd.DataFrame:
-    """A result CSV, plus the window columns a bench has to derive itself.
-
-    `header_only` still reads the rows when there is a `derive`: which columns
-    the file ends up with is only known once it has run.
-    """
+    """A result CSV, plus the window columns a bench derives itself. With a
+    `derive`, `header_only` still reads the rows: it decides the columns."""
     df = pd.read_csv(path, nrows=0 if header_only and derive is None else None)
     return derive(df) if derive else df
 
@@ -436,10 +502,8 @@ def compute_stats(
 ) -> pd.DataFrame:
     """Result CSV + one column per stat, computed on each run's time window.
 
-    `warmup_s` drops the head of every window, `cooldown_s` its tail: a run
-    ramping up (replication converging, caches filling) drags the mean far
-    below the steady state the run actually settles at. The `warmup_s` column
-    reports what was applied, 0 when trimming would have left no sample.
+    `warmup_s` / `cooldown_s` drop the head and tail, so a ramp up does not
+    drag the mean. The `warmup_s` column reports what was applied.
     """
     df = read_result(result_csv, derive)
     for col in ("start_time", "end_time"):
@@ -529,8 +593,7 @@ def write_stats(
 
 
 # ------------------------------------------------------------------ batch run
-# One summary file per bench and per arch, all labels (repl and non repl) mixed
-# in, told apart by the `label` column.
+# one summary per bench and arch, labels mixed in and told apart by `label`
 
 
 @dataclass
@@ -546,16 +609,14 @@ class Bench:
     std_of: tuple[str, ...] = ()
     # per file fixups, e.g. normalizing a column before grouping on it
     prepare: Optional[Callable[[pd.DataFrame], pd.DataFrame]] = None
-    # runs at read time, before the window columns are looked for: a bench
-    # whose tool reports no start_time / end_time builds them here
+    # builds start_time / end_time for a bench whose tool reports none
     derive_window: Derive = None
     # which CSVs feed the per run details file, defaults to keep_file
     keep_detail_file: Optional[Callable[[str], bool]] = None
     # seconds dropped at the start / end of every run window
     warmup_s: float = 0.0
     cooldown_s: float = 0.0
-    # drop run_id 1 of every series when summarizing, like plot_ann: the first
-    # run loads the index and pays the replication ramp up
+    # drop run 1: it loads the index and pays the replication ramp up
     drop_first_run: bool = False
 
 
@@ -569,12 +630,8 @@ def _rocksdb_prepare(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-# llama-bench reports one row per (n_prompt, n_gen) test and no run window.
-# `test_time` is stamped when the test is constructed, before the model load
-# and the warmup, and `avg_ns` is the mean of the LLAMA_REPS timed samples that
-# follow. Those samples end when the next test is constructed, so anchoring the
-# window on the *next* test_time keeps the model load out of it: only the first
-# test of an invocation pays one, the model is loaded once and reused.
+# llama-bench reports no run window, and its `test_time` is stamped before the
+# model load. Anchoring on the *next* test_time keeps that load out of it.
 LLAMA_REPS = 5  # llama-bench default, bench_llama.py does not pass -r
 
 
@@ -584,20 +641,34 @@ def _llama_window(df: pd.DataFrame) -> pd.DataFrame:
         return df
 
     df = df.sort_values("test_time").copy()
-    # the one stamp of the whole pipeline that is UTC, everything it gets
-    # compared against is naive local time
+    # the one UTC stamp of the pipeline, everything else is naive local
     start = (
         pd.to_datetime(df["test_time"], utc=True)
         .dt.tz_convert(MONITOR_TZ)
         .dt.tz_localize(None)
     )
     span = pd.to_timedelta(df["avg_ns"] * LLAMA_REPS, unit="ns")
-    # the last test has no next one to anchor on, and needs none: it is not the
-    # one carrying the load
+    # the last test has no next one to anchor on, and carries no load
     end = start.shift(-1).fillna(start + span)
 
     df["start_time"] = end - span
     df["end_time"] = end
+    return df
+
+
+def _fio_window(df: pd.DataFrame) -> pd.DataFrame:
+    """start_time / end_time of each fio run, in monitor local time. fio stamps
+    epoch seconds, and MONITOR_TZ is only known here."""
+    if df.empty or "ts_start" not in df.columns:
+        return df
+
+    df = df.copy()
+    for column, stamp in (("start_time", "ts_start"), ("end_time", "ts_end")):
+        df[column] = (
+            pd.to_datetime(df[stamp], unit="s", utc=True)
+            .dt.tz_convert(MONITOR_TZ)
+            .dt.tz_localize(None)
+        )
     return df
 
 
@@ -618,12 +689,11 @@ BENCHES = {
         group_by=["test", "tag"],
         std_of=("ops_sec", "mb_sec"),
         prepare=_rocksdb_prepare,
-        # a db_bench run only reaches its steady locality after 45s, the
-        # window starts at process start and covers the whole ramp up
-        warmup_s=45,
-        # the window also ends after the last query: the teardown samples have
-        # close to no memory traffic, which reads as ~1% locality
-        cooldown_s=5,
+        # db_bench only reaches its steady locality after 45s
+        warmup_s=75,
+        # its teardown starts up to 8s before the end it reports, and those
+        # samples have no traffic, which reads as ~15% locality
+        cooldown_s=10,
     ),
     "fio": Bench(
         labels=[
@@ -636,14 +706,19 @@ BENCHES = {
         keep_file=lambda name: name == "details.csv",
         group_by=["benchmark", "tag", "readratio", "writeratio"],
         std_of=("read_bw_gb", "write_bw_gb"),
+        derive_window=_fio_window,
     ),
     "sharing": Bench(
         labels=["sharing"],
         keep_file=lambda name: name == "results.csv",
-        group_by=["phase", "overlap"],
-        std_of=("read_gb_s", "mem_write_gb", "llc_rd_miss_lat_ns"),
-        # dirtest reports the window it measured, which already excludes the
-        # first touch, so there is nothing to trim
+        group_by=["policy", "phase", "overlap"],
+        std_of=(
+            "read_gb_s",
+            "mem_write_gb",
+            "llc_rd_miss_lat_ns",
+            "dir_update_m_s",
+        ),
+        # dirtest reports its own window, first touch already excluded
     ),
     "llama": Bench(
         labels=["llama", "llama-repl"],
@@ -655,7 +730,15 @@ BENCHES = {
 }
 
 # meaningless once runs are averaged together
-DROP_ON_GROUP = ["run", "run_id", "job_id", "start_time", "end_time"]
+DROP_ON_GROUP = [
+    "run",
+    "run_id",
+    "job_id",
+    "start_time",
+    "end_time",
+    "ts_start",
+    "ts_end",
+]
 
 
 def bench_of(result_csv: str) -> Optional[Bench]:
@@ -708,11 +791,8 @@ def bench_stats(
     keep_uncovered: bool,
     details: bool = False,
 ) -> pd.DataFrame:
-    """Every label of one bench on one arch, concatenated.
-
-    `details` keeps one row per run instead of summarizing, to dig into a
-    single run.
-    """
+    """Every label of one bench on one arch, concatenated. `details` keeps one
+    row per run instead of summarizing."""
     bench_dir = os.path.join(config.RESULT_DIR, arch, name)
     if not os.path.isdir(bench_dir):
         return pd.DataFrame()
@@ -767,9 +847,7 @@ def bench_stats(
 
 
 # ----------------------------------------------------------------- comparison
-# Named side by side views: pick a few rows of a bench summary and put them one
-# column each, so every stat sits on one line. Add an entry and it is written
-# next to the summaries.
+# pick a few rows of a bench summary, one column each, so a stat is one line
 
 
 @dataclass
@@ -779,6 +857,36 @@ class Comparison:
     bench: str
     # column name -> the values identifying one summary row
     rows: dict[str, dict]
+
+
+# the same seven policies at every ratio, so one parameterized row set serves
+FIO_VARIANTS = [
+    ("firsttouch", "fio", "default"),
+    ("balancing", "fio", "numabalancing"),
+    ("interleaved", "fio", "interleaved"),
+    ("repl-no-unreplication", "fio-repl", "repl"),
+    ("repl-main-bound", "fio-repl", "unrepl-bound"),
+    ("repl-main-firsttouch", "fio-repl", "unrepl-firsttouch"),
+    ("repl-main-interleaved", "fio-repl", "unrepl-interleaved"),
+]
+
+
+def fio_comparison(readratio: int) -> Comparison:
+    """The seven policies side by side at one point of the read/write sweep."""
+    return Comparison(
+        bench="fio",
+        rows={
+            name: {
+                "label": label,
+                "dataset": "details",
+                "benchmark": "readwrite_random",
+                "readratio": readratio,
+                "writeratio": 100 - readratio,
+                "tag": tag,
+            }
+            for name, label, tag in FIO_VARIANTS
+        },
+    )
 
 
 COMPARISONS = {
@@ -811,11 +919,39 @@ COMPARISONS = {
             },
         },
     ),
+    "faiss-gist-imbalanced-vs-balancing-vs-interleaved-vs-repl": Comparison(
+        bench="ann",
+        rows={
+            "imbalanced": {
+                "label": "ann",
+                "dataset": "gist-960-euclidean",
+                "runner_name": "faiss",
+                "tag": "imbalanced-memory",
+            },
+            "balancing": {
+                "label": "ann",
+                "dataset": "gist-960-euclidean",
+                "runner_name": "faiss",
+                "tag": "numa-balancing",
+            },
+            "interleaved": {
+                "label": "ann",
+                "dataset": "gist-960-euclidean",
+                "runner_name": "faiss",
+                "tag": "interleaved-memory",
+            },
+            "patched-repl": {
+                "label": "ann-repl",
+                "dataset": "gist-960-euclidean",
+                "runner_name": "faiss",
+                "tag": "patched-repl",
+            },
+        },
+    ),
     "rocksdb-readrandom-imbalanced-vs-balancing-vs-interleaved-vs-repl": (
         Comparison(
             bench="rocksdb",
-            # db_bench tags are <variant>-<test>, and _rocksdb_prepare has
-            # already stripped the .t64 off the test name
+            # _rocksdb_prepare already stripped the .t64 off the test name
             rows={
                 "imbalanced": {
                     "label": "rocksdb",
@@ -840,17 +976,62 @@ COMPARISONS = {
             },
         )
     ),
-    # the control pair: identical thread placement, identical remote fraction,
-    # identical footprint per node, differing only in whether the two sockets
-    # read common cache lines
+    # overwrite is the one bench where replication loses
+    "rocksdb-overwrite-imbalanced-vs-balancing-vs-interleaved-vs-repl": (
+        Comparison(
+            bench="rocksdb",
+            rows={
+                "imbalanced": {
+                    "label": "rocksdb",
+                    "test": "overwrite",
+                    "tag": "imbalanced-overwrite",
+                },
+                "balancing": {
+                    "label": "rocksdb",
+                    "test": "overwrite",
+                    "tag": "balancing-overwrite",
+                },
+                "interleaved": {
+                    "label": "rocksdb",
+                    "test": "overwrite",
+                    "tag": "interleaved-overwrite",
+                },
+                "patched-repl": {
+                    "label": "rocksdb-repl",
+                    "test": "overwrite",
+                    "tag": "patched-repl-overwrite",
+                },
+            },
+        )
+    ),
+    # the control pair: same placement, same remote fraction, same footprint,
+    # differing only in whether the two sockets read common lines
     "sharing-local-vs-remote-vs-disjoint-vs-shared": Comparison(
         bench="sharing",
         rows={
-            "local": {"label": "sharing", "phase": "local"},
-            "remote": {"label": "sharing", "phase": "remote"},
-            "disjoint": {"label": "sharing", "phase": "shared000"},
-            "shared": {"label": "sharing", "phase": "shared100"},
+            "local": {"policy": "membind", "phase": "local"},
+            "remote": {"policy": "membind", "phase": "remote"},
+            "disjoint": {"policy": "membind", "phase": "disjoint"},
+            "shared": {"policy": "membind", "phase": "shared"},
         },
+    ),
+    # the same four with the buffer spread instead of bound
+    "sharing-interleaved-local-vs-remote-vs-disjoint-vs-shared": Comparison(
+        bench="sharing",
+        rows={
+            "local": {"policy": "interleaved", "phase": "local"},
+            "remote": {"policy": "interleaved", "phase": "remote"},
+            "disjoint": {"policy": "interleaved", "phase": "disjoint"},
+            "shared": {"policy": "interleaved", "phase": "shared"},
+        },
+    ),
+    # the pure read point: nothing unreplicates, the ceiling replication reaches
+    "fio-read100-firsttouch-vs-balancing-vs-interleaved-vs-repl": fio_comparison(
+        100
+    ),
+    # the even mix: unreplication fires constantly and the policies separate
+    "fio-read50-firsttouch-vs-balancing-vs-interleaved-vs-repl": fio_comparison(
+        50
     ),
     "llama-ngen512-baseline-vs-distribute-vs-repl": Comparison(
         bench="llama",
@@ -902,13 +1083,11 @@ def compare(df: pd.DataFrame, comparison: Comparison, where: str):
         row = pick_row(df, selector, f"{where}/{name}")
         if row is None:
             return pd.DataFrame()
-        # no per row dropna: that leaves the columns with different indexes,
-        # and pandas then unions them, which silently sorts every metric into
-        # alphabetical order instead of the order the stats are declared in
+        # no per row dropna: differing indexes make pandas union them, which
+        # sorts the metrics alphabetically instead of keeping the STATS order
         columns[name] = pd.to_numeric(row, errors="coerce")
 
-    # every column now shares the summary's index, so the file keeps the STATS
-    # grouping: locality, then cpu, caches, interconnect, bandwidth, memory
+    # shared index, so the file keeps the STATS order
     out = pd.DataFrame(columns).dropna(how="all")
     if len(out.columns) == 2:
         first, second = out.columns

@@ -19,9 +19,13 @@ RESULT_DIR = config.RESULT_DIR
 
 # the monitor CSVs hold every variant of a run, phases.csv cuts them apart
 STOCK = ["firsttouch", "interleaved", "numa-balancing"]
-REPL = ["repl-bound", "repl-firsttouch", "repl-interleaved"]
+REPL = ["repl-bound", "repl-firsttouch", "repl-interleaved", "repl-dynamic"]
 
 BAND = "#e8e8e8"  # phase shading, alternating
+
+# counters are read every 0.5s, so ~2s of samples: enough to average out the
+# scan bursts without hiding a phase transition
+EVENT_WINDOW = 4
 
 # summary reports steady state: skip this much of each phase, the rest is
 # the reclaim transient rather than what the limit costs
@@ -54,6 +58,14 @@ def phases(arch: str, variant: str) -> pd.DataFrame:
 def rate(df: pd.DataFrame, col: str) -> pd.Series:
     """Cumulative counter -> per second, on the sample grid."""
     return pd.to_numeric(df[col], errors="coerce").diff() / df.elapsed.diff()
+
+
+def smooth(values: pd.Series, window: int = EVENT_WINDOW) -> pd.Series:
+    """Rolling mean of a rate. numa balancing works in bursts: at the 0.5s
+    sample grid a series swings between 0 and 10k every other point, and on a
+    log axis that paints the whole panel solid. A centered mean keeps the
+    area under the curve and shows the burst rate instead of the sampling."""
+    return values.rolling(window, center=True, min_periods=1).mean()
 
 
 def read_bandwidth(arch: str, variant: str, t0, t1) -> pd.DataFrame:
@@ -178,7 +190,8 @@ def fits_pct(limit: str, full_gb: float) -> str:
     """How much of a fully replicated footprint this limit still allows."""
     if limit == "max" or not full_gb:
         return "100%"
-    return f"{min(100, float(limit.rstrip('G')) / full_gb * 100):.0f}%"
+    gb = float(limit[:-1]) / (1024 if limit.endswith("M") else 1)
+    return f"{min(100, gb / full_gb * 100):.0f}%"
 
 
 def shade_phases(ax, ph, label: bool = False, full_gb: float = 0):
@@ -242,13 +255,11 @@ def plot_variant(arch: str, variant: str, full_gb: float = 0):
     ax.set_ylim(bottom=0)
     shade_phases(ax, ph, label=True, full_gb=full_gb)
 
-    # 2. memory bandwidth, the other primary
+    # 2. memory read bandwidth, the other primary
     ax = axes[1]
     if not bw.empty:
-        ax.plot(bw.elapsed, bw.read_gb, lw=1, label="read", color="#2ca02c")
-        ax.plot(bw.elapsed, bw.write_gb, lw=1, label="write", color="#d62728")
-        ax.legend(loc="upper right", fontsize=8)
-    ax.set_ylabel("GB/s")
+        ax.plot(bw.elapsed, bw.read_gb, lw=1, color="#2ca02c")
+    ax.set_ylabel("read GB/s")
     ax.set_ylim(bottom=0)
     shade_phases(ax, ph)
 
@@ -304,27 +315,77 @@ def plot_variant(arch: str, variant: str, full_gb: float = 0):
     # 4. the explanatory counters: why the curves above moved. Log scale, the
     # rates span three decades, and only series that fired, to keep it legible
     ax = axes[3]
+    # reclaimed and reclaimed_replicas are different pages: the first is a
+    # main copy going out, the second a duplicate, so pin their colors rather
+    # than letting the cycler pair them by accident.
+    # reclaimed_replicas_from_main is disjoint from reclaimed_replicas, not a
+    # subset: replicas actually lost is the two summed
     series = {
-        "numa hint faults/s": rate(cg, "vm_numa_hint_faults"),
-        "pages migrated/s": rate(cg, "vm_numa_pages_migrated"),
-        "replicas allocated/s": rate(cg, "repl_repl_allocated")
-        if "repl_repl_allocated" in cg.columns
-        else None,
-        "replicas reclaimed/s": rate(cg, "repl_reclaimed_replicas")
-        if "repl_reclaimed_replicas" in cg.columns
-        else None,
+        "numa hint faults/s": (rate(cg, "vm_numa_hint_faults"), "#1f77b4"),
+        "pages migrated/s": (rate(cg, "vm_numa_pages_migrated"), "#ff7f0e"),
+        "replicas allocated/s": (
+            rate(cg, "repl_repl_allocated")
+            if "repl_repl_allocated" in cg.columns
+            else None,
+            "#2ca02c",
+        ),
+        "reclaimed (main)/s": (
+            rate(cg, "repl_reclaimed")
+            if "repl_reclaimed" in cg.columns
+            else None,
+            "#d62728",
+        ),
+        "replicas reclaimed/s": (
+            rate(cg, "repl_reclaimed_replicas")
+            if "repl_reclaimed_replicas" in cg.columns
+            else None,
+            "#9467bd",
+        ),
+        "replicas lost with their main/s": (
+            rate(cg, "repl_reclaimed_replicas_from_main")
+            if "repl_reclaimed_replicas_from_main" in cg.columns
+            else None,
+            "#8c564b",
+        ),
+        # the headroom floor doing its job: a replica refused and pointed at
+        # main instead, so it never became memory reclaim had to take back
+        "replicas skipped (pressure)/s": (
+            rate(cg, "repl_skipped_pressure")
+            if "repl_skipped_pressure" in cg.columns
+            else None,
+            "#e7ba52",
+        ),
     }
-    for label, values in series.items():
+    peak = 0
+    for label, (values, color) in series.items():
         if values is not None and values.fillna(0).sum() > 0:
-            ax.plot(cg.elapsed, values, lw=1, label=label)
+            y = smooth(values)
+            peak = max(peak, y.max())
+            ax.plot(cg.elapsed, y, lw=1, label=label, color=color)
+    # the sched tracepoints are a different family, so keep them off the
+    # counter colors: dotted alone reads as the same series at this density
+    ev_colors = {"move": "#17becf", "stick": "#bcbd22", "swap": "#e377c2"}
     for name, g in (ev.groupby("event") if not ev.empty else []):
         if g["count"].sum() > 0:
-            ax.plot(g.elapsed, g["count"] / 0.5, lw=1, ls=":", label=f"{name}/s")
+            y = smooth(g["count"] / 0.5)
+            peak = max(peak, y.max())
+            ax.plot(
+                g.elapsed,
+                y,
+                lw=1,
+                ls=":",
+                color=ev_colors.get(name, "0.5"),
+                label=f"{name}/s",
+            )
     ax.set_yscale("log")
-    ax.set_ylabel("events/s")
+    ax.set_ylabel(f"events/s ({EVENT_WINDOW // 2}s mean)")  # 0.5s samples
     ax.set_xlabel("time (s)")
+    if peak > 0:
+        # floor the axis a couple of decades under the peak, and leave a band
+        # on top for the legend to sit in rather than over the curves
+        ax.set_ylim(max(peak / 1e4, 0.5), peak * 30)
     if ax.get_legend_handles_labels()[0]:
-        ax.legend(loc="upper left", fontsize=7, ncol=2)
+        ax.legend(loc="upper left", fontsize=7, ncol=3, framealpha=0.9)
     shade_phases(ax, ph)
 
     # locality is a ratio of two small counters, so smooth it over ~5s before
@@ -353,9 +414,12 @@ def plot_variant(arch: str, variant: str, full_gb: float = 0):
 
 
 def variant_color(variant: str):
-    """Patched in blues, stock in oranges, same convention as plot_ann."""
-    stock = sns.color_palette(config.LINUX_COLOR, n_colors=6)
-    patched = sns.color_palette(config.SPARE_COLOR, n_colors=6)
+    """Patched in blues, stock in oranges, same convention as plot_ann.
+    dynamic gets its own hue, a fourth blue is too close to the others."""
+    if variant == "repl-dynamic":
+        return "#984ea3"
+    stock = sns.color_palette(config.LINUX_COLOR, n_colors=3 + len(STOCK))
+    patched = sns.color_palette(config.SPARE_COLOR, n_colors=3 + len(REPL))
     if variant in REPL:
         return patched[3 + REPL.index(variant)]
     return stock[3 + STOCK.index(variant)]

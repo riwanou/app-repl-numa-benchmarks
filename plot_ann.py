@@ -42,6 +42,8 @@ palettes = {
 RUNNER_NAMES = ["faiss", "annoy", "usearch"]
 N_RUNNERS = len(RUNNER_NAMES)
 
+YLABEL_SIZE = 6.5
+UPI_LABEL_SIZE = 6
 BAR_WIDTH = 0.095
 BAR_GAP = 0.0
 X_SPACING = 0.48
@@ -77,6 +79,26 @@ def _load_tagged_csv(path: str, dataset: str, arch: str) -> pd.DataFrame | None:
     df["dataset"] = ds_name(dataset)
     df["arch"] = arch
     return df
+
+
+def load_upi(arch: str) -> dict:
+    """(dataset, runner_name, tag) -> upi_out_gb, from the stats pipeline.
+
+    Written by `just stats`; absent until that has been run, in which case the
+    bars simply carry no UPI annotation.
+    """
+    path = os.path.join(RESULT_DIR, arch, "stats", "ann.csv")
+    if not os.path.exists(path):
+        return {}
+
+    df = pd.read_csv(path)
+    if "upi_out_gb" not in df.columns:
+        return {}
+
+    return {
+        (ds_name(r.dataset), r.runner_name, r.tag): r.upi_out_gb
+        for r in df.itertuples()
+    }
 
 
 def get_data(datasets) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -151,6 +173,28 @@ def _make_subplots(sharey: bool, wspace: float):
     return fig, [axes] if N_RUNNERS == 1 else list(axes)
 
 
+def _make_subplots_strip(wspace: float):
+    """Bars on top, a thin UPI strip underneath sharing the same x.
+
+    Keeps the interconnect numbers off the throughput axis: the bars get the
+    full height instead of being squashed by label headroom.
+    """
+    fig, axes = plt.subplots(
+        2, N_RUNNERS, figsize=(3.3, 1.7), sharex="col",
+        gridspec_kw={
+            "wspace": wspace, "hspace": 0.12, "height_ratios": [1, 0.26],
+        },
+    )
+    top = [axes[0]] if N_RUNNERS == 1 else list(axes[0])
+    strip = [axes[1]] if N_RUNNERS == 1 else list(axes[1])
+    # share y inside each row so the runners stay comparable
+    for ax in top[1:]:
+        ax.sharey(top[0])
+    for ax in strip[1:]:
+        ax.sharey(strip[0])
+    return fig, top, strip
+
+
 def _bar_positions(x, bar_index: int, n_bars: int) -> list:
     group_width = n_bars * BAR_WIDTH + (n_bars - 1) * BAR_GAP
     return [
@@ -169,8 +213,37 @@ def _tag_values(df_runner: pd.DataFrame, tag: str, col: str) -> list:
 
 
 def _format_runner_ax(
-    ax, x, runner: str, hide_left_spine: bool = False, y_nbins: int = 8
+    ax, x, runner: str, hide_left_spine: bool = False, y_nbins: int = 8,
+    xticklabels: bool = True,
 ):
+    sns.despine(ax=ax)
+    ax.tick_params(axis="y", labelsize=6, length=2)
+    ax.tick_params(axis="x", labelsize=6, length=2)
+    ax.set_xticks(list(x))
+    if xticklabels:
+        ax.set_xticklabels(
+            [s.replace(" ", "-") for s in DATASET_NAMES], fontsize=7, rotation=25
+        )
+    else:
+        # not set_xticklabels([]): with a shared x that would blank the strip too
+        ax.tick_params(labelbottom=False)
+    ax.set_title(runner.capitalize(), fontsize=7)
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=y_nbins))
+    if hide_left_spine:
+        ax.tick_params(left=False, labelleft=False)
+        ax.spines["left"].set_visible(False)
+
+
+def _upi_values(upi: dict, runner: str, tag: str) -> list:
+    """Cross-socket traffic each bar is paying for, 0 when unmeasured."""
+    values = []
+    for ds in DATASET_NAMES:
+        value = upi.get((ds, runner, tag))
+        values.append(0 if value is None or pd.isna(value) else value)
+    return values
+
+
+def _format_strip_ax(ax, x, hide_left_spine: bool = False):
     sns.despine(ax=ax)
     ax.tick_params(axis="y", labelsize=6, length=2)
     ax.tick_params(axis="x", labelsize=6, length=2)
@@ -178,10 +251,10 @@ def _format_runner_ax(
     ax.set_xticklabels(
         [s.replace(" ", "-") for s in DATASET_NAMES], fontsize=7, rotation=25
     )
-    ax.set_title(runner.capitalize(), fontsize=7)
-    ax.yaxis.set_major_locator(MaxNLocator(nbins=y_nbins))
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=2))
+    ax.set_ylim(bottom=0)
     if hide_left_spine:
-        ax.tick_params(left=False)
+        ax.tick_params(left=False, labelleft=False)
         ax.spines["left"].set_visible(False)
 
 
@@ -199,26 +272,54 @@ def plot_main(df: pd.DataFrame):
 
     for arch in df["arch"].unique():
         df_arch = df[df["arch"] == arch]
-        fig, axes = _make_subplots(sharey=True, wspace=0.05)
+
+        upi = load_upi(arch)
+        # machines with no UPI stats get the plain single-row layout rather
+        # than an empty strip
+        has_upi = any(v for v in upi.values() if pd.notna(v) and v > 0)
+        if has_upi:
+            fig, axes, strips = _make_subplots_strip(wspace=0.05)
+        else:
+            fig, axes = _make_subplots(sharey=True, wspace=0.05)
+            strips = [None] * N_RUNNERS
 
         for idx, runner in enumerate(RUNNER_NAMES):
             ax = axes[idx]
+            strip = strips[idx]
             df_runner = df_arch[df_arch["runner_name"] == runner]
 
             for i, tag in enumerate(TAGS_ORDER):
                 means = _tag_values(df_runner, tag, "mean_qps")
                 stds = _tag_values(df_runner, tag, "std_qps")
+                positions = _bar_positions(x, i, n_bars)
                 ax.bar(
-                    _bar_positions(x, i, n_bars), means, yerr=stds,
+                    positions, means, yerr=stds,
                     width=BAR_WIDTH, label=TAG_LABELS[tag], capsize=0.7,
                     linewidth=0.25, error_kw=dict(lw=0.3, capthick=0.3),
                     color=palettes[tag], edgecolor=palettes[tag],
                 )
+                if strip is not None:
+                    strip.bar(
+                        positions, _upi_values(upi, runner, tag),
+                        width=BAR_WIDTH, linewidth=0.25,
+                        color=palettes[tag], edgecolor=palettes[tag],
+                    )
 
             ax.axhline(0, linestyle="--", color="gray", linewidth=0.3, alpha=0.25)
-            _format_runner_ax(ax, x, runner, hide_left_spine=(idx != 0))
+            _format_runner_ax(
+                ax, x, runner, hide_left_spine=(idx != 0),
+                xticklabels=not has_upi,
+            )
+            if strip is not None:
+                _format_strip_ax(strip, x, hide_left_spine=(idx != 0))
 
-        axes[0].set_ylabel("Improvement over \n NUMA Balancing (%)", fontsize=7)
+        axes[0].set_ylabel(
+            "Improvement over \nNUMA Balancing (%)", fontsize=YLABEL_SIZE
+        )
+        if has_upi:
+            strips[0].set_ylabel("UPI out\n(GB/s)", fontsize=UPI_LABEL_SIZE)
+            # same column, but placed clear of each row's tick labels
+            fig.align_ylabels([axes[0], strips[0]])
 
         handles, labels = axes[0].get_legend_handles_labels()
         path = os.path.join(config.PLOT_DIR_ANN, config.ARCH_SUBNAMES[arch])
