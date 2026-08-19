@@ -36,6 +36,7 @@ parser.add_argument(
         "plot-rocksdb",
         "plot-llama",
         "plot-fio",
+        "plot-fio-pgtable",
         "plot-monitoring",
         "plot-sharing",
         "plot-pressure",
@@ -126,6 +127,10 @@ elif args.run == "plot-fio":
     import plot_fio
 
     plot_fio.make_plot_fio()
+elif args.run == "plot-fio-pgtable":
+    import plot_fio_pgtable
+
+    plot_fio_pgtable.make_plot_fio_pgtable()
 elif args.run == "plot-sharing":
     import plot_sharing
 

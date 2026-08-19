@@ -703,7 +703,8 @@ BENCHES = {
             "fio-pgt-mitosis",
             "fio-pgt-hydra",
         ],
-        keep_file=lambda name: name == "details.csv",
+        # pgtable.csv is written by plot_fio_pgtable, details.csv by plot_fio
+        keep_file=lambda name: name in ("details.csv", "pgtable.csv"),
         group_by=["benchmark", "tag", "readratio", "writeratio"],
         std_of=("read_bw_gb", "write_bw_gb"),
         derive_window=_fio_window,
@@ -889,6 +890,35 @@ def fio_comparison(readratio: int) -> Comparison:
     )
 
 
+# the page table bench: three kernels, each with its own interleaved baseline
+PGT_KERNELS = ["spare", "mitosis", "hydra"]
+
+
+def _pgt_row(kernel: str, size: str, tag: str) -> dict:
+    """One summary row of the fio page table bench, as plot_fio_pgtable
+    writes it into pgtable.csv."""
+    return {
+        "label": f"fio-pgt-{kernel}",
+        "dataset": "pgtable",
+        "benchmark": f"pgtable_{size}",
+        "tag": f"{kernel}-{tag}",
+        "readratio": 100,
+        "writeratio": 0,
+    }
+
+
+def pgtable_kernels_comparison(size: str) -> Comparison:
+    """The six runs side by side, for reading the counters across kernels."""
+    return Comparison(
+        bench="fio",
+        rows={
+            f"{kernel}-{tag}": _pgt_row(kernel, size, tag)
+            for kernel in PGT_KERNELS
+            for tag in ("interleave", "repl")
+        },
+    )
+
+
 COMPARISONS = {
     "usearch-gist-imbalanced-vs-balancing-vs-interleaved-vs-repl": Comparison(
         bench="ann",
@@ -1030,6 +1060,7 @@ COMPARISONS = {
         100
     ),
     # the even mix: unreplication fires constantly and the policies separate
+    "fio-pgtable-4G-spare-vs-mitosis-vs-hydra": pgtable_kernels_comparison("4G"),
     "fio-read50-firsttouch-vs-balancing-vs-interleaved-vs-repl": fio_comparison(
         50
     ),
