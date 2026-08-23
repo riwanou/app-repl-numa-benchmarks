@@ -62,6 +62,10 @@ TMP_DIR_ROCKSDB = os.path.join(TMP_DIR, "rocksdb")
 ANN_DATA_DIR = os.path.join(ROOT_DIR, "ann", "data")
 ANN_INDEX_DIR = os.path.join(ROOT_DIR, "ann", "indices")
 
+DUCKDB_DATA_DIR = os.path.join(ROOT_DIR, "duckdb_data")
+DUCKDB_DB_DIR = os.path.join(DUCKDB_DATA_DIR, "db")
+DUCKDB_CB_DIR = os.path.join(DUCKDB_DATA_DIR, "clickbench")
+
 RESULT_DIR = os.path.join(ROOT_DIR, "results")
 RESULT_DIR_ANN = os.path.join(RESULT_DIR, PLATFORM, "ann")
 RESULT_DIR_ROCKSDB = os.path.join(RESULT_DIR, PLATFORM, "rocksdb")
@@ -70,6 +74,7 @@ RESULT_DIR_MICROBENCH = os.path.join(RESULT_DIR, PLATFORM, "microbench")
 RESULT_DIR_LLAMA = os.path.join(RESULT_DIR, PLATFORM, "llama")
 RESULT_DIR_PRESSURE = os.path.join(RESULT_DIR, PLATFORM, "pressure")
 RESULT_DIR_SHARING = os.path.join(RESULT_DIR, PLATFORM, "sharing")
+RESULT_DIR_DUCKDB = os.path.join(RESULT_DIR, PLATFORM, "duckdb")
 
 PLOT_DIR = os.path.join(ROOT_DIR, "plots")
 PLOT_DIR_ANN = os.path.join(PLOT_DIR, "ann")

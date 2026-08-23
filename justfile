@@ -1,7 +1,7 @@
-build: build-rocksdb build-fio build-llama build-micro build-dirtest
+build: build-rocksdb build-fio build-llama build-micro build-dirtest build-duckdb
 
-bench: bench-ann bench-rocksdb bench-llama bench-fio
-bench-repl: bench-ann-repl bench-rocksdb-repl bench-llama-repl bench-fio-repl
+bench: bench-ann bench-rocksdb bench-llama bench-fio bench-duckdb
+bench-repl: bench-ann-repl bench-rocksdb-repl bench-llama-repl bench-fio-repl bench-duckdb-repl
 
 plot: plot-ann plot-rocksdb plot-llama plot-fio plot-fio-pgtable plot-microbench plot-pressure plot-sharing
 
@@ -21,6 +21,9 @@ build-fio:
 
 build-dirtest:
     make -C dirtest
+
+build-duckdb:
+    uv run run.py build-duckdb
 
 build-llama:
     #!/usr/bin/env bash
@@ -83,6 +86,12 @@ bench-llama:
     #!/usr/bin/env bash
     . /opt/intel/oneapi/setvars.sh
     uv run run.py llama
+
+bench-duckdb:
+    uv run run.py duckdb
+
+bench-duckdb-repl:
+    uv run run.py duckdb-repl
 
 bench-llama-repl:
     #!/usr/bin/env bash

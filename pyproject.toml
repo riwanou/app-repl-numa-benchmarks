@@ -6,6 +6,9 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "py-cpuinfo>=9.0.0",
+    # nightly: the duckdb benches attach the db with IO_MODE MMAP, which no
+    # release ships yet
+    "duckdb>=1.6.0.dev365",
 ]
 
 [tool.uv.workspace]

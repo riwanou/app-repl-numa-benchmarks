@@ -1,5 +1,6 @@
 import argparse
 import bench_ann
+import bench_duckdb
 import bench_rocksdb
 import bench_fio
 import bench_llama
@@ -25,6 +26,9 @@ parser.add_argument(
         "fio-pgt-hydra",
         "llama",
         "llama-repl",
+        "duckdb",
+        "duckdb-repl",
+        "build-duckdb",
         "sharing",
         "bench-pgtable-own",
         "bench-pgtable-carrefour",
@@ -95,6 +99,12 @@ elif args.run == "llama":
     bench_and_monitor(bench_llama.run_bench_llama, "llama")
 elif args.run == "llama-repl":
     bench_and_monitor(bench_llama.run_bench_llama_repl, "llama-repl")
+elif args.run == "duckdb":
+    bench_and_monitor(bench_duckdb.run_bench_duckdb, "duckdb")
+elif args.run == "duckdb-repl":
+    bench_and_monitor(bench_duckdb.run_bench_duckdb_repl, "duckdb-repl")
+elif args.run == "build-duckdb":
+    bench_duckdb.build_duckdb()
 elif args.run == "sharing":
     # the whole point of this bench is the coherence directory, so it is the
     # one run that pays for the uncore counters
