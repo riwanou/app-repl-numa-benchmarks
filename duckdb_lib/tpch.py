@@ -7,6 +7,7 @@ import time
 import duckdb
 
 import config
+from duckdb_lib import summary
 
 DB_DIR = config.DUCKDB_DB_DIR
 RESULT_DIR = config.RESULT_DIR_DUCKDB
@@ -37,18 +38,30 @@ def run_tpch(sf, tag, passes=PASSES, threads=THREADS):
     results = []
     for p in range(1, passes + 1):
         for nr, sql in queries:
+            start = config.get_time()
             t0 = time.perf_counter()
             n = len(con.execute(sql).fetchall())
             elapsed = round(time.perf_counter() - t0, 4)
+            end = config.get_time()
             results.append({"sf": sf, "tag": tag, "pass": p, "warmup": p == 1,
-                            "query": nr, "elapsed_s": elapsed, "rows": n})
+                            "query": nr, "elapsed_s": elapsed, "rows": n,
+                            "start_time": start, "end_time": end})
             print(f"sf{sf} {tag} pass {p} Q{nr:<2} {elapsed:7.3f}s", flush=True)
     con.close()
+
+    summary.write_summary(
+        results,
+        f"tpch-sf{str(sf).removesuffix('-raw')}",
+        summary.compression_of(sf),
+        tag,
+        RESULT_DIR,
+    )
 
     os.makedirs(RESULT_DIR, exist_ok=True)
     with open(f"{RESULT_DIR}/tpch_sf{sf}_{tag}.csv", "w", newline="") as f:
         w = csv.DictWriter(
-            f, fieldnames=["sf", "tag", "pass", "warmup", "query", "elapsed_s", "rows"])
+            f, fieldnames=["sf", "tag", "pass", "warmup", "query", "elapsed_s", "rows",
+                           "start_time", "end_time"])
         w.writeheader()
         w.writerows(results)
 

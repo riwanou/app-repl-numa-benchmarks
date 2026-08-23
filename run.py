@@ -45,6 +45,7 @@ parser.add_argument(
         "plot-sharing",
         "plot-pressure",
         "plot-microbench",
+        "plot-duckdb",
         "stats-monitoring",
     ],
     help="Variant to run",
@@ -157,6 +158,10 @@ elif args.run == "plot-microbench":
     import plot_microbench
 
     plot_microbench.make_plot_microbench()
+elif args.run == "plot-duckdb":
+    import plot_duckdb
+
+    plot_duckdb.make_plot_duckdb()
 elif args.run == "stats-monitoring":
     import stats_monitoring
 

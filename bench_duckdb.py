@@ -20,11 +20,11 @@ REPL = "/sys/kernel/debug/repl_pt"
 
 
 def run_tpch(sf, tag):
-    return f"uv run duckdb_tpch.py --sf {sf} --tag {tag}"
+    return f"uv run python -m duckdb_lib.tpch --sf {sf} --tag {tag}"
 
 
 def run_clickbench(variant, tag):
-    return f"uv run duckdb_clickbench.py --variant='{variant}' --tag {tag}"
+    return f"uv run python -m duckdb_lib.clickbench --variant='{variant}' --tag {tag}"
 
 
 def _drop_caches():
@@ -50,7 +50,7 @@ def _repl_run(cmd):
 
 
 def build_duckdb():
-    sh("uv run duckdb_build.py")
+    sh("uv run python -m duckdb_lib.build")
 
 
 def prepare_dirs():

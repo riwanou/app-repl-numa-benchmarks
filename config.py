@@ -85,6 +85,7 @@ PLOT_DIR_MONITORING = os.path.join(PLOT_DIR, "monitoring")
 PLOT_DIR_PRESSURE = os.path.join(PLOT_DIR, "pressure")
 PLOT_DIR_MICROBENCH = os.path.join(PLOT_DIR, "microbench")
 PLOT_DIR_SHARING = os.path.join(PLOT_DIR, "sharing")
+PLOT_DIR_DUCKDB = os.path.join(PLOT_DIR, "duckdb")
 
 MONITOR_DIR = os.path.join(RESULT_DIR, PLATFORM, "monitor")
 MONITOR_PCM = os.path.join(MONITOR_DIR, "pcm")

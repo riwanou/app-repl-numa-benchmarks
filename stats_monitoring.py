@@ -20,6 +20,7 @@ import os
 from dataclasses import dataclass
 from typing import Callable, Optional
 
+import numpy as np
 import pandas as pd
 from dateutil import tz
 
@@ -672,6 +673,22 @@ def _fio_window(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _duckdb_window(df: pd.DataFrame) -> pd.DataFrame:
+    """One row per pass: a single query is far shorter than a monitor sample,
+    so the queries of a pass share one window. Pass 1 is the cold run."""
+    if df.empty or "start_time" not in df.columns:
+        return df
+
+    keys = [c for c in ("sf", "variant", "tag") if c in df.columns] + ["pass"]
+    out = df.groupby(keys, as_index=False).agg(
+        elapsed_s=("elapsed_s", "sum"),
+        start_time=("start_time", "min"),
+        end_time=("end_time", "max"),
+    )
+    out["phase"] = np.where(out["pass"] == 1, "cold", "warm")
+    return out.rename(columns={"pass": "run_id"})
+
+
 BENCHES = {
     "ann": Bench(
         labels=["ann", "ann-repl", "ann-pressure", "ann-pressure-repl"],
@@ -720,6 +737,14 @@ BENCHES = {
             "dir_update_m_s",
         ),
         # dirtest reports its own window, first touch already excluded
+    ),
+    "duckdb": Bench(
+        labels=["duckdb", "duckdb-repl"],
+        keep_file=lambda name: name.startswith(("tpch_", "clickbench_")),
+        # the cold run is a row of its own, never averaged with the warm ones
+        group_by=["sf", "variant", "tag", "phase"],
+        std_of=("elapsed_s",),
+        derive_window=_duckdb_window,
     ),
     "llama": Bench(
         labels=["llama", "llama-repl"],
@@ -802,13 +827,25 @@ def bench_stats(
     if details and bench.keep_detail_file:
         keep_file = bench.keep_detail_file
 
+    paths = result_csvs(bench_dir, keep_file, bench.derive_window)
+    if not paths:
+        candidates = [
+            f for f in os.listdir(bench_dir) if f.endswith(".csv") and keep_file(f)
+        ]
+        if candidates:
+            print(
+                f"[WARN] {arch}/{name}: {len(candidates)} result csv carry no "
+                "start_time / end_time, no window to slice"
+            )
+        return pd.DataFrame()
+
     frames = []
     for label in bench.labels:
         monitoring = load_monitoring(arch, label)
         if monitoring.pcm.empty and monitoring.mem.empty:
             continue
 
-        for path in result_csvs(bench_dir, keep_file, bench.derive_window):
+        for path in paths:
             df = compute_stats(
                 path,
                 label,
@@ -919,7 +956,35 @@ def pgtable_kernels_comparison(size: str) -> Comparison:
     )
 
 
+# tag -> the monitoring label that ran it
+DUCKDB_VARIANTS = [
+    ("firsttouch", "duckdb"),
+    ("imbalanced", "duckdb"),
+    ("interleaved", "duckdb"),
+    ("numa-balancing", "duckdb"),
+    ("repl", "duckdb-repl"),
+]
+
+
+def duckdb_comparison(dataset: str) -> Comparison:
+    """Every policy side by side on one database, warm passes only."""
+    return Comparison(
+        bench="duckdb",
+        rows={
+            tag: {
+                "label": label,
+                "dataset": f"{dataset}_{tag}",
+                "tag": tag,
+                "phase": "warm",
+            }
+            for tag, label in DUCKDB_VARIANTS
+        },
+    )
+
+
 COMPARISONS = {
+    "duckdb-clickbench-compressed-firsttouch-vs-imbalanced-vs-interleaved"
+    "-vs-balancing-vs-repl": duckdb_comparison("clickbench_base"),
     "usearch-gist-imbalanced-vs-balancing-vs-interleaved-vs-repl": Comparison(
         bench="ann",
         rows={

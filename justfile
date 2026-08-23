@@ -3,7 +3,7 @@ build: build-rocksdb build-fio build-llama build-micro build-dirtest build-duckd
 bench: bench-ann bench-rocksdb bench-llama bench-fio bench-duckdb
 bench-repl: bench-ann-repl bench-rocksdb-repl bench-llama-repl bench-fio-repl bench-duckdb-repl
 
-plot: plot-ann plot-rocksdb plot-llama plot-fio plot-fio-pgtable plot-microbench plot-pressure plot-sharing
+plot: plot-ann plot-rocksdb plot-llama plot-fio plot-fio-pgtable plot-microbench plot-pressure plot-sharing plot-duckdb
 
 build-rocksdb:
     #!/usr/bin/env bash
@@ -128,6 +128,9 @@ plot-monitoring:
 
 plot-sharing:
     uv run run.py plot-sharing
+
+plot-duckdb:
+    uv run run.py plot-duckdb
 
 stats:
     uv run run.py stats-monitoring
