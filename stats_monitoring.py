@@ -324,6 +324,20 @@ def _(w: Window) -> float:
 per_socket("inst", "INST")
 
 
+@stat("afreq")
+def _(w: Window) -> float:
+    """Active core frequency over nominal: above 1 is turbo. An arm that keeps
+    fewer cores busy boosts higher, which flatters its runtime for reasons
+    that have nothing to do with placement."""
+    return mean(w.pcm, ("System", "AFREQ"))
+
+
+@stat("freq")
+def _(w: Window) -> float:
+    """Same, counting halted cycles: the gap to afreq is idle time."""
+    return mean(w.pcm, ("System", "FREQ"))
+
+
 @stat("cpu_balance")
 def _(w: Window) -> float:
     """1.0 is every socket retiring the same, 0 is everything consolidated on
