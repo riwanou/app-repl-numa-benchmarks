@@ -1,12 +1,14 @@
 """duckdb TPC-H and ClickBench under each memory policy."""
+
 import os
 import config
 from config import sh
 
 RESULT_DIR = config.RESULT_DIR_DUCKDB
 
-SCALE_FACTORS = [10, "10-raw", 30, "30-raw"]
-CLICKBENCH_VARIANTS = ["", "-raw"]
+SCALE_FACTORS = [10, 30]
+THREADS_PER_STREAM = 8
+STREAMS = sorted({1, max(1, config.NUM_THREADS // THREADS_PER_STREAM)})
 
 # tag, numactl, numa balancing
 ARMS = [
@@ -19,12 +21,15 @@ ARMS = [
 REPL = "/sys/kernel/debug/repl_pt"
 
 
-def run_tpch(sf, tag):
-    return f"uv run python -m duckdb_lib.tpch --sf {sf} --tag {tag}"
+def run_tpch(sf, tag, streams):
+    return (
+        f"uv run python -m duckdb_lib.tpch --sf {sf} --tag {tag}"
+        f" --streams {streams}"
+    )
 
 
-def run_clickbench(variant, tag):
-    return f"uv run python -m duckdb_lib.clickbench --variant='{variant}' --tag {tag}"
+def run_clickbench(tag, streams):
+    return f"uv run python -m duckdb_lib.clickbench --tag {tag} --streams {streams}"
 
 
 def _drop_caches():
@@ -39,7 +44,7 @@ def _repl_setup():
 
 
 def _repl_run(cmd):
-    # policy is per-pid, so the run must be a child of the shell that sets it
+    # policy is per-pid, so the run must be a child of this shell
     _drop_caches()
     sh(f"""(
       echo 1 > {REPL}/policy &&
@@ -62,12 +67,12 @@ def run_bench_duckdb():
 
     for tag, numactl, balancing in ARMS:
         sh(f"echo {int(balancing)} > /proc/sys/kernel/numa_balancing")
-        for sf in SCALE_FACTORS:
+        for streams in STREAMS:
+            for sf in SCALE_FACTORS:
+                _drop_caches()
+                sh(f"{numactl} {run_tpch(sf, tag, streams)}")
             _drop_caches()
-            sh(f"{numactl} {run_tpch(sf, tag)}")
-        for variant in CLICKBENCH_VARIANTS:
-            _drop_caches()
-            sh(f"{numactl} {run_clickbench(variant, tag)}")
+            sh(f"{numactl} {run_clickbench(tag, streams)}")
 
     sh("echo 0 > /proc/sys/kernel/numa_balancing")
 
@@ -76,7 +81,7 @@ def run_bench_duckdb_repl():
     prepare_dirs()
     _repl_setup()
 
-    for sf in SCALE_FACTORS:
-        _repl_run(run_tpch(sf, "repl"))
-    for variant in CLICKBENCH_VARIANTS:
-        _repl_run(run_clickbench(variant, "repl"))
+    for streams in STREAMS:
+        for sf in SCALE_FACTORS:
+            _repl_run(run_tpch(sf, "repl", streams))
+        _repl_run(run_clickbench("repl", streams))

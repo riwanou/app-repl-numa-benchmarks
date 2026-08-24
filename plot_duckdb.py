@@ -1,7 +1,4 @@
-"""duckdb plots: warm totals per arm, and the per-query breakdown.
-
-Both read the summary csvs the bench writes as it runs.
-"""
+"""duckdb plots: warm totals per arm, and the per-query breakdown."""
 import os
 
 import matplotlib.pyplot as plt
@@ -13,6 +10,10 @@ import pandas as pd
 
 import config
 from duckdb_lib import summary
+
+def stream_label(n):
+    return "1 stream" if int(n) == 1 else f"{n} streams"
+
 
 TAG_LABELS = {
     "firsttouch": "First touch",
@@ -83,7 +84,7 @@ def _pct_text(ax, bars, means, base, fontsize, err=0, rotation=0):
 
 
 def plot_totals(totals, arch):
-    """Warm total runtime per arm, one panel per bench, compressed vs not."""
+    """Warm total per arm, one panel per bench."""
     warm = totals[totals["phase"] == "warm"]
     benches = [b for b in summary.BENCH_ORDER if b in set(warm["bench"])]
     tags = _tags(warm)
@@ -95,9 +96,7 @@ def plot_totals(totals, arch):
 
     for ax, bench in zip(axes, benches):
         panel = warm[warm["bench"] == bench]
-        groups = [
-            c for c in summary.COMPRESSION_ORDER if c in set(panel["compression"])
-        ]
+        groups = sorted(set(panel["streams"]))
         width = 0.8 / len(tags)
         x = np.arange(len(groups))
 
@@ -105,7 +104,7 @@ def plot_totals(totals, arch):
             means, stds = [], []
             for group in groups:
                 row = panel[
-                    (panel["tag"] == tag) & (panel["compression"] == group)
+                    (panel["tag"] == tag) & (panel["streams"] == group)
                 ]
                 means.append(row["mean_s"].iloc[0] if len(row) else 0)
                 stds.append(row["std_s"].iloc[0] if len(row) else 0)
@@ -126,7 +125,7 @@ def plot_totals(totals, arch):
                 base = [
                     panel[
                         (panel["tag"] == baseline)
-                        & (panel["compression"] == group)
+                        & (panel["streams"] == group)
                     ]["mean_s"]
                     for group in groups
                 ]
@@ -137,7 +136,7 @@ def plot_totals(totals, arch):
         sns.despine(ax=ax)
         ax.set_title(bench, fontsize=7)
         ax.set_xticks(x + 0.4 - width / 2)
-        ax.set_xticklabels(groups, fontsize=6)
+        ax.set_xticklabels([stream_label(g) for g in groups], fontsize=6)
         ax.tick_params(axis="both", labelsize=6, length=2)
         ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
 
@@ -160,21 +159,18 @@ def plot_totals(totals, arch):
 
 
 def plot_queries(by_query, arch, bench):
-    """One bar per query, absolute warm mean, percentage against the baseline."""
+    """One bar per query, warm mean, percentage against the baseline."""
     warm = by_query[
         (by_query["phase"] == "warm") & (by_query["bench"] == bench)
     ]
     if warm.empty:
         return
-    groups = [
-        c for c in summary.COMPRESSION_ORDER if c in set(warm["compression"])
-    ]
+    groups = sorted(set(warm["streams"]))
     tags = _tags(warm)
     baseline = _baseline(warm)
     colors = palette()
     queries = sorted(set(warm["query"]))
 
-    # wide enough that every bar keeps its own percentage label
     fig, axes = plt.subplots(
         len(groups),
         1,
@@ -184,7 +180,7 @@ def plot_queries(by_query, arch, bench):
     axes = np.atleast_1d(axes)
 
     for ax, group in zip(axes, groups):
-        panel = warm[warm["compression"] == group]
+        panel = warm[warm["streams"] == group]
         width = 0.8 / len(tags)
         x = np.arange(len(queries))
 
@@ -214,9 +210,8 @@ def plot_queries(by_query, arch, bench):
                     _pct_text(ax, [rect], [mean], b, 4)
 
         sns.despine(ax=ax)
-        ax.set_ylabel(f"{group} (s)", fontsize=8)
+        ax.set_ylabel(f"{stream_label(group)} (s)", fontsize=8)
         ax.tick_params(axis="both", labelsize=7, length=2)
-        # one slow query would flatten every other bar
         spread = panel["mean_s"].max() / max(panel["mean_s"].min(), 1e-9)
         if spread > 50:
             ax.set_yscale("log")

@@ -41,32 +41,9 @@ def download(url, dest):
     subprocess.run(["wget", "-c", "-q", "-O", dest, url], check=True)
 
 
-def uncompress(src, dst):
-    """Rewrite every table of src into dst with compression disabled."""
-    if os.path.exists(dst):
-        log(f"have {os.path.basename(dst)}")
-        return
-    log(f"building {os.path.basename(dst)} from {os.path.basename(src)}")
-    tmp = dst + ".part"
-    if os.path.exists(tmp):
-        os.remove(tmp)
-    con = duckdb.connect(tmp)
-    con.execute("SET force_compression='uncompressed'")
-    con.execute(f"ATTACH '{src}' AS src (READ_ONLY)")
-    tables = [r[0] for r in con.execute(
-        "SELECT table_name FROM duckdb_tables() WHERE database_name='src'").fetchall()]
-    for t in tables:
-        log(f"  {t}")
-        con.execute(f'CREATE TABLE "{t}" AS SELECT * FROM src."{t}"')
-    con.close()
-    os.rename(tmp, dst)
-
-
 def build_tpch():
     for sf in TPCH_SF:
-        db = os.path.join(DB_DIR, f"tpch-sf{sf}.db")
-        download(TPCH_URL.format(sf=sf), db)
-        uncompress(db, os.path.join(DB_DIR, f"tpch-sf{sf}-raw.db"))
+        download(TPCH_URL.format(sf=sf), os.path.join(DB_DIR, f"tpch-sf{sf}.db"))
 
 
 def build_clickbench():
@@ -94,8 +71,6 @@ def build_clickbench():
         os.rename(tmp, hits)
     else:
         log("have hits.db")
-
-    uncompress(hits, os.path.join(DB_DIR, "hits-raw.db"))
 
     if os.path.exists(parquet):
         log("removing hits.parquet (no longer needed)")

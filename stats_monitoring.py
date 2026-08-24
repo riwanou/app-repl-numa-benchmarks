@@ -693,7 +693,7 @@ def _duckdb_window(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty or "start_time" not in df.columns:
         return df
 
-    keys = [c for c in ("sf", "variant", "tag") if c in df.columns] + ["pass"]
+    keys = [c for c in ("sf", "streams", "tag") if c in df.columns] + ["pass"]
     out = df.groupby(keys, as_index=False).agg(
         elapsed_s=("elapsed_s", "sum"),
         start_time=("start_time", "min"),
@@ -756,7 +756,7 @@ BENCHES = {
         labels=["duckdb", "duckdb-repl"],
         keep_file=lambda name: name.startswith(("tpch_", "clickbench_")),
         # the cold run is a row of its own, never averaged with the warm ones
-        group_by=["sf", "variant", "tag", "phase"],
+        group_by=["sf", "streams", "tag", "phase"],
         std_of=("elapsed_s",),
         derive_window=_duckdb_window,
     ),
@@ -997,8 +997,8 @@ def duckdb_comparison(dataset: str) -> Comparison:
 
 
 COMPARISONS = {
-    "duckdb-clickbench-compressed-firsttouch-vs-imbalanced-vs-interleaved"
-    "-vs-balancing-vs-repl": duckdb_comparison("clickbench_base"),
+    "duckdb-clickbench-firsttouch-vs-imbalanced-vs-interleaved"
+    "-vs-balancing-vs-repl": duckdb_comparison("clickbench_s1"),
     "usearch-gist-imbalanced-vs-balancing-vs-interleaved-vs-repl": Comparison(
         bench="ann",
         rows={
