@@ -1,10 +1,9 @@
 """What SPaRe's full replication buys over page table only replication.
 
-bench_fio.run_bench_fio_pgt_* writes one jsonl per kernel, each holding an
-`interleave` run set and a `repl` one at two working set sizes. SPaRe
-replicates the mapping itself (bench.fio carries repl=1), Mitosis and Hydra
-replicate the page tables and leave the data interleaved: the strips below the
-bars carry the counters that show it, locality and interconnect traffic.
+bench_fio.run_bench_fio_pgt_* writes one jsonl per kernel, holding an
+`interleave` run set and a `repl` one, plus a `repl-pt` one for SPaRe.
+Mitosis and Hydra replicate the page tables and leave the data interleaved,
+which is what SPaRe does under `repl-pt`; `repl` replicates the data too.
 
 This reads the jsonl files, writes the per run CSV the stats pipeline slices
 on, and plots the three kernels side by side.
@@ -31,17 +30,24 @@ KERNELS = [
     ("hydra", "Hydra"),
 ]
 
-# what each one actually replicates, the whole point of the comparison
-SCOPE = {"spare": "data + page table", "mitosis": "page table", "hydra": "page table"}
-SCOPE_SHORT = {"spare": "data+PT", "mitosis": "PT", "hydra": "PT"}
+# repl-pt is SPaRe only, the other two have no such mode
+TAGS = [
+    ("interleave", "Interleaved"),
+    ("repl-pt", "Replicated PT"),
+    ("repl", "Replicated PT + data"),
+]
 
-# the bench runs two working sets; both give the same ranking, so only the
-# larger one is plotted: bigger page tables are the best case for the page
-# table only kernels, so it is the fair one to show
-SIZES = [("768m", "768 MB"), ("4G", "4 GB")]
-PLOT_SIZE = "4G"
+# what each replicated bar replicates
+SCOPE_SHORT = {
+    ("spare", "repl-pt"): "PT",
+    ("spare", "repl"): "data+PT",
+    ("mitosis", "repl"): "PT",
+    ("hydra", "repl"): "PT",
+}
 
-TAGS = [("interleave", "interleaved"), ("repl", "replicated")]
+SIZE = "4G"
+SIZE_LABEL = "4 GB"
+BENCHMARK = "pgtable_4G"
 
 # stats_monitoring column -> strip label, drawn under the bars in this order
 METRICS = [("local_pct", "Local\n(%)"), ("upi_out_gb", "UPI\n(GB/s)")]
@@ -49,11 +55,9 @@ METRICS = [("local_pct", "Local\n(%)"), ("upi_out_gb", "UPI\n(GB/s)")]
 # wider than tall: it sits in one column of the paper
 FIG_WIDTH = 3.6
 BAR_WIDTH = 0.075
-# a hair of air between the bars of a group, they read as one block without it
 BAR_GAP = 0.004
 YLABEL_SIZE = 6
 UPI_LABEL_SIZE = 5.5
-
 
 # one ramp per kernel so the three stay apart at a glance
 KERNEL_RAMPS = {
@@ -63,10 +67,10 @@ KERNEL_RAMPS = {
 }
 
 
-def _kernel_color(kernel: str, repl: bool):
-    """One hue per kernel, the interleave bar a lighter shade of it."""
+def _kernel_color(kernel: str, tag: str):
+    """One hue per kernel, darker the more the run replicates."""
     ramp = sns.color_palette(KERNEL_RAMPS[kernel], n_colors=9)
-    return ramp[7] if repl else ramp[3]
+    return {"interleave": ramp[3], "repl-pt": ramp[5], "repl": ramp[7]}[tag]
 
 
 # --- Data loading ---
@@ -84,22 +88,23 @@ def _read_jsonl(path: str, kernel: str) -> list:
                 print(f"Skipping {path}:{lineno}: {e}")
                 continue
 
-            size = record.get("size", "")
+            # older files also carry a 768m run set, dropped
+            if record.get("size") != SIZE:
+                continue
+
             rows.append(
                 {
                     "kernel": kernel,
-                    "size": size,
                     "run": int(record.get("run", 1)),
                     # the stats pipeline groups on benchmark / tag, so the
-                    # kernel and the size have to ride along in those two
-                    "benchmark": f"pgtable_{size}",
+                    # kernel has to ride along in the tag
+                    "benchmark": BENCHMARK,
                     "tag": f"{kernel}-{record.get('tag', '')}",
                     "pgt_tag": record.get("tag", ""),
                     # all readers, kept for the fio group_by
                     "readratio": 100,
                     "writeratio": 0,
-                    # epoch seconds as stamped on the bench machine, converted
-                    # to monitor local time by stats_monitoring, not here
+                    # epoch seconds, stats_monitoring converts them
                     "ts_start": record.get("ts_start"),
                     "ts_end": record.get("ts_end"),
                     **bw_from_fio_output(record.get("data", {})),
@@ -120,7 +125,7 @@ def get_data(arch: str) -> pd.DataFrame:
 
 
 def load_stats(arch: str) -> pd.DataFrame:
-    """(kernel, size, pgt_tag) -> the hardware counters of that run set.
+    """(kernel, pgt_tag) -> the hardware counters of that run set.
 
     Written by `just stats` from pgtable.csv; absent until that has been run,
     in which case the bars simply carry no strips.
@@ -130,22 +135,21 @@ def load_stats(arch: str) -> pd.DataFrame:
         return pd.DataFrame()
 
     df = pd.read_csv(path)
-    df = df[df["benchmark"].astype(str).str.startswith("pgtable_")]
+    df = df[df["benchmark"] == BENCHMARK]
     if df.empty:
         return df
 
     df = df.copy()
-    df["size"] = df["benchmark"].str.removeprefix("pgtable_")
-    # tag is "<kernel>-<interleave|repl>", as written into pgtable.csv
-    df[["kernel", "pgt_tag"]] = df["tag"].str.rsplit("-", n=1, expand=True)
-    keep = ["kernel", "size", "pgt_tag"] + [m for m, _ in METRICS]
+    # tag is "<kernel>-<tag>"; split on the first dash, repl-pt has one of its own
+    df[["kernel", "pgt_tag"]] = df["tag"].str.split("-", n=1, expand=True)
+    keep = ["kernel", "pgt_tag"] + [m for m, _ in METRICS]
     return df[[c for c in keep if c in df.columns]]
 
 
 def _aggregate(df: pd.DataFrame) -> pd.DataFrame:
-    """Mean and std over the runs of each (kernel, size, tag)."""
+    """Mean and std over the runs of each (kernel, tag)."""
     return (
-        df.groupby(["kernel", "size", "pgt_tag"])
+        df.groupby(["kernel", "pgt_tag"])
         .agg(
             read_bw_gb=("read_bw_gb", "mean"),
             read_bw_std=("read_bw_gb", "std"),
@@ -157,24 +161,28 @@ def _aggregate(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _gain_over_interleave(agg: pd.DataFrame) -> pd.DataFrame:
-    """Replication gain within each kernel: every kernel brings its own
-    interleave baseline, so comparing raw bandwidth across kernels would
-    compare the kernels' page fault paths, not their replication."""
+    """Gain of every replicated run over its own kernel's interleave: across
+    kernels this would compare page fault paths, not replication."""
     rows = []
-    for (kernel, size), group in agg.groupby(["kernel", "size"]):
+    for kernel, group in agg.groupby("kernel"):
         base = group[group["pgt_tag"] == "interleave"]["read_bw_gb"]
-        repl = group[group["pgt_tag"] == "repl"]
-        if base.empty or repl.empty or base.iloc[0] == 0:
+        if base.empty or base.iloc[0] == 0:
             continue
         baseline = base.iloc[0]
-        rows.append(
-            {
-                "kernel": kernel,
-                "size": size,
-                "gain_pct": 100 * (repl["read_bw_gb"].iloc[0] - baseline) / baseline,
-                "gain_std_pct": 100 * repl["read_bw_std"].iloc[0] / baseline,
-            }
-        )
+        for tag, _ in TAGS[1:]:
+            repl = group[group["pgt_tag"] == tag]
+            if repl.empty:
+                continue
+            rows.append(
+                {
+                    "kernel": kernel,
+                    "pgt_tag": tag,
+                    "gain_pct": 100
+                    * (repl["read_bw_gb"].iloc[0] - baseline)
+                    / baseline,
+                    "gain_std_pct": 100 * repl["read_bw_std"].iloc[0] / baseline,
+                }
+            )
     return pd.DataFrame(rows)
 
 
@@ -210,8 +218,7 @@ def _make_fig(n_strips: int, height: float):
             "height_ratios": [1] + [0.3] * n_strips, "hspace": 0.1,
         },
     )
-    # the axes take the whole canvas: bbox_inches="tight" adds the labels back
-    # afterwards, so the default margins would only shrink the plotting area
+    # the axes take the whole canvas, bbox_inches="tight" adds the labels back
     fig.subplots_adjust(left=0.02, right=0.995, top=0.99, bottom=0.02)
     return fig, axes[0], list(axes[1:])
 
@@ -244,7 +251,7 @@ def _format_ax(ax, x, xlabels: list, ylabel: str, strips: list):
         ax.tick_params(labelbottom=False)
     bottom.set_xticks(list(x))
     bottom.set_xticklabels(xlabels, fontsize=6)
-    bottom.set_xlabel(f"{dict(SIZES)[PLOT_SIZE]} working set", fontsize=6)
+    bottom.set_xlabel(f"{SIZE_LABEL} working set", fontsize=6)
 
     fig = ax.get_figure()
     fig.align_ylabels([ax, *strips])
@@ -262,36 +269,36 @@ def _save(fig, arch: str, suffix: str):
 # --- Plots ---
 
 def _metric_at(stats: pd.DataFrame, kernel: str, tag: str, metric: str) -> float:
-    """One counter of one run set at PLOT_SIZE, 0 when unmeasured."""
+    """One counter of one run set, 0 when unmeasured."""
     if stats.empty or metric not in stats.columns:
         return 0
-    row = stats[
-        (stats["kernel"] == kernel)
-        & (stats["pgt_tag"] == tag)
-        & (stats["size"] == PLOT_SIZE)
-    ]
+    row = stats[(stats["kernel"] == kernel) & (stats["pgt_tag"] == tag)]
     return 0 if row.empty else float(row.iloc[0][metric])
 
 
 def plot_gain(arch: str, gains: pd.DataFrame, stats: pd.DataFrame):
-    """One bar per kernel: what its replication buys over interleaving.
+    """One bar per replicated run: what it buys over its own interleaving.
 
-    The strips carry the counters of the *replicated* run, absolute rather
-    than normalised: as a delta the two page table only kernels collapse onto
-    the zero line and cannot be read at all.
+    The strips carry the counters of the replicated run, absolute rather than
+    normalised: as a delta the page table only runs collapse onto zero.
     """
     _setup_style()
-    gains = gains[gains["size"] == PLOT_SIZE].set_index("kernel")
-    kernels = [k for k in KERNELS if k[0] in gains.index]
-    x = np.arange(len(kernels)) * 0.22
+    gains = gains.set_index(["kernel", "pgt_tag"])
+    bars = [
+        (kernel, label, tag)
+        for kernel, label in KERNELS
+        for tag, _ in TAGS[1:]
+        if (kernel, tag) in gains.index
+    ]
+    x = np.arange(len(bars)) * 0.22
     n_strips = 0 if stats.empty else len(METRICS)
     width = 0.11
 
     fig, ax, strips = _make_fig(n_strips, height=1.0)
-    colors = [_kernel_color(k, repl=True) for k, _ in kernels]
+    colors = [_kernel_color(kernel, tag) for kernel, _, tag in bars]
     ax.bar(
-        x, [gains.loc[k, "gain_pct"] for k, _ in kernels],
-        yerr=[gains.loc[k, "gain_std_pct"] for k, _ in kernels],
+        x, [gains.loc[(k, tag), "gain_pct"] for k, _, tag in bars],
+        yerr=[gains.loc[(k, tag), "gain_std_pct"] for k, _, tag in bars],
         width=width, capsize=0.7, linewidth=0.25,
         error_kw=dict(lw=0.3, capthick=0.3),
         color=colors, edgecolor=colors,
@@ -299,14 +306,15 @@ def plot_gain(arch: str, gains: pd.DataFrame, stats: pd.DataFrame):
 
     _plot_strips(
         strips, x,
-        lambda metric, i: _metric_at(stats, kernels[i][0], "repl", metric),
+        lambda metric, i: _metric_at(stats, bars[i][0], bars[i][2], metric),
         colors, width,
     )
 
     ax.axhline(0, linestyle="--", color="gray", linewidth=0.3, alpha=0.25)
     # the kernel names are the x axis, so no legend is needed
     _format_ax(
-        ax, x, [f"{label}\n({SCOPE_SHORT[k]})" for k, label in kernels],
+        ax, x,
+        [f"{label}\n({SCOPE_SHORT[(k, tag)]})" for k, label, tag in bars],
         "Improvement over \nInterleaved (%)", strips,
     )
     _save(fig, arch, "fio_pgtable")
@@ -315,60 +323,67 @@ def plot_gain(arch: str, gains: pd.DataFrame, stats: pd.DataFrame):
 def plot_absolute(arch: str, agg: pd.DataFrame, stats: pd.DataFrame):
     """Raw read bandwidth, interleaved and replicated, for every kernel."""
     _setup_style()
-    agg = agg[agg["size"] == PLOT_SIZE]
     kernels = [k for k in KERNELS if k[0] in set(agg["kernel"])]
-    x = np.arange(len(kernels)) * 0.21
+    # three slots per kernel, the groups need room to stay apart
+    x = np.arange(len(kernels)) * 0.28
     n_strips = 0 if stats.empty else len(METRICS)
 
     fig, ax, strips = _make_fig(n_strips, height=1.0)
-    positions, colors, tags = [], [], []
+    base = agg[agg["pgt_tag"] == "interleave"].set_index("kernel")
+    bars = []  # (position, kernel, tag) of every bar drawn
     for i, (tag, tlabel) in enumerate(TAGS):
-        pos = _bar_positions(x, i, len(TAGS))
         sub = agg[agg["pgt_tag"] == tag].set_index("kernel")
-        shade = [_kernel_color(k, repl=(tag == "repl")) for k, _ in kernels]
+        # repl-pt is SPaRe only, the other kernels leave that slot empty
+        drawn = [
+            (pos, kernel)
+            for pos, (kernel, _) in zip(
+                _bar_positions(x, i, len(TAGS)), kernels
+            )
+            if kernel in sub.index
+        ]
+        if not drawn:
+            continue
+        shade = [_kernel_color(kernel, tag) for _, kernel in drawn]
         ax.bar(
-            pos, [sub.loc[k, "read_bw_gb"] for k, _ in kernels],
-            yerr=[sub.loc[k, "read_bw_std"] for k, _ in kernels],
-            width=BAR_WIDTH, label=tlabel.capitalize(), capsize=0.7,
+            [pos for pos, _ in drawn],
+            [sub.loc[kernel, "read_bw_gb"] for _, kernel in drawn],
+            yerr=[sub.loc[kernel, "read_bw_std"] for _, kernel in drawn],
+            width=BAR_WIDTH, label=tlabel, capsize=0.7,
             linewidth=0.25, error_kw=dict(lw=0.3, capthick=0.3),
             color=shade, edgecolor=shade,
         )
-        positions += pos
-        colors += shade
-        tags += [tag] * len(kernels)
+        bars += [(pos, kernel, tag) for pos, kernel in drawn]
 
-        # what replication bought, in GB/s over the bar that bought it. Not a
-        # percentage: it rounds Mitosis and Hydra to the same +1% and hides
-        # that Mitosis gains twice what Hydra does
-        if tag != "repl":
+        # in GB/s, not percent: percent rounds Mitosis and Hydra to the same +1%
+        if tag == "interleave":
             continue
-        base = agg[agg["pgt_tag"] == "interleave"].set_index("kernel")
-        for p, (kernel, _) in zip(pos, kernels):
+        for pos, kernel in drawn:
             baseline = base.loc[kernel, "read_bw_gb"]
             value = sub.loc[kernel, "read_bw_gb"]
             if not baseline:
                 continue
             ax.annotate(
                 f"{value - baseline:+.1f}",
-                xy=(p, value + sub.loc[kernel, "read_bw_std"]),
+                xy=(pos, value + sub.loc[kernel, "read_bw_std"]),
                 xytext=(0, 1.5), textcoords="offset points",
                 ha="center", va="bottom", fontsize=4.5, color="dimgray",
             )
 
     _plot_strips(
-        strips, positions,
-        lambda metric, i: _metric_at(
-            stats, kernels[i % len(kernels)][0], tags[i], metric
-        ),
-        colors, BAR_WIDTH,
+        strips, [pos for pos, _, _ in bars],
+        lambda metric, i: _metric_at(stats, bars[i][1], bars[i][2], metric),
+        [_kernel_color(kernel, tag) for _, kernel, tag in bars], BAR_WIDTH,
     )
 
     _format_ax(
-        ax, x, [f"{label}\n({SCOPE_SHORT[k]})" for k, label in kernels],
-        "Read Bandwidth\n(GB/s)", strips,
+        ax, x, [label for _, label in kernels], "Read Bandwidth\n(GB/s)", strips,
     )
-    # two entries only, they fit in the corner
-    ax.legend(fontsize=5, ncol=1, framealpha=0.8, edgecolor="none")
+    # one row above the axes: inside, it covers the bars or their deltas
+    ax.legend(
+        fontsize=5, ncol=len(TAGS), loc="lower center",
+        bbox_to_anchor=(0.5, 1.0), frameon=False,
+        handlelength=1.2, columnspacing=1.0, handletextpad=0.4,
+    )
     _save(fig, arch, "fio_pgtable_abs")
 
 
@@ -388,13 +403,10 @@ def make_plot_fio_pgtable():
         df.to_csv(out, index=False)
         print(f"[OK] {len(df)} runs -> {out}")
 
-        agg = _aggregate(df)
-        if PLOT_SIZE not in set(agg["size"]):
-            continue
-
         stats = load_stats(arch)
         if stats.empty:
             print(f"[WARN] {arch}: no stats/fio.csv rows, run `just stats`")
 
+        agg = _aggregate(df)
         plot_gain(arch, _gain_over_interleave(agg), stats)
         plot_absolute(arch, agg, stats)

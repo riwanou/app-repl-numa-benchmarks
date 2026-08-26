@@ -98,6 +98,10 @@ bench-llama-repl:
     . /opt/intel/oneapi/setvars.sh
     uv run run.py llama-repl
 
+# rebuild the llama csvs from the per-run jsonl, no re-run
+llama-csv:
+    uv run run.py llama-csv
+
 # cross socket line sharing; needs no repl kernel, measures what repl removes
 bench-sharing: build-dirtest
     uv run run.py sharing

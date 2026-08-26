@@ -941,13 +941,17 @@ def fio_comparison(readratio: int) -> Comparison:
     )
 
 
-# the page table bench: three kernels, each with its own interleaved baseline
-PGT_KERNELS = ["spare", "mitosis", "hydra"]
+# each kernel with its own interleaved baseline; repl-pt is SPaRe only
+PGT_TAGS = {
+    "spare": ("interleave", "repl-pt", "repl"),
+    "mitosis": ("interleave", "repl"),
+    "hydra": ("interleave", "repl"),
+}
 
 
 def _pgt_row(kernel: str, size: str, tag: str) -> dict:
-    """One summary row of the fio page table bench, as plot_fio_pgtable
-    writes it into pgtable.csv."""
+    """One summary row of the fio page table bench, as written by
+    plot_fio_pgtable into pgtable.csv."""
     return {
         "label": f"fio-pgt-{kernel}",
         "dataset": "pgtable",
@@ -959,13 +963,13 @@ def _pgt_row(kernel: str, size: str, tag: str) -> dict:
 
 
 def pgtable_kernels_comparison(size: str) -> Comparison:
-    """The six runs side by side, for reading the counters across kernels."""
+    """Every run side by side, for reading the counters across kernels."""
     return Comparison(
         bench="fio",
         rows={
             f"{kernel}-{tag}": _pgt_row(kernel, size, tag)
-            for kernel in PGT_KERNELS
-            for tag in ("interleave", "repl")
+            for kernel, tags in PGT_TAGS.items()
+            for tag in tags
         },
     )
 

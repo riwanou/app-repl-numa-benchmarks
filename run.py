@@ -26,6 +26,7 @@ parser.add_argument(
         "fio-pgt-hydra",
         "llama",
         "llama-repl",
+        "llama-csv",
         "duckdb",
         "duckdb-repl",
         "build-duckdb",
@@ -100,6 +101,8 @@ elif args.run == "llama":
     bench_and_monitor(bench_llama.run_bench_llama, "llama")
 elif args.run == "llama-repl":
     bench_and_monitor(bench_llama.run_bench_llama_repl, "llama-repl")
+elif args.run == "llama-csv":
+    bench_llama.write_all_csv()
 elif args.run == "duckdb":
     bench_and_monitor(bench_duckdb.run_bench_duckdb, "duckdb")
 elif args.run == "duckdb-repl":

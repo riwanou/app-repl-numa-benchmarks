@@ -23,7 +23,7 @@ def run_bench(
     writejobs,
     distrib="random",
     prepend="",
-    size="768m",
+    size="4G",
 ) -> str:
     cmd = f"""RUNTIME={RUNTIME} \
         READJOBS={readjobs} \
@@ -215,19 +215,7 @@ def run_bench_fio_repl():
 
 
 def run_bench_fio_pgtable(json_path, tag, prepend="", spare_repl=False):
-    distrib = "random"
     total_jobs = os.cpu_count()
-
-    cmd, meta = run_bench(
-        repl_enabled=spare_repl,
-        readjobs=total_jobs,
-        writejobs=0,
-        prepend=prepend,
-        size="768m",
-    )
-    for run in range(1, NB_RUNS_PGTABLE + 1):
-        sh("sync; echo 3 > /proc/sys/vm/drop_caches")
-        run_one(json_path, run, tag, cmd, meta)
 
     cmd, meta = run_bench(
         repl_enabled=spare_repl,
@@ -246,7 +234,16 @@ def run_bench_fio_pgt_spare():
     run_bench_fio_pgtable(
         json_path, tag="interleave", prepend="numactl --interleave=all"
     )
-    run_bench_fio_pgtable(json_path, tag="repl", prepend="", spare_repl=True)
+
+    # page tables only, main interleaved
+    sh("echo 1 > /sys/kernel/debug/repl_pt/pgtable_only")
+    sh("echo 2 > /sys/kernel/debug/repl_pt/main_placement")
+    run_bench_fio_pgtable(json_path, tag="repl-pt", spare_repl=True)
+    sh("echo 0 > /sys/kernel/debug/repl_pt/main_placement")
+    sh("echo 0 > /sys/kernel/debug/repl_pt/pgtable_only")
+
+    # page tables + data, main bound
+    run_bench_fio_pgtable(json_path, tag="repl", spare_repl=True)
 
 
 def run_bench_fio_pgt_mitosis():
