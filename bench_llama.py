@@ -17,18 +17,27 @@ MODEL = "./llama.cpp/Llama-3.1-Tulu-3-8B-Q8_0.gguf"
 BENCH = "./llama.cpp/build/bin/llama-bench"
 
 REPS = 10
-WARMUP = 3
+WARMUP = 0
 
 # tag, numactl, llama --numa flag
 ARMS = [
     ("baseline", "", ""),
     ("distribute", "", "--numa distribute"),
     ("interleaved", "numactl --interleave=all", "--numa distribute"),
+    (
+        "interleaved-warmup",
+        "numactl --interleave=all --numa-warmup",
+        "--numa distribute",
+    ),
 ]
 REPL_ARMS = [
     ("repl", "", ""),
     ("repl-distribute", "", "--numa distribute"),
+    ("repl-distribute-warmup", "", "--numa distribute --numa-warmup"),
 ]
+
+# one csv per kernel variant, holding the mean of each of its arms
+CSVS = [("llama", ARMS), ("llama-repl", REPL_ARMS)]
 
 REPL = "/sys/kernel/debug/repl_pt"
 
@@ -73,47 +82,69 @@ def _run_arm(tag, numactl, numa_flag, repl_enabled):
 
     with open(jsonl_path, "w") as f:
         for r in results:
-            name = f"pp{r['n_prompt']}" if r["n_gen"] == 0 else f"tg{r['n_gen']}"
-            for run, (ts, ns) in enumerate(zip(r["samples_ts"], r["samples_ns"])):
-                f.write(json.dumps({
-                    "tag": tag,
-                    "test": name,
-                    "run": run,
-                    "ts": ts,
-                    "ns": ns,
-                    "n_prompt": r["n_prompt"],
-                    "n_gen": r["n_gen"],
-                    "n_threads": r["n_threads"],
-                    "build_commit": r["build_commit"],
-                    "test_time": r["test_time"],
-                }) + "\n")
-
-    write_csv(tag)
-
-
-def write_csv(tag):
-    """Mean over the warm repetitions of a jsonl, one row per test."""
-    jsonl_path = os.path.join(RESULT_DIR, f"{tag}.jsonl")
-    with open(jsonl_path) as f:
-        rows = [json.loads(line) for line in f]
-
-    warm = [r for r in rows if r["run"] >= WARMUP]
-
-    tests = {}
-    for r in warm:
-        tests.setdefault(r["test"], []).append(r)
-
-    csv_path = os.path.join(RESULT_DIR, f"{tag}.csv")
-    with open(csv_path, "w") as f:
-        f.write("tag,test,n_prompt,n_gen,runs,avg_ts,stddev_ts\n")
-        for name, rs in tests.items():
-            ts = [r["ts"] for r in rs]
-            mean = sum(ts) / len(ts)
-            var = sum((t - mean) ** 2 for t in ts) / max(1, len(ts) - 1)
-            f.write(
-                f"{tag},{name},{rs[0]['n_prompt']},{rs[0]['n_gen']},{len(ts)},"
-                f"{mean:.6f},{var**0.5:.6f}\n"
+            name = (
+                f"pp{r['n_prompt']}" if r["n_gen"] == 0 else f"tg{r['n_gen']}"
             )
+            for run, (ts, ns) in enumerate(
+                zip(r["samples_ts"], r["samples_ns"])
+            ):
+                f.write(
+                    json.dumps(
+                        {
+                            "tag": tag,
+                            "test": name,
+                            "run": run,
+                            "ts": ts,
+                            "ns": ns,
+                            "n_prompt": r["n_prompt"],
+                            "n_gen": r["n_gen"],
+                            "n_threads": r["n_threads"],
+                            "build_commit": r["build_commit"],
+                            "test_time": r["test_time"],
+                        }
+                    )
+                    + "\n"
+                )
+
+
+def _warm_rows(tag):
+    """The warm repetitions of an arm, empty when it never ran here."""
+    jsonl_path = os.path.join(RESULT_DIR, f"{tag}.jsonl")
+    if not os.path.exists(jsonl_path):
+        return []
+
+    rows = []
+    with open(jsonl_path) as f:
+        for lineno, line in enumerate(f, start=1):
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError as e:
+                print(f"Skipping {jsonl_path}:{lineno}: {e}")
+    return [r for r in rows if r["run"] >= WARMUP]
+
+
+def write_csv(name, arms):
+    """Mean over the warm repetitions, one row per (arm, test)."""
+    csv_path = os.path.join(RESULT_DIR, f"{name}.csv")
+    with open(csv_path, "w") as f:
+        # test_time and avg_ns are what stats_monitoring slices the run window on
+        f.write(
+            "tag,test,n_prompt,n_gen,runs,test_time,avg_ns,avg_ts,stddev_ts\n"
+        )
+        for tag, _, _ in arms:
+            tests = {}
+            for r in _warm_rows(tag):
+                tests.setdefault(r["test"], []).append(r)
+            for test, rs in tests.items():
+                ts = [r["ts"] for r in rs]
+                mean = sum(ts) / len(ts)
+                var = sum((t - mean) ** 2 for t in ts) / max(1, len(ts) - 1)
+                avg_ns = sum(r["ns"] for r in rs) / len(rs)
+                f.write(
+                    f"{tag},{test},{rs[0]['n_prompt']},{rs[0]['n_gen']},"
+                    f"{len(ts)},{rs[0]['test_time']},{avg_ns:.0f},"
+                    f"{mean:.6f},{var**0.5:.6f}\n"
+                )
     print(f"wrote {csv_path}")
 
 
@@ -123,6 +154,7 @@ def run_bench_llama():
 
     for tag, numactl, numa_flag in ARMS:
         _run_arm(tag, numactl, numa_flag, repl_enabled=False)
+        write_csv("llama", ARMS)
 
 
 def run_bench_llama_repl():
@@ -131,11 +163,11 @@ def run_bench_llama_repl():
 
     for tag, numactl, numa_flag in REPL_ARMS:
         _run_arm(tag, numactl, numa_flag, repl_enabled=True)
+        write_csv("llama-repl", REPL_ARMS)
         sh(f"cat {REPL}/registered")
 
 
 def write_all_csv():
-    """Redo every arm's csv from its jsonl, without re-running the bench."""
-    for tag in [t for t, _, _ in ARMS + REPL_ARMS]:
-        if os.path.exists(os.path.join(RESULT_DIR, f"{tag}.jsonl")):
-            write_csv(tag)
+    """Redo both csvs from the jsonl files, without re-running the bench."""
+    for name, arms in CSVS:
+        write_csv(name, arms)

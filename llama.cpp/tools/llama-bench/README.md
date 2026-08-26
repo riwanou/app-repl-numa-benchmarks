@@ -2,6 +2,15 @@
 
 Performance testing tool for llama.cpp.
 
+## NUMA replication work
+
+We added the --numa-warmup option, this introduce a warmup phase that load the model in memory at the beginning.
+
+Without it, we get 1.5x speedup on token generation (on gold 6130 quad cpu), but a slight reduction in prompt processing, until multiple runs are down to fully warmup the data.
+For a ~ 8GB model, it means loading 28GB upfront on a 4  NUMA nodes machine, leading to 1.5 speedup on token generation and same prompt processing speed.
+
+It is interesting to note that if we only observe token generation (while ignoring small lost in prompt processing), we still achieve a performance gain without full data replication if we do not use the --numa-warmup option.
+
 ## Table of contents
 
 1. [Syntax](#syntax)

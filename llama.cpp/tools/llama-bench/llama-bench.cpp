@@ -36,6 +36,50 @@
 #    include <windows.h>
 #endif
 
+// numa warmup
+static void prefault_gguf_numa() {
+    FILE * f = fopen("/proc/self/maps", "r");
+    if (!f) return;
+
+    char line[512];
+    uintptr_t start, end;
+    const unsigned int n_threads = std::thread::hardware_concurrency();
+
+    while (fgets(line, sizeof(line), f)) {
+        if (strstr(line, ".gguf") && sscanf(line, "%lx-%lx", &start, &end) == 2) {
+            const size_t size = end - start;
+            volatile const char * ptr = (const char *)start;
+            const size_t chunk = ((size / n_threads) & ~4095UL);
+
+            std::vector<std::thread> threads;
+            threads.reserve(n_threads);
+
+            for (unsigned int t = 0; t < n_threads; ++t) {
+                threads.emplace_back([ptr, size, chunk, t]() {
+                    cpu_set_t cpuset;
+                    CPU_ZERO(&cpuset);
+                    CPU_SET(t, &cpuset);
+                    pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
+
+                    const size_t start_offset = t * chunk;
+                    uint64_t dummy = 0;
+
+                    for (size_t offset = 0; offset < size; offset += 4096) {
+                        size_t pos = (start_offset + offset) % size;
+                        dummy += ptr[pos];
+                    }
+                    (void)dummy;
+                });
+            }
+
+            for (auto & th : threads) {
+                th.join();
+            }
+        }
+    }
+    fclose(f);
+}
+
 // utils
 static uint64_t get_time_ns() {
     using clock = std::chrono::high_resolution_clock;
@@ -359,6 +403,7 @@ struct cmd_params {
     bool                             verbose;
     bool                             progress;
     bool                             no_warmup;
+    bool                             numa_warmup;
     output_formats                   output_format;
     output_formats                   output_format_stderr;
 };
@@ -403,6 +448,7 @@ static const cmd_params cmd_params_defaults = {
     /* verbose              */ false,
     /* progress             */ false,
     /* no_warmup            */ false,
+    /* numa_warmup          */ false,
     /* output_format        */ MARKDOWN,
     /* output_format_stderr */ NONE,
 };
@@ -422,6 +468,7 @@ static void print_usage(int /* argc */, char ** argv) {
     printf("  -v, --verbose                               verbose output\n");
     printf("  --progress                                  print test progress indicators\n");
     printf("  --no-warmup                                 skip warmup runs before benchmarking\n");
+    printf("  --numa-warmup                               pre-fault memory pages by running a dummy token pass\n");
     printf("  -fitt, --fit-target <MiB>                   fit model to device memory with this margin per device in MiB (default: off)\n");
     printf("  -fitc, --fit-ctx <n>                        minimum ctx size for --fit-target (default: 4096)\n");
     if (llama_supports_rpc()) {
@@ -520,6 +567,7 @@ static cmd_params parse_cmd_params(int argc, char ** argv) {
     params.delay                = cmd_params_defaults.delay;
     params.progress             = cmd_params_defaults.progress;
     params.no_warmup            = cmd_params_defaults.no_warmup;
+    params.numa_warmup          = cmd_params_defaults.numa_warmup;
     params.offline              = cmd_params_defaults.offline;
 
     if (const char * env = getenv("HF_TOKEN")) {
@@ -1040,6 +1088,8 @@ static cmd_params parse_cmd_params(int argc, char ** argv) {
                 params.progress = true;
             } else if (arg == "--no-warmup") {
                 params.no_warmup = true;
+            } else if (arg == "--numa-warmup") {
+                params.numa_warmup = true;
             } else if (arg == "-fitt" || arg == "--fit-target") {
                 if (++i >= argc) {
                     invalid_param = true;
@@ -2310,6 +2360,10 @@ int llama_bench(int argc, char ** argv) {
                 return 1;
             }
             prev_inst = &inst;
+            // numa warmup
+            if (params.numa_warmup && t.n_gen == 0) {
+                prefault_gguf_numa();
+            }
         }
 
         llama_context * ctx = llama_init_from_model(lmodel, cparams);
