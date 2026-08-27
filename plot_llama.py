@@ -18,13 +18,19 @@ CSVS = ["llama", "llama-repl"]
 BASELINE = "baseline"
 
 # bottom to top, baseline first
-TAGS = ["baseline", "distribute", "interleaved", "repl", "repl-distribute"]
+TAGS = [
+    "baseline",
+    "distribute",
+    "interleaved-distribute-warmup",
+    "repl",
+    "repl-distribute-warmup",
+]
 TAG_LABELS = {
     "baseline": "Baseline",
     "distribute": "Distribute",
-    "interleaved": "Interleaved",
+    "interleaved-distribute-warmup": "Interleaved + Distribute (Warmup)",
     "repl": "Replication",
-    "repl-distribute": "Replication + Distribute",
+    "repl-distribute-warmup": "Replication + Distribute (Warmup)",
 }
 
 
@@ -41,13 +47,15 @@ def load():
                 continue
             df = pd.read_csv(csv_path)
             for _, row in df.iterrows():
-                rows.append({
-                    "arch": arch,
-                    "tag": row["tag"],
-                    "test": row["test"],
-                    "avg_ts": row["avg_ts"],
-                    "stddev_ts": row["stddev_ts"],
-                })
+                rows.append(
+                    {
+                        "arch": arch,
+                        "tag": row["tag"],
+                        "test": row["test"],
+                        "avg_ts": row["avg_ts"],
+                        "stddev_ts": row["stddev_ts"],
+                    }
+                )
     return pd.DataFrame(rows)
 
 
@@ -59,9 +67,9 @@ def make_plot_llama():
     palettes = {
         "baseline": linux[0],
         "distribute": linux[1],
-        "interleaved": linux[2],
+        "interleaved-distribute-warmup": linux[2],
         "repl": spare[5],
-        "repl-distribute": spare[7],
+        "repl-distribute-warmup": spare[7],
     }
 
     df_all = load()
@@ -87,11 +95,14 @@ def make_plot_llama():
             if not tags:
                 continue
 
-            base = test_data.loc[BASELINE, "avg_ts"] if BASELINE in tags else None
+            base = (
+                test_data.loc[BASELINE, "avg_ts"] if BASELINE in tags else None
+            )
             means = [test_data.loc[t, "avg_ts"] for t in tags]
 
             ax.barh(
-                range(len(tags)), means,
+                range(len(tags)),
+                means,
                 height=0.7,
                 color=[palettes[t] for t in tags],
                 edgecolor=[palettes[t] for t in tags],
@@ -109,7 +120,9 @@ def make_plot_llama():
                     means[i] + test_data.loc[tag, "stddev_ts"],
                     i,
                     f"  {pct:+.1f}%",
-                    ha="left", va="center", fontsize=4,
+                    ha="left",
+                    va="center",
+                    fontsize=4,
                     color="green" if pct > 0 else "red",
                 )
 

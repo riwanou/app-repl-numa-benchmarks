@@ -250,7 +250,9 @@ def slice_window(full: Window, times: tuple, start, end) -> Window:
         if stamps is None:
             return df
         return df.iloc[
-            stamps.searchsorted(start, "left") : stamps.searchsorted(end, "right")
+            stamps.searchsorted(start, "left") : stamps.searchsorted(
+                end, "right"
+            )
         ]
 
     return Window(*(cut(df, t) for df, t in zip(frames(full), times)))
@@ -873,7 +875,9 @@ def bench_stats(
     paths = result_csvs(bench_dir, keep_file, bench.derive_window)
     if not paths:
         candidates = [
-            f for f in os.listdir(bench_dir) if f.endswith(".csv") and keep_file(f)
+            f
+            for f in os.listdir(bench_dir)
+            if f.endswith(".csv") and keep_file(f)
         ]
         if candidates:
             print(
@@ -1007,9 +1011,11 @@ def pgtable_kernels_comparison(size: str) -> Comparison:
 LLAMA_VARIANTS = [
     ("baseline", "llama"),
     ("distribute", "llama"),
-    ("interleaved", "llama"),
+    ("interleaved-distribute", "llama"),
+    ("interleaved-distribute-warmup", "llama"),
     ("repl", "llama-repl"),
     ("repl-distribute", "llama-repl"),
+    ("repl-distribute-warmup", "llama-repl"),
 ]
 
 
@@ -1193,14 +1199,18 @@ COMPARISONS = {
         100
     ),
     # the even mix: unreplication fires constantly and the policies separate
-    "fio-pgtable-4G-spare-vs-mitosis-vs-hydra": pgtable_kernels_comparison("4G"),
+    "fio-pgtable-4G-spare-vs-mitosis-vs-hydra": pgtable_kernels_comparison(
+        "4G"
+    ),
     "fio-read50-firsttouch-vs-balancing-vs-interleaved-vs-repl": fio_comparison(
         50
     ),
-    "llama-tg128-baseline-vs-distribute-vs-interleaved-vs-repl":
-        llama_comparison("tg128"),
-    "llama-pp512-baseline-vs-distribute-vs-interleaved-vs-repl":
-        llama_comparison("pp512"),
+    "llama-tg128-baseline-vs-distribute-vs-interleaved-vs-repl": llama_comparison(
+        "tg128"
+    ),
+    "llama-pp512-baseline-vs-distribute-vs-interleaved-vs-repl": llama_comparison(
+        "pp512"
+    ),
 }
 
 
