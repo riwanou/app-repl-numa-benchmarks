@@ -35,6 +35,7 @@ COHERENCE_EVENTS = [
     "UNC_CHA_DIR_LOOKUP.NO_SNP",
 ]
 
+
 def tmp_csv(path: str):
     return f"{path}_tmp.csv"
 
@@ -159,9 +160,16 @@ class Monitoring:
         out.flush()
 
         cmd = [
-            "perf", "stat", "-a", "-x,",
-            "-e", ",".join(f"sched:{e}" for e in NUMA_SCHED_EVENTS),
-            "-I", str(int(self.interval * 1000)),
+            "perf",
+            "stat",
+            "-a",
+            "-x,",
+            "-e",
+            ",".join(f"sched:{e}" for e in NUMA_SCHED_EVENTS),
+            "-M",
+            "tma_memory_bound_group",
+            "-I",
+            str(int(self.interval * 1000)),
         ]
         print(f"$ {' '.join(cmd)}")
         try:
@@ -201,9 +209,15 @@ class Monitoring:
         out.flush()
 
         cmd = [
-            "perf", "stat", "-a", "--per-socket", "-x,",
-            "-e", ",".join(events),
-            "-I", str(int(self.interval * 1000)),
+            "perf",
+            "stat",
+            "-a",
+            "--per-socket",
+            "-x,",
+            "-e",
+            ",".join(events),
+            "-I",
+            str(int(self.interval * 1000)),
         ]
         print(f"$ {' '.join(cmd)}")
         try:
