@@ -1,13 +1,14 @@
 """llama.cpp token throughput under each memory policy.
 
 llama-bench runs its default tests (pp512 and tg128) REPS times per arm, via
--r. Every repetition is written as its own jsonl line, and the csv the plot
-reads is the mean over the warm ones only: the first WARMUP repetitions are
+-r, and dumps its own -o json report per arm. The csv the plot reads is the
+mean over the warm repetitions only: the first WARMUP repetitions are
 consistently slower (page cache, first-touch settling), so they are dropped.
 """
 
 import json
 import os
+import shutil
 import config
 from config import sh
 
@@ -19,10 +20,13 @@ BENCH = "./llama.cpp/build/bin/llama-bench"
 REPS = 10
 WARMUP = 0
 
-# tag, numactl, llama --numa flag
+# tag, numactl, llama --numa flag. --numa-warmup pre-faults the pages with a
+# dummy pass, and pairs with every placement including no placement at all
 ARMS = [
     ("baseline", "", ""),
+    ("baseline-warmup", "", "--numa-warmup"),
     ("distribute", "", "--numa distribute"),
+    ("distribute-warmup", "", "--numa distribute --numa-warmup"),
     ("interleaved-distribute", "numactl --interleave=all", "--numa distribute"),
     (
         "interleaved-distribute-warmup",
@@ -31,7 +35,6 @@ ARMS = [
     ),
 ]
 REPL_ARMS = [
-    ("repl", "", ""),
     ("repl-distribute", "", "--numa distribute"),
     ("repl-distribute-warmup", "", "--numa distribute --numa-warmup"),
 ]
@@ -61,8 +64,8 @@ def _repl_setup():
 
 
 def _run_arm(tag, numactl, numa_flag, repl_enabled):
-    """One llama-bench invocation, one jsonl line per repetition per test."""
-    jsonl_path = os.path.join(RESULT_DIR, f"{tag}.jsonl")
+    """One llama-bench invocation, its -o json report kept as is."""
+    json_path = os.path.join(RESULT_DIR, f"{tag}.json")
     out = os.path.join(config.TMP_DIR, "llama-bench.json")
 
     _drop_caches()
@@ -77,50 +80,36 @@ def _run_arm(tag, numactl, numa_flag, repl_enabled):
         )"""
     sh(cmd)
 
-    with open(out) as f:
-        results = json.load(f)
-
-    with open(jsonl_path, "w") as f:
-        for r in results:
-            name = (
-                f"pp{r['n_prompt']}" if r["n_gen"] == 0 else f"tg{r['n_gen']}"
-            )
-            for run, (ts, ns) in enumerate(
-                zip(r["samples_ts"], r["samples_ns"])
-            ):
-                f.write(
-                    json.dumps(
-                        {
-                            "tag": tag,
-                            "test": name,
-                            "run": run,
-                            "ts": ts,
-                            "ns": ns,
-                            "n_prompt": r["n_prompt"],
-                            "n_gen": r["n_gen"],
-                            "n_threads": r["n_threads"],
-                            "build_commit": r["build_commit"],
-                            "test_time": r["test_time"],
-                        }
-                    )
-                    + "\n"
-                )
+    shutil.copy(out, json_path)
 
 
 def _warm_rows(tag):
     """The warm repetitions of an arm, empty when it never ran here."""
-    jsonl_path = os.path.join(RESULT_DIR, f"{tag}.jsonl")
-    if not os.path.exists(jsonl_path):
+    json_path = os.path.join(RESULT_DIR, f"{tag}.json")
+    if not os.path.exists(json_path):
         return []
 
+    with open(json_path) as f:
+        results = json.load(f)
+
     rows = []
-    with open(jsonl_path) as f:
-        for lineno, line in enumerate(f, start=1):
-            try:
-                rows.append(json.loads(line))
-            except json.JSONDecodeError as e:
-                print(f"Skipping {jsonl_path}:{lineno}: {e}")
-    return [r for r in rows if r["run"] >= WARMUP]
+    for r in results:
+        name = f"pp{r['n_prompt']}" if r["n_gen"] == 0 else f"tg{r['n_gen']}"
+        for run, (ts, ns) in enumerate(zip(r["samples_ts"], r["samples_ns"])):
+            if run < WARMUP:
+                continue
+            rows.append(
+                {
+                    "test": name,
+                    "run": run,
+                    "ts": ts,
+                    "ns": ns,
+                    "n_prompt": r["n_prompt"],
+                    "n_gen": r["n_gen"],
+                    "test_time": r["test_time"],
+                }
+            )
+    return rows
 
 
 def write_csv(name, arms):

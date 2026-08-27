@@ -1136,10 +1136,11 @@ def pgtable_kernels_comparison(size: str) -> Comparison:
 # arm -> the csv it lives in, which is also the monitoring label that ran it
 LLAMA_VARIANTS = [
     ("baseline", "llama"),
+    ("baseline-warmup", "llama"),
     ("distribute", "llama"),
+    ("distribute-warmup", "llama"),
     ("interleaved-distribute", "llama"),
     ("interleaved-distribute-warmup", "llama"),
-    ("repl", "llama-repl"),
     ("repl-distribute", "llama-repl"),
     ("repl-distribute-warmup", "llama-repl"),
 ]
