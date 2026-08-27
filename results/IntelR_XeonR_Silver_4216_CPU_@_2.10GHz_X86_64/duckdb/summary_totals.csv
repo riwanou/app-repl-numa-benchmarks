@@ -7,8 +7,8 @@ clickbench,1,interleaved,cold,38.5862,0.0,1
 clickbench,1,interleaved,warm,13.8726,0.0894,19
 clickbench,1,numa-balancing,cold,37.6539,0.0,1
 clickbench,1,numa-balancing,warm,12.334,0.0976,19
-clickbench,1,repl,cold,38.7551,0.0,1
-clickbench,1,repl,warm,12.3945,0.202,19
+clickbench,1,repl,cold,37.0248,0.0,1
+clickbench,1,repl,warm,10.5387,0.1331,19
 tpch-sf10,1,firsttouch,cold,6.4219,0.0,1
 tpch-sf10,1,firsttouch,warm,2.617,0.0225,19
 tpch-sf10,1,imbalanced,cold,6.4541,0.0,1
@@ -17,8 +17,8 @@ tpch-sf10,1,interleaved,cold,7.9289,0.0,1
 tpch-sf10,1,interleaved,warm,2.7846,0.0227,19
 tpch-sf10,1,numa-balancing,cold,6.3876,0.0,1
 tpch-sf10,1,numa-balancing,warm,2.6254,0.0185,19
-tpch-sf10,1,repl,cold,6.796,0.0,1
-tpch-sf10,1,repl,warm,2.6326,0.026,19
+tpch-sf10,1,repl,cold,6.4802,0.0,1
+tpch-sf10,1,repl,warm,2.1951,0.0335,19
 tpch-sf30,1,firsttouch,cold,17.3757,0.0,1
 tpch-sf30,1,firsttouch,warm,6.1685,0.0416,19
 tpch-sf30,1,imbalanced,cold,17.7083,0.0,1
@@ -27,5 +27,9 @@ tpch-sf30,1,interleaved,cold,20.3738,0.0,1
 tpch-sf30,1,interleaved,warm,6.6802,0.0541,19
 tpch-sf30,1,numa-balancing,cold,17.4908,0.0,1
 tpch-sf30,1,numa-balancing,warm,6.2456,0.0463,19
-tpch-sf30,1,repl,cold,18.357,0.0,1
-tpch-sf30,1,repl,warm,6.1828,0.0713,19
+tpch-sf30,1,repl,cold,17.3688,0.0,1
+tpch-sf30,1,repl,warm,5.2195,0.048,19
+tpch-sf30,8,firsttouch,cold,39.0389,0.0,1
+tpch-sf30,8,firsttouch,warm,28.1548,0.4214,4
+tpch-sf30,8,repl,cold,39.2725,0.0,1
+tpch-sf30,8,repl,warm,29.1664,0.5616,4

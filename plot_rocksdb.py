@@ -51,7 +51,7 @@ METHODS = [
     "multireadrandom",
     "fwdrange",
     "revrange",
-    "overwrite",
+    # "overwrite", # too random, super low bandwidth / op intensity (diff of 5-10 mb), reduce with time (update bench)
     "readwhilewriting",
     "fwdrangewhilewriting",
     "revrangewhilewriting",
@@ -61,7 +61,7 @@ METHODS_LABELS = [
     "mread",
     "fscan",
     "rscan",
-    "overwrite",
+    # "overwrite",
     "read-write",
     "fscan-write",
     "rscan-write",

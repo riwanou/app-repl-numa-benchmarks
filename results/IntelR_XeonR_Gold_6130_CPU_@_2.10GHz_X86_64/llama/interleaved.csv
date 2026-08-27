@@ -1,0 +1,3 @@
+tag,test,n_prompt,n_gen,runs,avg_ts,stddev_ts
+interleaved,pp512,512,0,7,52.248743,0.668724
+interleaved,tg128,0,128,7,5.947070,0.005740

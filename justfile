@@ -3,7 +3,7 @@ build: build-rocksdb build-fio build-llama build-micro build-dirtest build-duckd
 bench: bench-ann bench-pressure bench-rocksdb bench-llama bench-fio bench-duckdb
 bench-repl: bench-ann-repl bench-pressure-repl bench-rocksdb-repl bench-llama-repl bench-fio-repl bench-duckdb-repl
 
-plot: plot-ann plot-rocksdb plot-llama plot-fio plot-fio-pgtable plot-microbench plot-pressure plot-sharing plot-duckdb
+plot: plot-ann plot-rocksdb plot-llama plot-fio plot-fio-pgtable plot-pressure plot-sharing plot-duckdb
 
 build-rocksdb:
     #!/usr/bin/env bash

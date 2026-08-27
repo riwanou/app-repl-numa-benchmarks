@@ -1,0 +1,3 @@
+tag,test,n_prompt,n_gen,runs,avg_ts,stddev_ts
+repl-distribute,pp512,512,0,7,49.657529,2.513488
+repl-distribute,tg128,0,128,7,7.566477,0.006413

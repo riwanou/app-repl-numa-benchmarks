@@ -175,7 +175,8 @@ def load_monitoring(arch: str, label: str) -> Window:
         if df.empty or times is None:
             return df
         df = df.assign(time_dt=pd.to_datetime(times, errors="coerce"))
-        return pd.DataFrame(df[df["time_dt"].notna()])
+        # slice_window then only needs the two bounds of a contiguous slice
+        return df[df["time_dt"].notna()].sort_values("time_dt")
 
     pcm = timed(
         pcm,
@@ -202,22 +203,57 @@ def load_monitoring(arch: str, label: str) -> Window:
         except (OSError, ValueError) as e:
             print(f"[WARN] unreadable monitoring file {coherence_path}: {e}")
 
-    return Window(pcm, pcm_memory, mem, coherence)
-
-
-def slice_window(full: Window, start, end) -> Window:
-    def cut(df: pd.DataFrame) -> pd.DataFrame:
-        if df.empty:
-            return df
-        mask = (df["time_dt"] >= start) & (df["time_dt"] <= end)
-        return pd.DataFrame(df[mask])
-
     return Window(
-        cut(full.pcm),
-        cut(full.pcm_memory),
-        cut(full.mem),
-        cut(full.perf_coherence),
+        to_numeric(pcm), to_numeric(pcm_memory), to_numeric(mem), coherence
     )
+
+
+def to_numeric(df: pd.DataFrame) -> pd.DataFrame:
+    """Every column parsed once here rather than once per run in every stat.
+    The pcm percent columns carry a trailing '%'."""
+    if df.empty:
+        return df
+
+    columns = {}
+    for col in df.columns:
+        if col == "time_dt" or (isinstance(col, tuple) and col[0] == "time_dt"):
+            continue
+        values = df[col]
+        if values.dtype == object:
+            values = values.astype(str).str.rstrip("%")
+        columns[col] = pd.to_numeric(values, errors="coerce")
+
+    out = pd.DataFrame(columns, index=df.index)
+    out["time_dt"] = df["time_dt"]
+    return out
+
+
+def frames(window: Window) -> tuple:
+    return (window.pcm, window.pcm_memory, window.mem, window.perf_coherence)
+
+
+@functools.lru_cache(maxsize=None)
+def monitoring_times(arch: str, label: str) -> tuple:
+    """The time column of each frame as numpy, once, so a slice never looks a
+    column up on a 130 column MultiIndex frame."""
+    return tuple(
+        None if df.empty else df["time_dt"].to_numpy()
+        for df in frames(load_monitoring(arch, label))
+    )
+
+
+def slice_window(full: Window, times: tuple, start, end) -> Window:
+    """time_dt is sorted, so a run is a contiguous slice of every frame."""
+    start, end = np.datetime64(start), np.datetime64(end)
+
+    def cut(df: pd.DataFrame, stamps) -> pd.DataFrame:
+        if stamps is None:
+            return df
+        return df.iloc[
+            stamps.searchsorted(start, "left") : stamps.searchsorted(end, "right")
+        ]
+
+    return Window(*(cut(df, t) for df, t in zip(frames(full), times)))
 
 
 # --------------------------------------------------------------- stat helpers
@@ -239,15 +275,7 @@ def mean(df: pd.DataFrame, col, scale: float = 1.0) -> float:
     """Mean of a column, NaN if the column or the window is missing."""
     if df.empty or col not in df.columns:
         return float("nan")
-    return pd.to_numeric(df[col], errors="coerce").mean() * scale
-
-
-def mean_pct(df: pd.DataFrame, col) -> float:
-    """Mean of a "42.0%"-style column."""
-    if df.empty or col not in df.columns:
-        return float("nan")
-    values = df[col].astype(str).str.rstrip("%")
-    return pd.to_numeric(values, errors="coerce").mean()
+    return df[col].mean() * scale
 
 
 MB_TO_GB = 1 / 1024
@@ -401,13 +429,13 @@ def _(w: Window) -> float:
     """Utilisation averaged over every link of the machine, 4 on a 2 socket
     box, 12 on the 4 socket gold."""
     cols = upi_pct_cols(w.pcm, "trafficOut")
-    return pd.Series([mean_pct(w.pcm, col) for col in cols]).mean()
+    return pd.Series([mean(w.pcm, col) for col in cols]).mean()
 
 
 @stat("upi_in_pct")
 def _(w: Window) -> float:
     cols = upi_pct_cols(w.pcm, "dataIn")
-    return pd.Series([mean_pct(w.pcm, col) for col in cols]).mean()
+    return pd.Series([mean(w.pcm, col) for col in cols]).mean()
 
 
 # bandwidth
@@ -531,6 +559,7 @@ def compute_stats(
         raise ValueError(f"unknown stats: {unknown}, known: {list(STATS)}")
 
     full = load_monitoring(arch, label)
+    times = monitoring_times(arch, label)
     starts = pd.to_datetime(df["start_time"])
     ends = pd.to_datetime(df["end_time"])
     warmup = pd.Timedelta(seconds=warmup_s)
@@ -538,11 +567,11 @@ def compute_stats(
 
     rows = []
     for start, end in zip(starts, ends):
-        window = slice_window(full, start, end)
+        window = slice_window(full, times, start, end)
         trimmed = window
         applied = 0.0
         if start + warmup < end - cooldown:
-            trimmed = slice_window(full, start + warmup, end - cooldown)
+            trimmed = slice_window(full, times, start + warmup, end - cooldown)
             # a run shorter than the trim keeps its full window
             if not trimmed.pcm.empty or window.pcm.empty:
                 applied = warmup_s
@@ -647,7 +676,7 @@ def _rocksdb_prepare(df: pd.DataFrame) -> pd.DataFrame:
 
 # llama-bench reports no run window, and its `test_time` is stamped before the
 # model load. Anchoring on the *next* test_time keeps that load out of it.
-LLAMA_REPS = 5  # llama-bench default, bench_llama.py does not pass -r
+LLAMA_REPS = 20  # the -r bench_llama.py passes
 
 
 def _llama_window(df: pd.DataFrame) -> pd.DataFrame:
@@ -974,6 +1003,27 @@ def pgtable_kernels_comparison(size: str) -> Comparison:
     )
 
 
+# arm -> the csv it lives in, which is also the monitoring label that ran it
+LLAMA_VARIANTS = [
+    ("baseline", "llama"),
+    ("distribute", "llama"),
+    ("interleaved", "llama"),
+    ("repl", "llama-repl"),
+    ("repl-distribute", "llama-repl"),
+]
+
+
+def llama_comparison(test: str) -> Comparison:
+    """Every arm side by side on one llama-bench test."""
+    return Comparison(
+        bench="llama",
+        rows={
+            tag: {"label": label, "dataset": label, "tag": tag, "test": test}
+            for tag, label in LLAMA_VARIANTS
+        },
+    )
+
+
 # tag -> the monitoring label that ran it
 DUCKDB_VARIANTS = [
     ("firsttouch", "duckdb"),
@@ -1147,28 +1197,10 @@ COMPARISONS = {
     "fio-read50-firsttouch-vs-balancing-vs-interleaved-vs-repl": fio_comparison(
         50
     ),
-    "llama-ngen512-baseline-vs-distribute-vs-repl": Comparison(
-        bench="llama",
-        # the longest generation test, the one that runs long enough to settle
-        # and the most memory bound of the four
-        rows={
-            "baseline": {
-                "label": "llama",
-                "dataset": "baseline",
-                "n_gen": 512,
-            },
-            "distribute": {
-                "label": "llama",
-                "dataset": "distribute",
-                "n_gen": 512,
-            },
-            "patched-repl": {
-                "label": "llama-repl",
-                "dataset": "repl",
-                "n_gen": 512,
-            },
-        },
-    ),
+    "llama-tg128-baseline-vs-distribute-vs-interleaved-vs-repl":
+        llama_comparison("tg128"),
+    "llama-pp512-baseline-vs-distribute-vs-interleaved-vs-repl":
+        llama_comparison("pp512"),
 }
 
 
@@ -1195,8 +1227,10 @@ def compare(df: pd.DataFrame, comparison: Comparison, where: str):
     columns = {}
     for name, selector in comparison.rows.items():
         row = pick_row(df, selector, f"{where}/{name}")
+        # a run the monitor did not cover leaves its column out, the file is
+        # still worth writing: pick_row has already said which one is missing
         if row is None:
-            return pd.DataFrame()
+            continue
         # no per row dropna: differing indexes make pandas union them, which
         # sorts the metrics alphabetically instead of keeping the STATS order
         columns[name] = pd.to_numeric(row, errors="coerce")

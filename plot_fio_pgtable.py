@@ -23,41 +23,39 @@ from plot_fio import bw_from_fio_output
 
 RESULT_DIR = config.RESULT_DIR
 
-# jsonl file suffix -> legend label, left to right
-KERNELS = [
-    ("spare", "SPaRe"),
-    ("mitosis", "Mitosis"),
-    ("hydra", "Hydra"),
-]
+# jsonl file suffix, in plot order
+KERNELS = ["spare", "mitosis", "hydra"]
 
-# repl-pt is SPaRe only, the other two have no such mode
-TAGS = [
-    ("interleave", "Interleaved"),
-    ("repl-pt", "Replicated PT"),
-    ("repl", "Replicated PT + data"),
-]
-
-# what each replicated bar replicates
-SCOPE_SHORT = {
-    ("spare", "repl-pt"): "PT",
-    ("spare", "repl"): "data+PT",
-    ("mitosis", "repl"): "PT",
-    ("hydra", "repl"): "PT",
+# repl-pt is SPaRe only; `repl` is the whole mapping for SPaRe and the page
+# tables alone for the other two, hence one label per (kernel, tag)
+TAGS = ["interleave", "repl-pt", "repl"]
+BAR_LABELS = {
+    ("spare", "interleave"): "SPaRe Interleaved",
+    ("spare", "repl-pt"): "SPaRe Replicated PT",
+    ("spare", "repl"): "SPaRe Replicated PT + data",
+    ("mitosis", "interleave"): "Mitosis Interleaved",
+    ("mitosis", "repl"): "Mitosis Replicated PT",
+    ("hydra", "interleave"): "Hydra Interleaved",
+    ("hydra", "repl"): "Hydra Replicated PT",
 }
 
 SIZE = "4G"
 SIZE_LABEL = "4 GB"
 BENCHMARK = "pgtable_4G"
 
-# stats_monitoring column -> strip label, drawn under the bars in this order
-METRICS = [("local_pct", "Local\n(%)"), ("upi_out_gb", "UPI\n(GB/s)")]
+# one cluster per metric, top to bottom
+METRICS = [
+    ("read_bw_gb", "Read Bandwidth (GB/s)"),
+    ("local_pct", "Local Accesses (%)"),
+    ("upi_out_gb", "UPI Traffic (GB/s)"),
+]
+# the ones that come from the counters, the rest from fio itself
+STAT_METRICS = ["local_pct", "upi_out_gb"]
+# less interconnect traffic is the win, so the green goes the other way
+LOWER_IS_BETTER = ["upi_out_gb"]
 
-# wider than tall: it sits in one column of the paper
-FIG_WIDTH = 3.6
-BAR_WIDTH = 0.075
-BAR_GAP = 0.004
-YLABEL_SIZE = 6
-UPI_LABEL_SIZE = 5.5
+# one column of the paper wide, three clusters tall
+FIGSIZE = (3.3, 3.4)
 
 # one ramp per kernel so the three stay apart at a glance
 KERNEL_RAMPS = {
@@ -117,7 +115,7 @@ def get_data(arch: str) -> pd.DataFrame:
     """One row per run of every pgtable_<kernel>.jsonl of an arch."""
     directory = os.path.join(RESULT_DIR, arch, "fio")
     rows = []
-    for kernel, _ in KERNELS:
+    for kernel in KERNELS:
         path = os.path.join(directory, f"pgtable_{kernel}.jsonl")
         if os.path.exists(path):
             rows += _read_jsonl(path, kernel)
@@ -142,7 +140,7 @@ def load_stats(arch: str) -> pd.DataFrame:
     df = df.copy()
     # tag is "<kernel>-<tag>"; split on the first dash, repl-pt has one of its own
     df[["kernel", "pgt_tag"]] = df["tag"].str.split("-", n=1, expand=True)
-    keep = ["kernel", "pgt_tag"] + [m for m, _ in METRICS]
+    keep = ["kernel", "pgt_tag"] + STAT_METRICS
     return df[[c for c in keep if c in df.columns]]
 
 
@@ -160,33 +158,14 @@ def _aggregate(df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def _gain_over_interleave(agg: pd.DataFrame) -> pd.DataFrame:
-    """Gain of every replicated run over its own kernel's interleave: across
-    kernels this would compare page fault paths, not replication."""
-    rows = []
-    for kernel, group in agg.groupby("kernel"):
-        base = group[group["pgt_tag"] == "interleave"]["read_bw_gb"]
-        if base.empty or base.iloc[0] == 0:
-            continue
-        baseline = base.iloc[0]
-        for tag, _ in TAGS[1:]:
-            repl = group[group["pgt_tag"] == tag]
-            if repl.empty:
-                continue
-            rows.append(
-                {
-                    "kernel": kernel,
-                    "pgt_tag": tag,
-                    "gain_pct": 100
-                    * (repl["read_bw_gb"].iloc[0] - baseline)
-                    / baseline,
-                    "gain_std_pct": 100 * repl["read_bw_std"].iloc[0] / baseline,
-                }
-            )
-    return pd.DataFrame(rows)
+def _table(agg: pd.DataFrame, stats: pd.DataFrame) -> pd.DataFrame:
+    """(kernel, pgt_tag) -> every metric of that run set."""
+    if not stats.empty:
+        agg = agg.merge(stats, on=["kernel", "pgt_tag"], how="left")
+    return agg.set_index(["kernel", "pgt_tag"])
 
 
-# --- Plot helpers ---
+# --- Plot ---
 
 def _setup_style():
     sns.set_style("ticks")
@@ -194,197 +173,69 @@ def _setup_style():
     plt.rcParams.update({"font.family": "serif", "font.serif": "DejaVu Serif"})
 
 
-def _bar_positions(x, bar_index: int, n_bars: int) -> list:
-    group_width = n_bars * BAR_WIDTH + (n_bars - 1) * BAR_GAP
-    return [
-        pos - group_width / 2 + bar_index * (BAR_WIDTH + BAR_GAP) + BAR_WIDTH / 2
-        for pos in x
+def plot_pgtable(arch: str, table: pd.DataFrame):
+    """One cluster per metric, one bar per run set, with the difference to
+    its own kernel's interleaved run next to it."""
+    _setup_style()
+    bars = [
+        (kernel, BAR_LABELS[(kernel, tag)], tag)
+        for kernel in KERNELS
+        for tag in TAGS
+        if (kernel, tag) in table.index
     ]
 
+    fig, axes = plt.subplots(len(METRICS), 1, figsize=FIGSIZE, sharey=True)
+    colors = [_kernel_color(kernel, tag) for kernel, _, tag in bars]
 
-def _make_fig(n_strips: int, height: float):
-    """Bars on top, one thin strip per hardware metric underneath.
-
-    The counters live on their own axes so the bandwidth axis keeps its scale.
-    """
-    if not n_strips:
-        fig, ax = plt.subplots(figsize=(FIG_WIDTH, height))
-        return fig, ax, []
-
-    fig, axes = plt.subplots(
-        1 + n_strips, 1,
-        figsize=(FIG_WIDTH, height + 0.28 * n_strips), sharex=True,
-        gridspec_kw={
-            "height_ratios": [1] + [0.3] * n_strips, "hspace": 0.1,
-        },
-    )
-    # the axes take the whole canvas, bbox_inches="tight" adds the labels back
-    fig.subplots_adjust(left=0.02, right=0.995, top=0.99, bottom=0.02)
-    return fig, axes[0], list(axes[1:])
-
-
-def _plot_strips(strips, positions, values_of, colors, width):
-    """The same bars as above, one strip per hardware counter."""
-    for strip, (metric, label) in zip(strips, METRICS):
-        strip.bar(
-            positions, [values_of(metric, i) for i in range(len(positions))],
-            width=width, color=colors, edgecolor=colors, linewidth=0.25,
+    for ax, (metric, mlabel) in zip(axes, METRICS):
+        if metric not in table.columns:
+            continue
+        values = [table.loc[(k, tag), metric] for k, _, tag in bars]
+        std = (
+            [table.loc[(k, tag), "read_bw_std"] for k, _, tag in bars]
+            if metric == "read_bw_gb"
+            else None
         )
-        sns.despine(ax=strip)
-        strip.tick_params(axis="y", labelsize=6, length=2)
-        strip.tick_params(axis="x", labelsize=6, length=2)
-        strip.yaxis.set_major_locator(mtick.MaxNLocator(nbins=2))
-        strip.set_ylim(bottom=0)
-        strip.set_ylabel(label, fontsize=UPI_LABEL_SIZE)
 
+        ax.barh(
+            range(len(bars)), values, height=0.7,
+            color=colors, edgecolor=colors, linewidth=0.25,
+            xerr=std, capsize=0.6,
+            error_kw=dict(lw=0.3, capthick=0.3, color="gray", alpha=0.5),
+        )
 
-def _format_ax(ax, x, xlabels: list, ylabel: str, strips: list):
-    sns.despine(ax=ax)
-    ax.tick_params(axis="y", labelsize=6, length=2)
-    ax.tick_params(axis="x", labelsize=6, length=2)
-    ax.set_ylabel(ylabel, fontsize=YLABEL_SIZE)
-    ax.yaxis.set_major_locator(mtick.MaxNLocator(nbins=6))
+        for i, (kernel, _, tag) in enumerate(bars):
+            base = table.loc[(kernel, "interleave"), metric]
+            if tag == "interleave" or not base:
+                continue
+            pct = 100 * (values[i] - base) / base
+            ax.text(
+                values[i] + (std[i] if std else 0), i, f"  {pct:+.1f}%",
+                ha="left", va="center", fontsize=4,
+                color="green"
+                if (pct > 0) != (metric in LOWER_IS_BETTER)
+                else "red",
+            )
 
-    # the names go on the bottom row, whichever that is
-    bottom = strips[-1] if strips else ax
-    if strips:
-        ax.tick_params(labelbottom=False)
-    bottom.set_xticks(list(x))
-    bottom.set_xticklabels(xlabels, fontsize=6)
-    bottom.set_xlabel(f"{SIZE_LABEL} working set", fontsize=6)
+        sns.despine(ax=ax)
+        ax.set_yticks(range(len(bars)))
+        ax.set_yticklabels([label for _, label, _ in bars], fontsize=4)
+        ax.tick_params(axis="x", labelsize=6, length=2)
+        ax.tick_params(axis="y", length=0)
+        ax.xaxis.set_major_locator(mtick.MaxNLocator(nbins=6))
+        # room for the percentage at the right of the longest bar
+        ax.set_xlim(0, max(values) * 1.25)
+        ax.set_xlabel(f"{mlabel}, {SIZE_LABEL} working set", fontsize=6)
 
-    fig = ax.get_figure()
-    fig.align_ylabels([ax, *strips])
-
-
-def _save(fig, arch: str, suffix: str):
+    # the kernels read top down, SPaRe first
+    axes[0].invert_yaxis()
+    fig.tight_layout(pad=0, h_pad=0.8)
     path = os.path.join(
-        config.PLOT_DIR_FIO, f"{config.ARCH_SUBNAMES[arch]}_{suffix}.pdf"
+        config.PLOT_DIR_FIO, f"{config.ARCH_SUBNAMES[arch]}_fio_pgtable.pdf"
     )
     plt.savefig(path, bbox_inches="tight", pad_inches=0, dpi=300)
     plt.close(fig)
     print(f"[OK] {path}")
-
-
-# --- Plots ---
-
-def _metric_at(stats: pd.DataFrame, kernel: str, tag: str, metric: str) -> float:
-    """One counter of one run set, 0 when unmeasured."""
-    if stats.empty or metric not in stats.columns:
-        return 0
-    row = stats[(stats["kernel"] == kernel) & (stats["pgt_tag"] == tag)]
-    return 0 if row.empty else float(row.iloc[0][metric])
-
-
-def plot_gain(arch: str, gains: pd.DataFrame, stats: pd.DataFrame):
-    """One bar per replicated run: what it buys over its own interleaving.
-
-    The strips carry the counters of the replicated run, absolute rather than
-    normalised: as a delta the page table only runs collapse onto zero.
-    """
-    _setup_style()
-    gains = gains.set_index(["kernel", "pgt_tag"])
-    bars = [
-        (kernel, label, tag)
-        for kernel, label in KERNELS
-        for tag, _ in TAGS[1:]
-        if (kernel, tag) in gains.index
-    ]
-    x = np.arange(len(bars)) * 0.22
-    n_strips = 0 if stats.empty else len(METRICS)
-    width = 0.11
-
-    fig, ax, strips = _make_fig(n_strips, height=1.0)
-    colors = [_kernel_color(kernel, tag) for kernel, _, tag in bars]
-    ax.bar(
-        x, [gains.loc[(k, tag), "gain_pct"] for k, _, tag in bars],
-        yerr=[gains.loc[(k, tag), "gain_std_pct"] for k, _, tag in bars],
-        width=width, capsize=0.7, linewidth=0.25,
-        error_kw=dict(lw=0.3, capthick=0.3),
-        color=colors, edgecolor=colors,
-    )
-
-    _plot_strips(
-        strips, x,
-        lambda metric, i: _metric_at(stats, bars[i][0], bars[i][2], metric),
-        colors, width,
-    )
-
-    ax.axhline(0, linestyle="--", color="gray", linewidth=0.3, alpha=0.25)
-    # the kernel names are the x axis, so no legend is needed
-    _format_ax(
-        ax, x,
-        [f"{label}\n({SCOPE_SHORT[(k, tag)]})" for k, label, tag in bars],
-        "Improvement over \nInterleaved (%)", strips,
-    )
-    _save(fig, arch, "fio_pgtable")
-
-
-def plot_absolute(arch: str, agg: pd.DataFrame, stats: pd.DataFrame):
-    """Raw read bandwidth, interleaved and replicated, for every kernel."""
-    _setup_style()
-    kernels = [k for k in KERNELS if k[0] in set(agg["kernel"])]
-    # three slots per kernel, the groups need room to stay apart
-    x = np.arange(len(kernels)) * 0.28
-    n_strips = 0 if stats.empty else len(METRICS)
-
-    fig, ax, strips = _make_fig(n_strips, height=1.0)
-    base = agg[agg["pgt_tag"] == "interleave"].set_index("kernel")
-    bars = []  # (position, kernel, tag) of every bar drawn
-    for i, (tag, tlabel) in enumerate(TAGS):
-        sub = agg[agg["pgt_tag"] == tag].set_index("kernel")
-        # repl-pt is SPaRe only, the other kernels leave that slot empty
-        drawn = [
-            (pos, kernel)
-            for pos, (kernel, _) in zip(
-                _bar_positions(x, i, len(TAGS)), kernels
-            )
-            if kernel in sub.index
-        ]
-        if not drawn:
-            continue
-        shade = [_kernel_color(kernel, tag) for _, kernel in drawn]
-        ax.bar(
-            [pos for pos, _ in drawn],
-            [sub.loc[kernel, "read_bw_gb"] for _, kernel in drawn],
-            yerr=[sub.loc[kernel, "read_bw_std"] for _, kernel in drawn],
-            width=BAR_WIDTH, label=tlabel, capsize=0.7,
-            linewidth=0.25, error_kw=dict(lw=0.3, capthick=0.3),
-            color=shade, edgecolor=shade,
-        )
-        bars += [(pos, kernel, tag) for pos, kernel in drawn]
-
-        # in GB/s, not percent: percent rounds Mitosis and Hydra to the same +1%
-        if tag == "interleave":
-            continue
-        for pos, kernel in drawn:
-            baseline = base.loc[kernel, "read_bw_gb"]
-            value = sub.loc[kernel, "read_bw_gb"]
-            if not baseline:
-                continue
-            ax.annotate(
-                f"{value - baseline:+.1f}",
-                xy=(pos, value + sub.loc[kernel, "read_bw_std"]),
-                xytext=(0, 1.5), textcoords="offset points",
-                ha="center", va="bottom", fontsize=4.5, color="dimgray",
-            )
-
-    _plot_strips(
-        strips, [pos for pos, _, _ in bars],
-        lambda metric, i: _metric_at(stats, bars[i][1], bars[i][2], metric),
-        [_kernel_color(kernel, tag) for _, kernel, tag in bars], BAR_WIDTH,
-    )
-
-    _format_ax(
-        ax, x, [label for _, label in kernels], "Read Bandwidth\n(GB/s)", strips,
-    )
-    # one row above the axes: inside, it covers the bars or their deltas
-    ax.legend(
-        fontsize=5, ncol=len(TAGS), loc="lower center",
-        bbox_to_anchor=(0.5, 1.0), frameon=False,
-        handlelength=1.2, columnspacing=1.0, handletextpad=0.4,
-    )
-    _save(fig, arch, "fio_pgtable_abs")
 
 
 def make_plot_fio_pgtable():
@@ -407,6 +258,4 @@ def make_plot_fio_pgtable():
         if stats.empty:
             print(f"[WARN] {arch}: no stats/fio.csv rows, run `just stats`")
 
-        agg = _aggregate(df)
-        plot_gain(arch, _gain_over_interleave(agg), stats)
-        plot_absolute(arch, agg, stats)
+        plot_pgtable(arch, _table(_aggregate(df), stats))
