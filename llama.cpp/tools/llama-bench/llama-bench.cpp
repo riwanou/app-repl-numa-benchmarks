@@ -2361,7 +2361,7 @@ int llama_bench(int argc, char ** argv) {
             }
             prev_inst = &inst;
             // numa warmup
-            if (params.numa_warmup && t.n_gen == 0) {
+            if (params.numa_warmup) {
                 prefault_gguf_numa();
             }
         }

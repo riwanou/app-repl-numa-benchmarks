@@ -23,11 +23,11 @@ WARMUP = 0
 ARMS = [
     ("baseline", "", ""),
     ("distribute", "", "--numa distribute"),
-    ("interleaved", "numactl --interleave=all", "--numa distribute"),
+    ("interleaved-distribute", "numactl --interleave=all", "--numa distribute"),
     (
-        "interleaved-warmup",
-        "numactl --interleave=all --numa-warmup",
-        "--numa distribute",
+        "interleaved-distribute-warmup",
+        "numactl --interleave=all",
+        "--numa distribute --numa-warmup",
     ),
 ]
 REPL_ARMS = [
