@@ -81,7 +81,9 @@ def read_bandwidth(arch: str, variant: str, t0, t1) -> pd.DataFrame:
     df["t"] = pd.to_datetime(date + " " + time, errors="coerce")
     df = df[(df.t >= t0) & (df.t <= t1)].copy()
     df["elapsed"] = (df.t - t0).dt.total_seconds()
-    df["read_gb"] = pd.to_numeric(df[("System", "Read")], errors="coerce") / 1024
+    df["read_gb"] = (
+        pd.to_numeric(df[("System", "Read")], errors="coerce") / 1024
+    )
     df["write_gb"] = (
         pd.to_numeric(df[("System", "Write")], errors="coerce") / 1024
     )
@@ -132,7 +134,9 @@ def read_sched_events(arch: str, variant: str, t0, t1) -> pd.DataFrame:
     return df
 
 
-PG_NODE = re.compile(r"^node (\d+)(\(main\))?\s*: locality=([\d.]+) ptes=([\d.]+)K")
+PG_NODE = re.compile(
+    r"^node (\d+)(\(main\))?\s*: locality=([\d.]+) ptes=([\d.]+)K"
+)
 
 
 def read_coverage(arch: str, variant: str) -> pd.DataFrame:
@@ -180,9 +184,7 @@ def read_coverage(arch: str, variant: str) -> pd.DataFrame:
             lower=0
         )
         df["gb_replicated"] = df.gb_max * df.coverage / 100  # whole mapping
-        df["gb_duplicated"] = (
-            df.gb_max * (1 - 1 / df.nodes) * df.dup_pct / 100
-        )
+        df["gb_duplicated"] = df.gb_max * (1 - 1 / df.nodes) * df.dup_pct / 100
     return df
 
 
@@ -305,7 +307,9 @@ def plot_variant(arch: str, variant: str, full_gb: float = 0):
                 fontsize=8,
                 color="#1f77b4",
             )
-        ax.plot([], [], color="#1f77b4", lw=2, label="duplicates (subset of anon)")
+        ax.plot(
+            [], [], color="#1f77b4", lw=2, label="duplicates (subset of anon)"
+        )
 
     ax.set_ylabel("GB")
     ax.set_ylim(bottom=0)
@@ -365,7 +369,7 @@ def plot_variant(arch: str, variant: str, full_gb: float = 0):
     # the sched tracepoints are a different family, so keep them off the
     # counter colors: dotted alone reads as the same series at this density
     ev_colors = {"move": "#17becf", "stick": "#bcbd22", "swap": "#e377c2"}
-    for name, g in (ev.groupby("event") if not ev.empty else []):
+    for name, g in ev.groupby("event") if not ev.empty else []:
         if g["count"].sum() > 0:
             y = smooth(g["count"] / 0.5)
             peak = max(peak, y.max())
@@ -396,18 +400,16 @@ def plot_variant(arch: str, variant: str, full_gb: float = 0):
             cg["vm_numa_hint_faults_local"], errors="coerce"
         ).diff()
         win = 10
-        pct = (
-            local.rolling(win).sum() / hint.rolling(win).sum() * 100
-        ).where(hint.rolling(win).sum() > 20)
+        pct = (local.rolling(win).sum() / hint.rolling(win).sum() * 100).where(
+            hint.rolling(win).sum() > 20
+        )
         twin = ax.twinx()
         twin.plot(cg.elapsed, pct, lw=1.2, color="0.35", ls="--")
         twin.set_ylabel("% hint faults local (dashed)")
         twin.set_ylim(0, 100)
 
     os.makedirs(config.PLOT_DIR_PRESSURE, exist_ok=True)
-    out = os.path.join(
-        config.PLOT_DIR_PRESSURE, f"{short(arch)}_{variant}.png"
-    )
+    out = os.path.join(config.PLOT_DIR_PRESSURE, f"{short(arch)}_{variant}.png")
     fig.savefig(out, bbox_inches="tight", dpi=150)
     plt.close(fig)
     print(f"[OK] {out}")
@@ -425,7 +427,9 @@ def variant_color(variant: str):
     return stock[3 + STOCK.index(variant)]
 
 
-def plot_metric(arch: str, variants: list[str], metric: str, full_gb: float = 0):
+def plot_metric(
+    arch: str, variants: list[str], metric: str, full_gb: float = 0
+):
     """All variants on one axis, one metric. QPS and bandwidth get a plot
     each: on shared axes the twelve traces hide each other."""
     fig, ax = plt.subplots(figsize=(12, 5.5))
@@ -444,7 +448,10 @@ def plot_metric(arch: str, variants: list[str], metric: str, full_gb: float = 0)
             x, y = df.elapsed, df.read_gb.rolling(10, center=True).median()
         elif metric == "memory":
             df = pd.read_csv(f"{base(arch, variant)}-cgroup.csv")
-            x, y = df.elapsed, df.current_mb / 1024  # already a step, no smoothing
+            x, y = (
+                df.elapsed,
+                df.current_mb / 1024,
+            )  # already a step, no smoothing
         else:
             df = pd.read_csv(
                 f"{base(arch, variant)}-ann.csv", parse_dates=["start_time"]
@@ -568,7 +575,10 @@ def plot_summary(arch: str, variants: list[str]):
     if order:
         ax.set_xticks(range(len(order)))
         ax.set_xticklabels(
-            [limit if p == limit else f"{p}\n{limit}" for p, limit in zip(order, limits)]
+            [
+                limit if p == limit else f"{p}\n{limit}"
+                for p, limit in zip(order, limits)
+            ]
         )
         # the budget gets its own axis on top, so the only percentage on the
         # left is the one the curves are plotted against

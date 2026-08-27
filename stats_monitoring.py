@@ -49,6 +49,10 @@ class Window:
     mem: pd.DataFrame
     # only the benches that ask for it, empty elsewhere and its stats read NaN
     perf_coherence: pd.DataFrame
+    # the tma_memory_bound_group topdown metrics off the universal perf
+    # capture; empty and its stats read NaN wherever that run didn't produce
+    # one (only "ann" reliably does today)
+    perf_topdown: pd.DataFrame
 
 
 def monitor_dir(arch: str) -> str:
@@ -138,6 +142,49 @@ def read_perf_coherence(path: str) -> pd.DataFrame:
     return wide.reset_index(drop=True).assign(time_dt=times.to_numpy())
 
 
+def read_perf_topdown(path: str) -> pd.DataFrame:
+    """The tma_memory_bound_group metrics off the perf_<label>.csv that
+    `Monitoring.start_perf` already writes for every run. perf -x, appends a
+    trailing "%  tma_l3_bound" style field to the line of a sample that
+    completed a metric, its value one field before; other lines (raw events,
+    the sched_*_numa counts) carry neither and are skipped."""
+    with open(path) as file:
+        lines = file.read().splitlines()
+
+    anchor = None
+    rows = []
+    for line in lines:
+        if line.startswith(COHERENCE_ANCHOR):
+            anchor = pd.to_datetime(line[len(COHERENCE_ANCHOR) :].strip())
+            continue
+        if line.startswith("#") or not line.strip():
+            continue
+        fields = line.split(",")
+        if len(fields) < 2:
+            continue
+        try:
+            offset = float(fields[0])
+        except ValueError:
+            continue
+        tail = fields[-1].strip()
+        if not tail.startswith("%"):
+            continue
+        tokens = tail.split()
+        if len(tokens) < 2:
+            continue
+        metric = tokens[-1]
+        value = pd.to_numeric(fields[-2].strip(), errors="coerce")
+        rows.append((offset, metric, value))
+
+    if anchor is None or not rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows, columns=["offset", "metric", "value"])
+    wide = df.pivot_table(index="offset", columns="metric", values="value")
+    times = anchor + pd.to_timedelta(wide.index.to_series(), unit="s")
+    return wide.reset_index(drop=True).assign(time_dt=times.to_numpy())
+
+
 @functools.lru_cache(maxsize=None)
 def load_monitoring(arch: str, label: str) -> Window:
     """Load the whole monitoring run for `label`, with a `time_dt` column."""
@@ -203,8 +250,22 @@ def load_monitoring(arch: str, label: str) -> Window:
         except (OSError, ValueError) as e:
             print(f"[WARN] unreadable monitoring file {coherence_path}: {e}")
 
+    # not every capture manages to program the topdown group (multiplexing
+    # against pcm/pcm-memory's own counters), so a run with none is normal
+    topdown_path = os.path.join(directory, f"perf_{label}.csv")
+    topdown = pd.DataFrame()
+    if os.path.exists(topdown_path):
+        try:
+            topdown = read_perf_topdown(topdown_path)
+        except (OSError, ValueError) as e:
+            print(f"[WARN] unreadable monitoring file {topdown_path}: {e}")
+
     return Window(
-        to_numeric(pcm), to_numeric(pcm_memory), to_numeric(mem), coherence
+        to_numeric(pcm),
+        to_numeric(pcm_memory),
+        to_numeric(mem),
+        coherence,
+        to_numeric(topdown),
     )
 
 
@@ -229,7 +290,13 @@ def to_numeric(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def frames(window: Window) -> tuple:
-    return (window.pcm, window.pcm_memory, window.mem, window.perf_coherence)
+    return (
+        window.pcm,
+        window.pcm_memory,
+        window.mem,
+        window.perf_coherence,
+        window.perf_topdown,
+    )
 
 
 @functools.lru_cache(maxsize=None)
@@ -296,6 +363,12 @@ def per_socket(name: str, column: str, scale: float = 1.0):
         stat(f"{name}_skt{i}")(
             lambda w, s=f"Socket {i}", c=column, k=scale: mean(w.pcm, (s, c), k)
         )
+
+
+def per_node(name: str, fn: Callable[[Window, str], float]):
+    """Same as per_socket, for the per node columns of the mem CSV."""
+    for i in range(MAX_SOCKETS):
+        stat(f"{name}_node{i}")(lambda w, n=f"Node{i}": fn(w, n))
 
 
 def upi_pct_cols(df: pd.DataFrame, kind: str) -> list:
@@ -473,6 +546,30 @@ for _i in range(MAX_SOCKETS):
     )
 
 
+# memory
+
+
+@stat("data_mem_gb")
+def _(w: Window) -> float:
+    """The workload's footprint: anonymous plus mapped file pages."""
+    return mean(w.mem, "anon", KB_TO_GB) + mean(w.mem, "mapped", KB_TO_GB)
+
+
+per_node(
+    "data_mem_gb",
+    lambda w, n: mean(w.mem, f"{n}_anon", KB_TO_GB)
+    + mean(w.mem, f"{n}_mapped", KB_TO_GB),
+)
+
+
+@stat("pagetable_mb")
+def _(w: Window) -> float:
+    return mean(w.mem, "pageTable", KB_TO_MB)
+
+
+per_node("pagetable_mb", lambda w, n: mean(w.mem, f"{n}_pageTable", KB_TO_MB))
+
+
 # coherence directory
 # what is left to explain the writes, since dirtest never writes its buffer
 DIR_UPDATE = "UNC_M2M_DIRECTORY_UPDATE.ANY"
@@ -519,6 +616,35 @@ per_socket_coherence("dir_lookup_snp_m_s", DIR_SNP, PER_M)
 def _(w: Window) -> float:
     """Lookups that did not."""
     return coherence(w, DIR_NO_SNP, scale=PER_M)
+
+
+# topdown: where the pipeline stalls, off the tma_memory_bound_group already
+# in the universal perf capture. NaN wherever that run's capture has no
+# metric line for it.
+
+
+def tma(w: Window, metric: str) -> float:
+    return mean(w.perf_topdown, metric)
+
+
+@stat("tma_l3_bound")
+def _(w: Window) -> float:
+    return tma(w, "tma_l3_bound")
+
+
+@stat("tma_dram_bound")
+def _(w: Window) -> float:
+    return tma(w, "tma_dram_bound")
+
+
+@stat("tma_l1_bound")
+def _(w: Window) -> float:
+    return tma(w, "tma_l1_bound")
+
+
+@stat("tma_store_bound")
+def _(w: Window) -> float:
+    return tma(w, "tma_store_bound")
 
 
 # ----------------------------------------------------------------------- main
