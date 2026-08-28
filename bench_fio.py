@@ -3,7 +3,9 @@ import os
 import time
 from config import sh, RESULT_DIR_FIO, HYDRA_NUMACTL, MITOSIS_NUMACTL
 
-RUNTIME = 45
+# same size for every fio bench
+SIZE = "1G"
+RUNTIME = 30
 NB_RUNS = 5
 NB_RUNS_PGTABLE = 5
 TEMP_JSON = "/tmp/fio_run_tmp.json"
@@ -23,7 +25,7 @@ def run_bench(
     writejobs,
     distrib="random",
     prepend="",
-    size="4G",
+    size=SIZE,
 ) -> str:
     cmd = f"""RUNTIME={RUNTIME} \
         READJOBS={readjobs} \
@@ -222,7 +224,7 @@ def run_bench_fio_pgtable(json_path, tag, prepend="", spare_repl=False):
         readjobs=total_jobs,
         writejobs=0,
         prepend=prepend,
-        size="4G",
+        size=SIZE,
     )
     for run in range(1, NB_RUNS_PGTABLE + 1):
         sh("sync; echo 3 > /proc/sys/vm/drop_caches")

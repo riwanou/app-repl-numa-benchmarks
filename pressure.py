@@ -33,7 +33,7 @@ class Phase:
 # a staircase, each step inheriting the previous one's state. Fully replicated
 # costs ~7.9G on 4 nodes, so 7G leaves 88% of it, down to 38% at 3G
 PLAN_4 = [
-    Phase("normal", "max", 30),
+    Phase("normal", "max", 60),
     Phase("7G", "7G", 60),
     Phase("6G", "6G", 60),
     Phase("5G", "5G", 60),
@@ -46,7 +46,7 @@ PLAN_4 = [
 # copy. 2.5G is the last step that still holds one, and leaves as few
 # duplicates as 3G does on 4 nodes. Written in M, memory.high rejects "2.5G"
 PLAN_2 = [
-    Phase("normal", "max", 30),
+    Phase("normal", "max", 60),
     Phase("4G", "4G", 60),
     Phase("3G", "3G", 60),
     Phase("2.5G", "2560M", 60),

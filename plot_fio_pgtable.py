@@ -39,9 +39,9 @@ BAR_LABELS = {
     ("hydra", "repl"): "Hydra Replicated PT",
 }
 
-SIZE = "4G"
-SIZE_LABEL = "4 GB"
-BENCHMARK = "pgtable_4G"
+SIZE = "1G"
+SIZE_LABEL = "1 GB"
+BENCHMARK = "pgtable_1G"
 
 # one cluster per metric, top to bottom
 METRICS = [
@@ -86,7 +86,7 @@ def _read_jsonl(path: str, kernel: str) -> list:
                 print(f"Skipping {path}:{lineno}: {e}")
                 continue
 
-            # older files also carry a 768m run set, dropped
+            # older files carry 768m and 4G run sets too
             if record.get("size") != SIZE:
                 continue
 

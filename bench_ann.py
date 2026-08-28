@@ -36,6 +36,12 @@ def run_bench(tag: str, warmup: int = WARMUP) -> str:
     )
 
 
+def build_ann():
+    """Download every dataset and build the index each runner needs. Existing
+    indices are kept, pass --recreate-index to run_ann.py to rebuild them."""
+    sh("uv run run_ann.py --faiss --annoy --usearch")
+
+
 def run_bench_ann():
     # disable numa balancing
     sh("echo 0 > /proc/sys/kernel/numa_balancing")
@@ -93,18 +99,15 @@ class PressureVariant:
     numactl: str = ""
     numa_balancing: bool = False
     main_placement: int | None = None  # None on the stock kernel
-    # time to steady state before the plan starts, index load included
-    settle: int = 60
+    # some warmup time
+    settle: int = 30
 
 
 PRESSURE_VARIANTS = [
     # no numactl, no balancing: the kernel default, which is first touch
-    PressureVariant("firsttouch", settle=30),
-    PressureVariant(
-        "interleaved", numactl="numactl --interleave=all", settle=30
-    ),
-    # AutoNUMA needs ~70s to reach its plateau, hence the long settle
-    PressureVariant("numa-balancing", numa_balancing=True, settle=100),
+    PressureVariant("firsttouch"),
+    PressureVariant("interleaved", numactl="numactl --interleave=all"),
+    PressureVariant("numa-balancing", numa_balancing=True),
 ]
 
 PRESSURE_VARIANTS_REPL = [

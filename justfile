@@ -22,6 +22,9 @@ build-fio:
 build-dirtest:
     make -C dirtest
 
+build-ann:
+    uv run run.py build-ann
+
 build-duckdb:
     uv run run.py build-duckdb
 

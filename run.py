@@ -29,6 +29,7 @@ parser.add_argument(
         "llama-csv",
         "duckdb",
         "duckdb-repl",
+        "build-ann",
         "build-duckdb",
         "sharing",
         "bench-pgtable-own",
@@ -107,6 +108,8 @@ elif args.run == "duckdb":
     bench_and_monitor(bench_duckdb.run_bench_duckdb, "duckdb")
 elif args.run == "duckdb-repl":
     bench_and_monitor(bench_duckdb.run_bench_duckdb_repl, "duckdb-repl")
+elif args.run == "build-ann":
+    bench_ann.build_ann()
 elif args.run == "build-duckdb":
     bench_duckdb.build_duckdb()
 elif args.run == "sharing":
