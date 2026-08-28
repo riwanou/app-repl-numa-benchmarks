@@ -24,9 +24,16 @@ def get_interleaved_cpus_one_node() -> str:
 
 PRESSURE_DATASET = "gist-960-euclidean.hdf5"
 
+# AutoNUMA plateaus at ~135s, the others by run 2
+WARMUP = 30
+WARMUP_BALANCING = 150
 
-def run_bench(tag: str) -> str:
-    return f"uv run run_ann.py --faiss --annoy --usearch --bench --tag {tag}"
+
+def run_bench(tag: str, warmup: int = WARMUP) -> str:
+    return (
+        "uv run run_ann.py --faiss --annoy --usearch --bench"
+        f" --tag {tag} --warmup-time {warmup}"
+    )
 
 
 def run_bench_ann():
@@ -48,7 +55,7 @@ def run_bench_ann():
     # a case (numa balancing)
     sh("echo 1 > /proc/sys/kernel/numa_balancing")
     sh("sync; echo 3 > /proc/sys/vm/drop_caches")
-    sh(f"{run_bench('numa-balancing')}")
+    sh(f"{run_bench('numa-balancing', WARMUP_BALANCING)}")
     sh("echo 0 > /proc/sys/kernel/numa_balancing")
 
 
@@ -113,9 +120,11 @@ def run_bench_pressure(variant: PressureVariant, running_time: int) -> str:
     set explicitly so a variant cannot inherit the previous one's state."""
     sh(f"echo {int(variant.numa_balancing)} > /proc/sys/kernel/numa_balancing")
 
+    # no warmup, the phases split these runs at plot time
     cmd = (
         f"uv run run_ann.py --usearch --bench --tag pressure-{variant.tag}"
         f" --datasets {PRESSURE_DATASET} --running-time {running_time}"
+        f" --warmup-time 0"
     )
     if variant.numactl:
         cmd = f"{variant.numactl} {cmd}"
@@ -137,26 +146,3 @@ def run_bench_pressure(variant: PressureVariant, running_time: int) -> str:
 
     sh("sync; echo 3 > /proc/sys/vm/drop_caches")
     return cmd
-
-
-def run_bench_ann_pressure():
-    sh("echo 1 > /proc/sys/kernel/numa_balancing")
-    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
-    sh(f"{run_bench_pressure('pressure-numa-balancing')}")
-    sh("echo 0 > /proc/sys/kernel/numa_balancing")
-
-
-def run_bench_ann_pressure_repl():
-    sh("echo 0 > /sys/kernel/debug/repl_pt/main_placement")
-
-    sh("echo 1 > /sys/kernel/debug/repl_pt/clear_registered")
-    sh("echo .ivf > /sys/kernel/debug/repl_pt/registered")
-    sh("echo .ann > /sys/kernel/debug/repl_pt/registered")
-    sh("echo .usearch > /sys/kernel/debug/repl_pt/registered")
-
-    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
-    sh(f"""(
-      echo 1 > /sys/kernel/debug/repl_pt/policy &&
-      {run_bench_pressure("pressure-patched-repl")};
-      echo 0 > /sys/kernel/debug/repl_pt/policy
-    )""")

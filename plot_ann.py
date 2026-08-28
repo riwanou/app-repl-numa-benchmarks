@@ -10,7 +10,6 @@ import matplotlib.patches as mpatches
 RESULT_DIR = config.RESULT_DIR
 DATASETS = [
     "glove-100-angular.hdf5",
-    # "sift-128-euclidean.hdf5",
     "gist-960-euclidean.hdf5",
 ]
 
@@ -125,10 +124,15 @@ def get_data(datasets) -> tuple[pd.DataFrame, pd.DataFrame]:
                 data_details.append(details_df)
 
     df_details = pd.concat(data_details, ignore_index=True)
+    # drop the warmup, run 1 for CSVs predating the column
+    warmup = df_details.get(
+        "warmup", pd.Series(False, index=df_details.index)
+    ).fillna(False).astype(bool)
+    df_details = df_details[~warmup & (df_details["run_id"] != 1)]
     agg_df = (
-        df_details[df_details["run_id"] != 1]
-        .groupby(["arch", "runner_name", "dataset", "tag"], as_index=False)
-        .agg(mean_qps=("qps", "mean"), std_qps=("qps", "std"))
+        df_details.groupby(
+            ["arch", "runner_name", "dataset", "tag"], as_index=False
+        ).agg(mean_qps=("qps", "mean"), std_qps=("qps", "std"))
     )
     return agg_df, df_details
 

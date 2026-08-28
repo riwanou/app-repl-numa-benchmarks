@@ -16,7 +16,19 @@ parser.add_argument(
     "--running-time",
     type=int,
     default=0,
-    help="Time to run, disregard number of run",
+    help="Hard wall clock, overrides the warmup + measure budget",
+)
+parser.add_argument(
+    "--warmup-time",
+    type=int,
+    default=ann.lib.WARMUP_TIME,
+    help="Leading seconds kept out of the summary",
+)
+parser.add_argument(
+    "--measure-time",
+    type=int,
+    default=ann.lib.MEASURE_TIME,
+    help="Seconds to measure once the warmup is over",
 )
 parser.add_argument("--tag", default=TAG, help="CSV filename tag")
 parser.add_argument(
@@ -53,4 +65,6 @@ ann.lib.run(
     args.tag,
     args.threads,
     args.running_time,
+    args.warmup_time,
+    args.measure_time,
 )

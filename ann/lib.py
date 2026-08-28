@@ -9,19 +9,15 @@ from . import mod_faiss
 from . import mod_annoy
 from . import mod_usearch
 
-NB_RUNS = 30
-MAX_TIME = 300
+# per variant warmup, same measured window for all, starting once it ends
+WARMUP_TIME = 30
+MEASURE_TIME = 60
 
 CONFIG = {
     "glove-100-angular.hdf5": {
         "faiss": {"nlist": 100, "nprobe": 39},
         "annoy": {"trees": 100, "search_k": 250_000},
         "usearch": {"e_search": 5000},
-    },
-    "sift-128-euclidean.hdf5": {
-        "faiss": {"nlist": 100, "nprobe": 10},
-        "annoy": {"trees": 100, "search_k": 40_000},
-        "usearch": {"e_search": 256},
     },
     "gist-960-euclidean.hdf5": {
         "faiss": {"nlist": 100, "nprobe": 18},
@@ -166,6 +162,7 @@ def save_bench_details(
     qpss,
     run_start_times,
     run_end_times,
+    warmups,
 ):
     path = os.path.join(result_dir, f"{dataset}-details.csv")
     header = [
@@ -177,6 +174,7 @@ def save_bench_details(
         "qps",
         "start_time",
         "end_time",
+        "warmup",
     ]
 
     if os.path.isfile(path):
@@ -192,8 +190,16 @@ def save_bench_details(
     else:
         data_rows = []
 
-    for i, (recall, total_time, qps, run_start_time, run_end_time) in enumerate(
-        zip(recalls, total_times, qpss, run_start_times, run_end_times), 1
+    for i, (recall, total_time, qps, run_start, run_end, warmup) in enumerate(
+        zip(
+            recalls,
+            total_times,
+            qpss,
+            run_start_times,
+            run_end_times,
+            warmups,
+        ),
+        1,
     ):
         data_rows.append(
             list(
@@ -206,8 +212,9 @@ def save_bench_details(
                         recall,
                         total_time,
                         qps,
-                        run_start_time,
-                        run_end_time,
+                        run_start,
+                        run_end,
+                        warmup,
                     ],
                 )
             )
@@ -233,6 +240,8 @@ def runner_bench(
     tag: str,
     threads: int,
     running_time: int,
+    warmup_time: int,
+    measure_time: int,
 ):
     runner, index_path, config, runner_name = create_f(
         index_dir, dataset, dataset_config
@@ -242,20 +251,24 @@ def runner_bench(
     k = neighbors.shape[1]
     total = neighbors.shape[0] * k
     n = test.shape[0]
-    mean_time = 0
-    std_time = 0
 
     recalls = []
     total_times = []
     qpss = []
     run_start_times = []
     run_end_times = []
+    warmups = []
 
     begin = time.time()
     start_time = get_time()
+    measure_begin = None
 
     nb_runs = 0
     while True:
+        # warmup on the clock it started on
+        warmup = time.time() - begin < warmup_time
+        if not warmup and measure_begin is None:
+            measure_begin = time.time()
         run_start_time = get_time()
         pred_vecs, total_time = runner.query_batch(test, k)
         run_end_time = get_time()
@@ -274,40 +287,45 @@ def runner_bench(
         qpss.append(qps)
         run_start_times.append(run_start_time)
         run_end_times.append(run_end_time)
+        warmups.append(warmup)
 
-        mean_time = np.mean(total_times)
-        std_time = np.std(total_times)
         elapsed_time = time.time() - begin
-
         nb_runs += 1
-        max_nb_runs = NB_RUNS
-        if running_time:
-            max_nb_runs = nb_runs
 
+        measured = 0 if measure_begin is None else time.time() - measure_begin
         print(
-            f"Run {nb_runs}/{max_nb_runs} [{tag}] run {total_time:.2f}s QPS {qps:.2f} "
-            f"elapsed {elapsed_time:.2f}s mean {mean_time:.2f}s +- {std_time:.4f}s"
+            f"Run {nb_runs} [{tag}]{' warmup' if warmup else ''} run "
+            f"{total_time:.2f}s QPS {qps:.2f} elapsed {elapsed_time:.2f}s "
+            f"measured {measured:.2f}s"
         )
 
-        # MAX_TIME caps the run-count mode only, --running-time wins
+        # the pressure bench owns its duration
         if running_time:
             if elapsed_time >= running_time:
                 break
-        elif nb_runs >= NB_RUNS or elapsed_time > MAX_TIME:
+        elif measured >= measure_time:
             break
 
     end_time = get_time()
 
-    mean_recall = np.mean(recalls)
-    mean_qps = np.mean(qpss)
-    std_qps = np.std(qpss)
+    # steady state only, the warmup stays in the details
+    kept = [i for i, warmup in enumerate(warmups) if not warmup]
+    if not kept:
+        print(f"[WARN] [{tag}] every run fell in the warmup, summarising all")
+        kept = list(range(nb_runs))
+
+    mean_recall = np.mean([recalls[i] for i in kept])
+    mean_time = np.mean([total_times[i] for i in kept])
+    std_time = np.std([total_times[i] for i in kept])
+    mean_qps = np.mean([qpss[i] for i in kept])
+    std_qps = np.std([qpss[i] for i in kept])
 
     save_bench(
         result_dir,
         dataset,
         tag,
         runner_name,
-        NB_RUNS,
+        len(kept),
         start_time,
         end_time,
         mean_recall,
@@ -327,10 +345,12 @@ def runner_bench(
         qpss,
         run_start_times,
         run_end_times,
+        warmups,
     )
 
     print(
-        f"[{tag}] Recall@{k}: {mean_recall:.4f}  Time: {mean_time:.4f} ± {std_time:.4f}s  QPS: {mean_qps:.2f} ± {std_qps:.2f}"
+        f"[{tag}] {len(kept)}/{nb_runs} runs kept  Recall@{k}: {mean_recall:.4f}  "
+        f"Time: {mean_time:.4f} ± {std_time:.4f}s  QPS: {mean_qps:.2f} ± {std_qps:.2f}"
     )
 
 
@@ -347,6 +367,8 @@ def run(
     tag: str,
     threads: int,
     running_time: int,
+    warmup_time: int,
+    measure_time: int,
 ):
     os.makedirs(data_dir, exist_ok=True)
     os.makedirs(index_dir, exist_ok=True)
@@ -423,6 +445,8 @@ def run(
                         tag,
                         threads,
                         running_time,
+                        warmup_time,
+                        measure_time,
                     )
                 if annoy:
                     print("== Benching Annoy ==")
@@ -438,6 +462,8 @@ def run(
                         tag,
                         threads,
                         running_time,
+                        warmup_time,
+                        measure_time,
                     )
                 if usearch:
                     print("== Benching Usearch ==")
@@ -453,4 +479,6 @@ def run(
                         tag,
                         threads,
                         running_time,
+                        warmup_time,
+                        measure_time,
                     )
