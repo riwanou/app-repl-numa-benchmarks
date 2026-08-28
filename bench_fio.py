@@ -3,7 +3,7 @@ import os
 import time
 from config import sh, RESULT_DIR_FIO, HYDRA_NUMACTL, MITOSIS_NUMACTL
 
-RUNTIME = 30
+RUNTIME = 45
 NB_RUNS = 5
 NB_RUNS_PGTABLE = 5
 TEMP_JSON = "/tmp/fio_run_tmp.json"
