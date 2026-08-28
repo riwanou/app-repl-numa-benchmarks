@@ -14,10 +14,9 @@ import os
 
 import config
 import matplotlib.pyplot as plt
-import matplotlib.ticker as mtick
-import numpy as np
 import pandas as pd
 import seaborn as sns
+from matplotlib.patches import Patch
 
 from plot_fio import bw_from_fio_output
 
@@ -25,37 +24,23 @@ RESULT_DIR = config.RESULT_DIR
 
 # jsonl file suffix, in plot order
 KERNELS = ["spare", "mitosis", "hydra"]
+KERNELS = ["mitosis", "hydra", "spare"]
+KERNEL_LABELS = {"spare": "SPaRe", "mitosis": "Mitosis", "hydra": "Hydra"}
 
-# repl-pt is SPaRe only; `repl` is the whole mapping for SPaRe and the page
-# tables alone for the other two, hence one label per (kernel, tag)
-TAGS = ["interleave", "repl-pt", "repl"]
-BAR_LABELS = {
-    ("spare", "interleave"): "SPaRe Interleaved",
-    ("spare", "repl-pt"): "SPaRe Replicated PT",
-    ("spare", "repl"): "SPaRe Replicated PT + data",
-    ("mitosis", "interleave"): "Mitosis Interleaved",
-    ("mitosis", "repl"): "Mitosis Replicated PT",
-    ("hydra", "interleave"): "Hydra Interleaved",
-    ("hydra", "repl"): "Hydra Replicated PT",
-}
+# two bars per kernel: interleaved, then its replicated run. For SPaRe that
+# replicates the whole mapping (page tables + data); for Mitosis/Hydra it's
+# the page tables only, hence a different hatch for the second bar
+TAGS = ["interleave", "repl"]
+HATCH_DATA = "O"
+HATCH_PT = "/"
+HATCH_COLOR = "0.9"
+REPL_HATCH = {"spare": HATCH_DATA, "mitosis": HATCH_PT, "hydra": HATCH_PT}
 
 SIZE = "1G"
-SIZE_LABEL = "1 GB"
 BENCHMARK = "pgtable_1G"
 
-# one cluster per metric, top to bottom
-METRICS = [
-    ("read_bw_gb", "Read Bandwidth (GB/s)"),
-    ("local_pct", "Local Accesses (%)"),
-    ("upi_out_gb", "UPI Traffic (GB/s)"),
-]
-# the ones that come from the counters, the rest from fio itself
-STAT_METRICS = ["local_pct", "upi_out_gb"]
-# less interconnect traffic is the win, so the green goes the other way
-LOWER_IS_BETTER = ["upi_out_gb"]
-
-# one column of the paper wide, three clusters tall
-FIGSIZE = (3.3, 3.4)
+# one column of the paper wide, minimal height for 3 groups of 2 bars
+FIGSIZE = (3.3, 0.66)
 
 # one ramp per kernel so the three stay apart at a glance
 KERNEL_RAMPS = {
@@ -66,12 +51,13 @@ KERNEL_RAMPS = {
 
 
 def _kernel_color(kernel: str, tag: str):
-    """One hue per kernel, darker the more the run replicates."""
+    """One hue per kernel, darker for the replicated bar."""
     ramp = sns.color_palette(KERNEL_RAMPS[kernel], n_colors=9)
-    return {"interleave": ramp[3], "repl-pt": ramp[5], "repl": ramp[7]}[tag]
+    return {"interleave": ramp[3], "repl": ramp[7]}[tag]
 
 
 # --- Data loading ---
+
 
 def _read_jsonl(path: str, kernel: str) -> list:
     rows = []
@@ -122,50 +108,21 @@ def get_data(arch: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def load_stats(arch: str) -> pd.DataFrame:
-    """(kernel, pgt_tag) -> the hardware counters of that run set.
-
-    Written by `just stats` from pgtable.csv; absent until that has been run,
-    in which case the bars simply carry no strips.
-    """
-    path = os.path.join(RESULT_DIR, arch, "stats", "fio.csv")
-    if not os.path.exists(path):
-        return pd.DataFrame()
-
-    df = pd.read_csv(path)
-    df = df[df["benchmark"] == BENCHMARK]
-    if df.empty:
-        return df
-
-    df = df.copy()
-    # tag is "<kernel>-<tag>"; split on the first dash, repl-pt has one of its own
-    df[["kernel", "pgt_tag"]] = df["tag"].str.split("-", n=1, expand=True)
-    keep = ["kernel", "pgt_tag"] + STAT_METRICS
-    return df[[c for c in keep if c in df.columns]]
-
-
 def _aggregate(df: pd.DataFrame) -> pd.DataFrame:
-    """Mean and std over the runs of each (kernel, tag)."""
+    """Mean and std over the runs of each (kernel, tag), indexed for lookup."""
     return (
         df.groupby(["kernel", "pgt_tag"])
         .agg(
-            read_bw_gb=("read_bw_gb", "mean"),
-            read_bw_std=("read_bw_gb", "std"),
-            nb_runs=("run", "count"),
+            read_bw_gb=("read_bw_gb", "mean"), read_bw_std=("read_bw_gb", "std")
         )
         .fillna({"read_bw_std": 0})
         .reset_index()
+        .set_index(["kernel", "pgt_tag"])
     )
 
 
-def _table(agg: pd.DataFrame, stats: pd.DataFrame) -> pd.DataFrame:
-    """(kernel, pgt_tag) -> every metric of that run set."""
-    if not stats.empty:
-        agg = agg.merge(stats, on=["kernel", "pgt_tag"], how="left")
-    return agg.set_index(["kernel", "pgt_tag"])
-
-
 # --- Plot ---
+
 
 def _setup_style():
     sns.set_style("ticks")
@@ -174,62 +131,107 @@ def _setup_style():
 
 
 def plot_pgtable(arch: str, table: pd.DataFrame):
-    """One cluster per metric, one bar per run set, with the difference to
-    its own kernel's interleaved run next to it."""
+    """Two bars per kernel (interleaved, replicated), grouped with no gap
+    within a group and a small gap between kernels."""
     _setup_style()
-    bars = [
-        (kernel, BAR_LABELS[(kernel, tag)], tag)
-        for kernel in KERNELS
-        for tag in TAGS
-        if (kernel, tag) in table.index
+
+    bar_height = 0.8
+    bar_step = bar_height
+    group_gap = 0.3
+
+    bars, ticks, ticklabels = [], [], []
+    y = 0
+    for kernel in KERNELS:
+        start = y
+        for tag in TAGS:
+            if (kernel, tag) in table.index:
+                bars.append((y, kernel, tag))
+                y += bar_step
+        ticks.append((start + y - bar_step) / 2)
+        ticklabels.append(KERNEL_LABELS[kernel])
+        y += group_gap
+
+    ys = [b[0] for b in bars]
+    values = [table.loc[(k, t), "read_bw_gb"] for _, k, t in bars]
+    std = [table.loc[(k, t), "read_bw_std"] for _, k, t in bars]
+    colors = [_kernel_color(k, t) for _, k, t in bars]
+
+    fig, ax = plt.subplots(figsize=FIGSIZE)
+    plt.rcParams["hatch.linewidth"] = 1.2
+    patches = ax.barh(
+        ys,
+        values,
+        height=bar_height,
+        color=colors,
+        edgecolor="none",
+        linewidth=0,
+        xerr=std,
+        capsize=1.1,
+        error_kw=dict(lw=0.4, capthick=0.5, color="gray", alpha=1.0),
+    )
+    for patch, (_, kernel, tag) in zip(patches, bars):
+        if tag != "interleave":
+            patch.set_hatch(REPL_HATCH[kernel])
+            patch.set_edgecolor(HATCH_COLOR)
+            patch.set_linewidth(0)
+
+    for i, (_, kernel, tag) in enumerate(bars):
+        base = table.loc[(kernel, "interleave"), "read_bw_gb"]
+        if tag == "interleave" or not base:
+            continue
+        pct = 100 * (values[i] - base) / base
+        ax.text(
+            values[i] + std[i],
+            ys[i],
+            f"  {pct:+.1f}%",
+            ha="left",
+            va="center",
+            fontsize=4.5,
+            color="green" if pct > 0 else "red",
+        )
+
+    sns.despine(ax=ax)
+    ax.set_yticks(ticks)
+    ax.set_yticklabels(ticklabels, fontsize=6)
+    ax.tick_params(axis="x", labelsize=6, length=2)
+    ax.tick_params(axis="y", length=0)
+    ax.set_xlim(0, max(values) * 1.25)
+    ax.invert_yaxis()
+
+    legend = [
+        Patch(
+            facecolor="lightgray",
+            edgecolor="none",
+            linewidth=0,
+            label="Interleaved",
+        ),
+        Patch(
+            facecolor="gray",
+            edgecolor=HATCH_COLOR,
+            linewidth=0,
+            hatch=HATCH_PT + HATCH_PT,
+            label="Replicated PT",
+        ),
+        Patch(
+            facecolor="gray",
+            edgecolor=HATCH_COLOR,
+            linewidth=0,
+            hatch=HATCH_DATA,
+            label="Replicated data",
+        ),
     ]
 
-    fig, axes = plt.subplots(len(METRICS), 1, figsize=FIGSIZE, sharey=True)
-    colors = [_kernel_color(kernel, tag) for kernel, _, tag in bars]
-
-    for ax, (metric, mlabel) in zip(axes, METRICS):
-        if metric not in table.columns:
-            continue
-        values = [table.loc[(k, tag), metric] for k, _, tag in bars]
-        std = (
-            [table.loc[(k, tag), "read_bw_std"] for k, _, tag in bars]
-            if metric == "read_bw_gb"
-            else None
-        )
-
-        ax.barh(
-            range(len(bars)), values, height=0.7,
-            color=colors, edgecolor=colors, linewidth=0.25,
-            xerr=std, capsize=0.6,
-            error_kw=dict(lw=0.3, capthick=0.3, color="gray", alpha=0.5),
-        )
-
-        for i, (kernel, _, tag) in enumerate(bars):
-            base = table.loc[(kernel, "interleave"), metric]
-            if tag == "interleave" or not base:
-                continue
-            pct = 100 * (values[i] - base) / base
-            ax.text(
-                values[i] + (std[i] if std else 0), i, f"  {pct:+.1f}%",
-                ha="left", va="center", fontsize=4,
-                color="green"
-                if (pct > 0) != (metric in LOWER_IS_BETTER)
-                else "red",
-            )
-
-        sns.despine(ax=ax)
-        ax.set_yticks(range(len(bars)))
-        ax.set_yticklabels([label for _, label, _ in bars], fontsize=4)
-        ax.tick_params(axis="x", labelsize=6, length=2)
-        ax.tick_params(axis="y", length=0)
-        ax.xaxis.set_major_locator(mtick.MaxNLocator(nbins=6))
-        # room for the percentage at the right of the longest bar
-        ax.set_xlim(0, max(values) * 1.25)
-        ax.set_xlabel(f"{mlabel}, {SIZE_LABEL} working set", fontsize=6)
-
-    # the kernels read top down, SPaRe first
-    axes[0].invert_yaxis()
-    fig.tight_layout(pad=0, h_pad=0.8)
+    plt.rcParams["hatch.linewidth"] = 0.8
+    ax.legend(
+        handles=legend,
+        fontsize=4.5,
+        frameon=False,
+        loc="upper right",
+        handlelength=2.8,
+        handleheight=1.1,
+        labelspacing=0.3,
+    )
+    fig.tight_layout(pad=0)
     path = os.path.join(
         config.PLOT_DIR_FIO, f"{config.ARCH_SUBNAMES[arch]}_fio_pgtable.pdf"
     )
@@ -254,8 +256,4 @@ def make_plot_fio_pgtable():
         df.to_csv(out, index=False)
         print(f"[OK] {len(df)} runs -> {out}")
 
-        stats = load_stats(arch)
-        if stats.empty:
-            print(f"[WARN] {arch}: no stats/fio.csv rows, run `just stats`")
-
-        plot_pgtable(arch, _table(_aggregate(df), stats))
+        plot_pgtable(arch, _aggregate(df))

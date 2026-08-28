@@ -1325,10 +1325,11 @@ COMPARISONS = {
     "fio-read100-firsttouch-vs-balancing-vs-interleaved-vs-repl": fio_comparison(
         100
     ),
-    # the even mix: unreplication fires constantly and the policies separate
-    "fio-pgtable-4G-spare-vs-mitosis-vs-hydra": pgtable_kernels_comparison(
-        "4G"
+    # the three page table replicating kernels, every run set side by side
+    "fio-pgtable-1G-spare-vs-mitosis-vs-hydra": pgtable_kernels_comparison(
+        "1G"
     ),
+    # the even mix: unreplication fires constantly and the policies separate
     "fio-read50-firsttouch-vs-balancing-vs-interleaved-vs-repl": fio_comparison(
         50
     ),
