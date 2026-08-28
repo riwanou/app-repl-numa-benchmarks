@@ -325,8 +325,6 @@ def plot_variant(arch: str, variant: str, full_gb: float = 0):
     # reclaimed_replicas_from_main is disjoint from reclaimed_replicas, not a
     # subset: replicas actually lost is the two summed
     series = {
-        "numa hint faults/s": (rate(cg, "vm_numa_hint_faults"), "#1f77b4"),
-        "pages migrated/s": (rate(cg, "vm_numa_pages_migrated"), "#ff7f0e"),
         "replicas allocated/s": (
             rate(cg, "repl_repl_allocated")
             if "repl_repl_allocated" in cg.columns
@@ -345,12 +343,6 @@ def plot_variant(arch: str, variant: str, full_gb: float = 0):
             else None,
             "#9467bd",
         ),
-        "replicas lost with their main/s": (
-            rate(cg, "repl_reclaimed_replicas_from_main")
-            if "repl_reclaimed_replicas_from_main" in cg.columns
-            else None,
-            "#8c564b",
-        ),
         # the headroom floor doing its job: a replica refused and pointed at
         # main instead, so it never became memory reclaim had to take back
         "replicas skipped (pressure)/s": (
@@ -360,6 +352,18 @@ def plot_variant(arch: str, variant: str, full_gb: float = 0):
             "#e7ba52",
         ),
     }
+    if variant == "numa-balancing":
+        series = {
+            "numa hint faults/s": (rate(cg, "vm_numa_hint_faults"), "#1f77b4"),
+            "pages migrated/s": (rate(cg, "vm_numa_pages_migrated"), "#ff7f0e"),
+            **series,
+            "replicas lost with their main/s": (
+                rate(cg, "repl_reclaimed_replicas_from_main")
+                if "repl_reclaimed_replicas_from_main" in cg.columns
+                else None,
+                "#8c564b",
+            ),
+        }
     peak = 0
     for label, (values, color) in series.items():
         if values is not None and values.fillna(0).sum() > 0:
@@ -368,19 +372,20 @@ def plot_variant(arch: str, variant: str, full_gb: float = 0):
             ax.plot(cg.elapsed, y, lw=1, label=label, color=color)
     # the sched tracepoints are a different family, so keep them off the
     # counter colors: dotted alone reads as the same series at this density
-    ev_colors = {"move": "#17becf", "stick": "#bcbd22", "swap": "#e377c2"}
-    for name, g in ev.groupby("event") if not ev.empty else []:
-        if g["count"].sum() > 0:
-            y = smooth(g["count"] / 0.5)
-            peak = max(peak, y.max())
-            ax.plot(
-                g.elapsed,
-                y,
-                lw=1,
-                ls=":",
-                color=ev_colors.get(name, "0.5"),
-                label=f"{name}/s",
-            )
+    if variant == "numa-balancing":
+        ev_colors = {"move": "#17becf", "stick": "#bcbd22", "swap": "#e377c2"}
+        for name, g in ev.groupby("event") if not ev.empty else []:
+            if g["count"].sum() > 0:
+                y = smooth(g["count"] / 0.5)
+                peak = max(peak, y.max())
+                ax.plot(
+                    g.elapsed,
+                    y,
+                    lw=1,
+                    ls=":",
+                    color=ev_colors.get(name, "0.5"),
+                    label=f"{name}/s",
+                )
     ax.set_yscale("log")
     ax.set_ylabel(f"events/s ({EVENT_WINDOW // 2}s mean)")  # 0.5s samples
     ax.set_xlabel("time (s)")
