@@ -217,7 +217,7 @@ def plot_microbench_sync(
             handles, labels = axes[0].get_legend_handles_labels()
             fig.legend(
                 handles,
-                ["Carrefour", "SPaRe"],
+                ["Carrefour", "SPARe"],
                 bbox_to_anchor=(0.5, 1.0),
                 loc="upper center",
                 fontsize=8,
@@ -363,7 +363,7 @@ def plot_microbench_alloc(
     fig_legend = plt.figure(figsize=(3.3, 0.5))
     fig_legend.legend(
         handles,
-        ["Carrefour", "SPaRe"],
+        ["Carrefour", "SPARe"],
         fontsize=8,
         edgecolor="white",
         framealpha=1.0,

@@ -13,6 +13,7 @@ DATASETS = [
     "gist-960-euclidean.hdf5",
 ]
 
+BASELINE_TAG = "default"  # Vanilla, the bar the QPS numbers sit on
 TAGS_ORDER = [
     "imbalanced-memory",
     "default",
@@ -26,7 +27,7 @@ TAG_LABELS = {
     "default": "Vanilla",
     "interleaved-memory": "Interleaved",
     # "numa-balancing": "NumaBalancing",
-    "patched-repl": "SPaRe",
+    "patched-repl": "SPARe",
     # "patched-repl-unrepl": "ReplicationDynamic",
 }
 linux = sns.color_palette(config.LINUX_COLOR, n_colors=5)
@@ -41,11 +42,23 @@ palettes = {
 RUNNER_NAMES = ["faiss", "annoy", "usearch"]
 N_RUNNERS = len(RUNNER_NAMES)
 
-YLABEL_SIZE = 6.5
-UPI_LABEL_SIZE = 6
+YLABEL_SIZE = 5.5
+TITLE_SIZE = 6.5
+TITLE_PAD = 6.5  # points: the stood-up values run up under the title
+XTICK_SIZE = 5.5
+XTICK_PAD = 0.5  # points between the dataset labels and the x axis
+VALUE_SIZE = 3  # QPS printed over each bar, stood up
 BAR_WIDTH = 0.095
 BAR_GAP = 0.0
 X_SPACING = 0.48
+
+# the runner that gets a grey band behind it, like the phase bands in the
+# pressure plot, so it reads as its own block
+HIGHLIGHT_RUNNER = "annoy"
+BAND = "#f8f8f8"
+BAND_PAD_X = 0.002  # figure fraction, sits in the gap between two panels
+BAND_PAD_TOP = 0.02  # figure fraction, above the panel title
+BAND_RADIUS = 3  # corner radius, in points
 
 
 def ds_name(dataset: str) -> str:
@@ -69,6 +82,7 @@ def make_plot_ann():
 
 # --- Data loading ---
 
+
 def _load_tagged_csv(path: str, dataset: str, arch: str) -> pd.DataFrame | None:
     if not os.path.exists(path):
         print(f"Warning: CSV {path} not found for {dataset}")
@@ -78,26 +92,6 @@ def _load_tagged_csv(path: str, dataset: str, arch: str) -> pd.DataFrame | None:
     df["dataset"] = ds_name(dataset)
     df["arch"] = arch
     return df
-
-
-def load_upi(arch: str) -> dict:
-    """(dataset, runner_name, tag) -> upi_out_gb, from the stats pipeline.
-
-    Written by `just stats`; absent until that has been run, in which case the
-    bars simply carry no UPI annotation.
-    """
-    path = os.path.join(RESULT_DIR, arch, "stats", "ann.csv")
-    if not os.path.exists(path):
-        return {}
-
-    df = pd.read_csv(path)
-    if "upi_out_gb" not in df.columns:
-        return {}
-
-    return {
-        (ds_name(r.dataset), r.runner_name, r.tag): r.upi_out_gb
-        for r in df.itertuples()
-    }
 
 
 def get_data(datasets) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -124,16 +118,16 @@ def get_data(datasets) -> tuple[pd.DataFrame, pd.DataFrame]:
                 data_details.append(details_df)
 
     df_details = pd.concat(data_details, ignore_index=True)
-    # drop the warmup, run 1 for CSVs predating the column
-    warmup = df_details.get(
-        "warmup", pd.Series(False, index=df_details.index)
-    ).fillna(False).astype(bool)
-    df_details = df_details[~warmup & (df_details["run_id"] != 1)]
-    agg_df = (
-        df_details.groupby(
-            ["arch", "runner_name", "dataset", "tag"], as_index=False
-        ).agg(mean_qps=("qps", "mean"), std_qps=("qps", "std"))
+    # drop the warmup
+    warmup = (
+        df_details.get("warmup", pd.Series(False, index=df_details.index))
+        .fillna(False)
+        .astype(bool)
     )
+    df_details = df_details[~warmup & (df_details["run_id"] != 1)]
+    agg_df = df_details.groupby(
+        ["arch", "runner_name", "dataset", "tag"], as_index=False
+    ).agg(mean_qps=("qps", "mean"), std_qps=("qps", "std"))
     return agg_df, df_details
 
 
@@ -147,6 +141,7 @@ def normalize_data(df: pd.DataFrame) -> pd.DataFrame:
             return pd.DataFrame()
         baseline = rows.values[0]
         group = group.copy()
+        group["abs_qps"] = group["mean_qps"]
         group["mean_qps"] = 100 * (group["mean_qps"] - baseline) / baseline
         group["std_qps"] = 100 * group["std_qps"] / baseline
         return group
@@ -163,6 +158,7 @@ def normalize_data(df: pd.DataFrame) -> pd.DataFrame:
 
 # --- Plot helpers ---
 
+
 def _setup_style():
     sns.set_style("ticks")
     sns.set_context("paper")
@@ -171,38 +167,22 @@ def _setup_style():
 
 def _make_subplots(sharey: bool, wspace: float):
     fig, axes = plt.subplots(
-        1, N_RUNNERS, figsize=(3.3, 1.2), sharey=sharey,
+        1,
+        N_RUNNERS,
+        figsize=(3.3, 1.0),
+        sharey=sharey,
         gridspec_kw={"wspace": wspace},
     )
     return fig, [axes] if N_RUNNERS == 1 else list(axes)
 
 
-def _make_subplots_strip(wspace: float):
-    """Bars on top, a thin UPI strip underneath sharing the same x.
-
-    Keeps the interconnect numbers off the throughput axis: the bars get the
-    full height instead of being squashed by label headroom.
-    """
-    fig, axes = plt.subplots(
-        2, N_RUNNERS, figsize=(3.3, 1.7), sharex="col",
-        gridspec_kw={
-            "wspace": wspace, "hspace": 0.12, "height_ratios": [1, 0.26],
-        },
-    )
-    top = [axes[0]] if N_RUNNERS == 1 else list(axes[0])
-    strip = [axes[1]] if N_RUNNERS == 1 else list(axes[1])
-    # share y inside each row so the runners stay comparable
-    for ax in top[1:]:
-        ax.sharey(top[0])
-    for ax in strip[1:]:
-        ax.sharey(strip[0])
-    return fig, top, strip
-
-
 def _bar_positions(x, bar_index: int, n_bars: int) -> list:
     group_width = n_bars * BAR_WIDTH + (n_bars - 1) * BAR_GAP
     return [
-        pos - group_width / 2 + bar_index * (BAR_WIDTH + BAR_GAP) + BAR_WIDTH / 2
+        pos
+        - group_width / 2
+        + bar_index * (BAR_WIDTH + BAR_GAP)
+        + BAR_WIDTH / 2
         for pos in x
     ]
 
@@ -211,55 +191,93 @@ def _tag_values(df_runner: pd.DataFrame, tag: str, col: str) -> list:
     """Extract per-dataset values for a given tag, returning 0 for missing rows."""
     values = []
     for ds in DATASET_NAMES:
-        row = df_runner[(df_runner["dataset"] == ds) & (df_runner["tag"] == tag)]
+        row = df_runner[
+            (df_runner["dataset"] == ds) & (df_runner["tag"] == tag)
+        ]
         values.append(row.iloc[0][col] if len(row) > 0 else 0)
     return values
 
 
 def _format_runner_ax(
-    ax, x, runner: str, hide_left_spine: bool = False, y_nbins: int = 8,
-    xticklabels: bool = True,
+    ax,
+    x,
+    runner: str,
+    hide_left_spine: bool = False,
+    y_nbins: int = 5,
 ):
+    # faint dotted rules at each tick, like the pressure plot
+    ax.set_axisbelow(True)
+    ax.grid(axis="y", ls=":", lw=0.4, color="0.85", zorder=0)
     sns.despine(ax=ax)
-    ax.tick_params(axis="y", labelsize=6, length=2)
-    ax.tick_params(axis="x", labelsize=6, length=2)
+    ax.tick_params(axis="y", labelsize=5, length=2)
+    ax.tick_params(axis="x", labelsize=6, length=2, pad=XTICK_PAD)
     ax.set_xticks(list(x))
-    if xticklabels:
-        ax.set_xticklabels(
-            [s.replace(" ", "-") for s in DATASET_NAMES], fontsize=7, rotation=25
-        )
-    else:
-        # not set_xticklabels([]): with a shared x that would blank the strip too
-        ax.tick_params(labelbottom=False)
-    ax.set_title(runner.capitalize(), fontsize=7)
+    ax.set_xticklabels(
+        [s.replace(" ", "-") for s in DATASET_NAMES],
+        fontsize=XTICK_SIZE,
+        rotation=25,
+    )
+    ax.set_title(runner.capitalize(), fontsize=TITLE_SIZE, pad=TITLE_PAD)
     ax.yaxis.set_major_locator(MaxNLocator(nbins=y_nbins))
     if hide_left_spine:
         ax.tick_params(left=False, labelleft=False)
         ax.spines["left"].set_visible(False)
 
 
-def _upi_values(upi: dict, runner: str, tag: str) -> list:
-    """Cross-socket traffic each bar is paying for, 0 when unmeasured."""
-    values = []
-    for ds in DATASET_NAMES:
-        value = upi.get((ds, runner, tag))
-        values.append(0 if value is None or pd.isna(value) else value)
-    return values
+def _shade_panel(fig, ax):
+    """Grey rounded band behind one runner's panel.
 
-
-def _format_strip_ax(ax, x, hide_left_spine: bool = False):
-    sns.despine(ax=ax)
-    ax.tick_params(axis="y", labelsize=6, length=2)
-    ax.tick_params(axis="x", labelsize=6, length=2)
-    ax.set_xticks(list(x))
-    ax.set_xticklabels(
-        [s.replace(" ", "-") for s in DATASET_NAMES], fontsize=7, rotation=25
+    Follows the axes box, not its tight bbox: it stops on the bottom spine
+    rather than running under the x labels, and stays clear of the
+    neighbouring panels' labels on either side. Drawn in figure fraction:
+    x and y fractions cover different physical distances, so a uniform
+    rounding_size would come out as an ellipse; mutation_aspect corrects for
+    it from the figure's inches alone, which a "tight" bbox at save time does
+    not change.
+    """
+    fig.canvas.draw()  # settles the layout, so the boxes below are final
+    box = ax.get_position()
+    # the title lives outside the axes box, so take the top from the tight
+    # bbox to bring it inside the band
+    title_top = (
+        ax.title.get_window_extent().transformed(fig.transFigure.inverted()).y1
     )
-    ax.yaxis.set_major_locator(MaxNLocator(nbins=2))
-    ax.set_ylim(bottom=0)
-    if hide_left_spine:
-        ax.tick_params(left=False, labelleft=False)
-        ax.spines["left"].set_visible(False)
+    fig_w, fig_h = fig.get_figwidth(), fig.get_figheight()
+    ax.patch.set_visible(False)  # the white panel would hide the band
+    fig.add_artist(
+        mpatches.FancyBboxPatch(
+            (box.x0 - BAND_PAD_X, box.y0),
+            box.width + 2 * BAND_PAD_X,
+            title_top + BAND_PAD_TOP - box.y0,
+            boxstyle=f"round,pad=0,rounding_size={(BAND_RADIUS / 72) / fig_w}",
+            mutation_aspect=fig_w / fig_h,
+            transform=fig.transFigure,
+            facecolor=BAND,
+            edgecolor="none",
+            zorder=-1,
+        )
+    )
+    return title_top + BAND_PAD_TOP
+
+
+def _extend_left_spine(fig, ax, top_fig: float):
+    """Run the y axis up to the top of the band, as the pressure QPS plot
+    does: the real spine stops at the axes box, which falls short of the
+    grey rectangle next to it."""
+    box = ax.get_position()
+    top = (top_fig - box.y0) / box.height  # figure fraction -> axes fraction
+    spine = ax.spines["left"]
+    spine.set_visible(False)
+    ax.plot(
+        [0, 0],
+        [0, top],
+        transform=ax.transAxes,
+        color=spine.get_edgecolor(),
+        lw=spine.get_linewidth(),
+        clip_on=False,
+        zorder=10,
+        solid_capstyle="butt",
+    )
 
 
 def _save_figure(fig, path: str):
@@ -269,6 +287,23 @@ def _save_figure(fig, path: str):
 
 # --- Plot functions ---
 
+
+def _short_value(value: float) -> str:
+    """Thousands with one decimal and a small k: "21.4k", "958"."""
+    return f"{value / 1000:.1f}k" if value >= 1000 else f"{value:.0f}"
+
+
+def _pct_span(df_runner: pd.DataFrame) -> float:
+    """Height of one panel's bars, to lift the labels off them."""
+    ends = [0.0]
+    for tag in TAGS_ORDER:
+        means = _tag_values(df_runner, tag, "mean_qps")
+        stds = _tag_values(df_runner, tag, "std_qps")
+        ends += [m + s for m, s in zip(means, stds)]
+        ends += [m - s for m, s in zip(means, stds)]
+    return max(ends) - min(ends)
+
+
 def plot_main(df: pd.DataFrame):
     _setup_style()
     x = np.arange(N_DATASETS) * X_SPACING
@@ -277,53 +312,64 @@ def plot_main(df: pd.DataFrame):
     for arch in df["arch"].unique():
         df_arch = df[df["arch"] == arch]
 
-        upi = load_upi(arch)
-        # machines with no UPI stats get the plain single-row layout rather
-        # than an empty strip
-        has_upi = any(v for v in upi.values() if pd.notna(v) and v > 0)
-        if has_upi:
-            fig, axes, strips = _make_subplots_strip(wspace=0.05)
-        else:
-            fig, axes = _make_subplots(sharey=True, wspace=0.05)
-            strips = [None] * N_RUNNERS
+        fig, axes = _make_subplots(sharey=True, wspace=0.05)
 
         for idx, runner in enumerate(RUNNER_NAMES):
             ax = axes[idx]
-            strip = strips[idx]
             df_runner = df_arch[df_arch["runner_name"] == runner]
+
+            span = _pct_span(df_runner)
 
             for i, tag in enumerate(TAGS_ORDER):
                 means = _tag_values(df_runner, tag, "mean_qps")
                 stds = _tag_values(df_runner, tag, "std_qps")
+                abs_values = _tag_values(df_runner, tag, "abs_qps")
                 positions = _bar_positions(x, i, n_bars)
                 ax.bar(
-                    positions, means, yerr=stds,
-                    width=BAR_WIDTH, label=TAG_LABELS[tag], capsize=0.7,
-                    linewidth=0.25, error_kw=dict(lw=0.3, capthick=0.3),
-                    color=palettes[tag], edgecolor=palettes[tag],
+                    positions,
+                    means,
+                    yerr=stds,
+                    width=BAR_WIDTH,
+                    label=TAG_LABELS[tag],
+                    capsize=0.7,
+                    linewidth=0.25,
+                    error_kw=dict(lw=0.3, capthick=0.3),
+                    color=palettes[tag],
+                    edgecolor=palettes[tag],
                 )
-                if strip is not None:
-                    strip.bar(
-                        positions, _upi_values(upi, runner, tag),
-                        width=BAR_WIDTH, linewidth=0.25,
-                        color=palettes[tag], edgecolor=palettes[tag],
+                # one QPS per group, off the baseline bar: the others are
+                # read from it through their percentage
+                if tag != BASELINE_TAG:
+                    continue
+                for pos, mean, std, value in zip(
+                    positions, means, stds, abs_values
+                ):
+                    if not value:
+                        continue
+                    top = (mean + std) if mean >= 0 else 0
+                    ax.text(
+                        pos,
+                        top + span * 0.015,
+                        _short_value(value),
+                        ha="left",
+                        va="bottom",
+                        rotation=45,
+                        rotation_mode="anchor",
+                        fontsize=VALUE_SIZE,
+                        zorder=3,
                     )
 
-            ax.axhline(0, linestyle="--", color="gray", linewidth=0.3, alpha=0.25)
-            _format_runner_ax(
-                ax, x, runner, hide_left_spine=(idx != 0),
-                xticklabels=not has_upi,
+            ax.axhline(
+                0, linestyle="--", color="gray", linewidth=0.3, alpha=0.25
             )
-            if strip is not None:
-                _format_strip_ax(strip, x, hide_left_spine=(idx != 0))
+            _format_runner_ax(ax, x, runner, hide_left_spine=(idx != 0))
 
         axes[0].set_ylabel(
             "Improvement over \nNUMA Balancing (%)", fontsize=YLABEL_SIZE
         )
-        if has_upi:
-            strips[0].set_ylabel("UPI out\n(GB/s)", fontsize=UPI_LABEL_SIZE)
-            # same column, but placed clear of each row's tick labels
-            fig.align_ylabels([axes[0], strips[0]])
+
+        band_top = _shade_panel(fig, axes[RUNNER_NAMES.index(HIGHLIGHT_RUNNER)])
+        _extend_left_spine(fig, axes[0], band_top)
 
         handles, labels = axes[0].get_legend_handles_labels()
         path = os.path.join(config.PLOT_DIR_ANN, config.ARCH_SUBNAMES[arch])
@@ -331,11 +377,17 @@ def plot_main(df: pd.DataFrame):
 
         fig_legend = plt.figure(figsize=(3.3, 0.5))
         fig_legend.legend(
-            handles, labels, fontsize=9, ncol=len(handles),
-            edgecolor="white", framealpha=1.0,
+            handles,
+            labels,
+            fontsize=9,
+            ncol=len(handles),
+            edgecolor="white",
+            framealpha=1.0,
         )
         fig_legend.subplots_adjust(left=0, right=1, top=1, bottom=0)
-        _save_figure(fig_legend, os.path.join(config.PLOT_DIR_ANN, "legend.pdf"))
+        _save_figure(
+            fig_legend, os.path.join(config.PLOT_DIR_ANN, "legend.pdf")
+        )
 
 
 def plot_main_abs(df: pd.DataFrame, df_norm: pd.DataFrame):
@@ -377,10 +429,16 @@ def plot_main_abs(df: pd.DataFrame, df_norm: pd.DataFrame):
                 )
 
                 bars = ax.bar(
-                    _bar_positions(x, i, n_bars), abs_values, yerr=abs_stds,
-                    width=BAR_WIDTH, label=TAG_LABELS[tag], capsize=0.6,
-                    linewidth=0.25, error_kw=dict(lw=0.3, capthick=0.3),
-                    color=palettes[tag], edgecolor=palettes[tag],
+                    _bar_positions(x, i, n_bars),
+                    abs_values,
+                    yerr=abs_stds,
+                    width=BAR_WIDTH,
+                    label=TAG_LABELS[tag],
+                    capsize=0.6,
+                    linewidth=0.25,
+                    error_kw=dict(lw=0.3, capthick=0.3),
+                    color=palettes[tag],
+                    edgecolor=palettes[tag],
                 )
 
                 for rect, pct in zip(bars, pct_values):
@@ -390,7 +448,11 @@ def plot_main_abs(df: pd.DataFrame, df_norm: pd.DataFrame):
                     ax.text(
                         rect.get_x() + rect.get_width() / 2,
                         rect.get_height() + offset,
-                        f"{pct:+.0f}%", ha="center", va="bottom", fontsize=2, color=color,
+                        f"{pct:+.0f}%",
+                        ha="center",
+                        va="bottom",
+                        fontsize=2,
+                        color=color,
                     )
 
             _format_runner_ax(ax, x, runner, y_nbins=6)
@@ -417,7 +479,9 @@ def plot_details(df_details: pd.DataFrame):
     for arch in df_details["arch"].unique():
         df_arch = df_details[df_details["arch"] == arch]
 
-        fig, axes = plt.subplots(1, N_RUNNERS, figsize=(3 * N_RUNNERS, 3), sharey=False)
+        fig, axes = plt.subplots(
+            1, N_RUNNERS, figsize=(3 * N_RUNNERS, 3), sharey=False
+        )
         if N_RUNNERS == 1:
             axes = [axes]
 
@@ -432,9 +496,12 @@ def plot_details(df_details: pd.DataFrame):
                     if len(row) == 0:
                         continue
                     vp = ax.violinplot(
-                        dataset=row, positions=[di + offsets[i]],
-                        widths=violin_width, showmeans=False,
-                        showextrema=False, showmedians=False,
+                        dataset=row,
+                        positions=[di + offsets[i]],
+                        widths=violin_width,
+                        showmeans=False,
+                        showextrema=False,
+                        showmedians=False,
                     )
                     for b in vp["bodies"]:
                         b.set_facecolor(palette[i])
@@ -449,8 +516,14 @@ def plot_details(df_details: pd.DataFrame):
             ax.set_xticklabels(DATASET_NAMES)
             ax.set_title(runner.capitalize(), fontsize=10)
             ax.set_axisbelow(True)
-            ax.grid(axis="y", which="major", linestyle="--", linewidth=0.4,
-                    color="gray", alpha=0.3)
+            ax.grid(
+                axis="y",
+                which="major",
+                linestyle="--",
+                linewidth=0.4,
+                color="gray",
+                alpha=0.3,
+            )
             ax.yaxis.set_major_locator(MaxNLocator(nbins=7))
 
         axes[0].set_ylabel(
@@ -458,15 +531,25 @@ def plot_details(df_details: pd.DataFrame):
         )
         handles = [
             mpatches.Rectangle(
-                (0, 0), 1, 1, facecolor=palette[i], edgecolor="black",
-                linewidth=0.3, label=TAG_LABELS[TAGS_ORDER[i]],
+                (0, 0),
+                1,
+                1,
+                facecolor=palette[i],
+                edgecolor="black",
+                linewidth=0.3,
+                label=TAG_LABELS[TAGS_ORDER[i]],
             )
             for i in range(len(TAGS_ORDER))
         ]
         legend = fig.legend(
-            handles, TAG_LABELS.values(), fontsize=8, title_fontsize=9,
-            loc="upper right", bbox_to_anchor=(1, 1),
-            edgecolor="white", framealpha=1.0,
+            handles,
+            TAG_LABELS.values(),
+            fontsize=8,
+            title_fontsize=9,
+            loc="upper right",
+            bbox_to_anchor=(1, 1),
+            edgecolor="white",
+            framealpha=1.0,
         )
         legend.get_frame().set_linewidth(0.4)
 

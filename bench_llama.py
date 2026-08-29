@@ -20,23 +20,30 @@ BENCH = "./llama.cpp/build/bin/llama-bench"
 REPS = 10
 WARMUP = 0
 
-# tag, numactl, llama --numa flag. --numa-warmup pre-faults the pages with a
-# dummy pass, and pairs with every placement including no placement at all
+# tag, numactl, llama --numa flag, numa balancing
 ARMS = [
-    ("baseline", "", ""),
-    ("baseline-warmup", "", "--numa-warmup"),
-    ("distribute", "", "--numa distribute"),
-    ("distribute-warmup", "", "--numa distribute --numa-warmup"),
-    ("interleaved-distribute", "numactl --interleave=all", "--numa distribute"),
+    ("baseline", "", "", False),
+    ("baseline-warmup", "", "--numa-warmup", False),
+    ("baseline-balancing", "", "", True),
+    ("baseline-balancing-warmup", "", "--numa-warmup", True),
+    ("distribute", "", "--numa distribute", False),
+    ("distribute-warmup", "", "--numa distribute --numa-warmup", False),
+    (
+        "interleaved-distribute",
+        "numactl --interleave=all",
+        "--numa distribute",
+        False,
+    ),
     (
         "interleaved-distribute-warmup",
         "numactl --interleave=all",
         "--numa distribute --numa-warmup",
+        False,
     ),
 ]
 REPL_ARMS = [
-    ("repl-distribute", "", "--numa distribute"),
-    ("repl-distribute-warmup", "", "--numa distribute --numa-warmup"),
+    ("repl-distribute", "", "--numa distribute", False),
+    ("repl-distribute-warmup", "", "--numa distribute --numa-warmup", False),
 ]
 
 # one csv per kernel variant, holding the mean of each of its arms
@@ -120,7 +127,7 @@ def write_csv(name, arms):
         f.write(
             "tag,test,n_prompt,n_gen,runs,test_time,avg_ns,avg_ts,stddev_ts\n"
         )
-        for tag, _, _ in arms:
+        for tag, *_ in arms:
             tests = {}
             for r in _warm_rows(tag):
                 tests.setdefault(r["test"], []).append(r)
@@ -139,9 +146,9 @@ def write_csv(name, arms):
 
 def run_bench_llama():
     os.makedirs(RESULT_DIR, exist_ok=True)
-    sh("echo 0 > /proc/sys/kernel/numa_balancing")
 
-    for tag, numactl, numa_flag in ARMS:
+    for tag, numactl, numa_flag, balancing in ARMS:
+        sh(f"echo {int(balancing)} > /proc/sys/kernel/numa_balancing")
         _run_arm(tag, numactl, numa_flag, repl_enabled=False)
         write_csv("llama", ARMS)
 
@@ -150,7 +157,7 @@ def run_bench_llama_repl():
     os.makedirs(RESULT_DIR, exist_ok=True)
     _repl_setup()
 
-    for tag, numactl, numa_flag in REPL_ARMS:
+    for tag, numactl, numa_flag, _ in REPL_ARMS:
         _run_arm(tag, numactl, numa_flag, repl_enabled=True)
         write_csv("llama-repl", REPL_ARMS)
         sh(f"cat {REPL}/registered")

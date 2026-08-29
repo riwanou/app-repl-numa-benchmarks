@@ -64,6 +64,9 @@ bench-ann:
 bench-ann-repl:
     uv run run.py ann-repl
 
+bench-locality-repl:
+    uv run run.py locality
+
 bench-pressure:
     uv run run.py pressure
 
@@ -123,6 +126,15 @@ plot-fio:
 
 plot-fio-pgtable:
     uv run run.py plot-fio-pgtable
+
+bench-pgtable-sync-baseline:
+    uv run run.py bench-pgtable-sync-baseline
+
+bench-pgtable-sync-repl:
+    uv run run.py bench-pgtable-sync-repl
+
+plot-pgtable-sync:
+    uv run run.py plot-pgtable-sync
 
 plot-microbench:
     uv run run.py plot-microbench

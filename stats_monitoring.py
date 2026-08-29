@@ -870,6 +870,13 @@ BENCHES = {
         std_of=("qps",),
         drop_first_run=True,
     ),
+    "locality": Bench(
+        labels=["locality"],
+        keep_file=lambda name: name.endswith("-details.csv"),
+        group_by=["runner_name", "tag"],
+        std_of=("qps",),
+        drop_first_run=True,
+    ),
     "rocksdb": Bench(
         labels=["rocksdb", "rocksdb-repl"],
         keep_file=lambda name: name == "results.csv",
@@ -1100,7 +1107,7 @@ def fio_comparison(readratio: int) -> Comparison:
     )
 
 
-# each kernel with its own interleaved baseline; repl-pt is SPaRe only
+# each kernel with its own interleaved baseline; repl-pt is SPARe only
 PGT_TAGS = {
     "spare": ("interleave", "repl-pt", "repl"),
     "mitosis": ("interleave", "repl"),
@@ -1183,6 +1190,16 @@ def duckdb_comparison(dataset: str) -> Comparison:
     )
 
 
+# node 0 against the whole machine, per policy
+def locality_row(tag: str) -> dict:
+    return {
+        "label": "locality",
+        "dataset": "gist-960-euclidean",
+        "runner_name": "usearch",
+        "tag": tag,
+    }
+
+
 COMPARISONS = {
     "duckdb-clickbench-firsttouch-vs-imbalanced-vs-interleaved"
     "-vs-balancing-vs-repl": duckdb_comparison("clickbench_s1"),
@@ -1201,6 +1218,12 @@ COMPARISONS = {
                 "runner_name": "usearch",
                 "tag": "numa-balancing",
             },
+            "firsttouch": {
+                "label": "ann",
+                "dataset": "gist-960-euclidean",
+                "runner_name": "usearch",
+                "tag": "default",
+            },
             "interleaved": {
                 "label": "ann",
                 "dataset": "gist-960-euclidean",
@@ -1213,6 +1236,21 @@ COMPARISONS = {
                 "runner_name": "usearch",
                 "tag": "patched-repl",
             },
+        },
+    ),
+    "locality-usearch-gist-local-vs-firsttouch-vs-balancing"
+    "-vs-interleaved-vs-imbalanced-vs-repl": Comparison(
+        bench="locality",
+        rows={
+            name: locality_row(tag)
+            for name, tag in (
+                ("local-1node", "local"),
+                ("firsttouch-allnodes", "firsttouch"),
+                ("balancing-allnodes", "numa-balancing"),
+                ("interleaved-allnodes", "interleaved"),
+                ("imbalanced-allnodes", "imbalanced"),
+                ("repl-allnodes", "repl"),
+            )
         },
     ),
     "faiss-gist-imbalanced-vs-balancing-vs-interleaved-vs-repl": Comparison(
@@ -1229,6 +1267,12 @@ COMPARISONS = {
                 "dataset": "gist-960-euclidean",
                 "runner_name": "faiss",
                 "tag": "numa-balancing",
+            },
+            "firsttouch": {
+                "label": "ann",
+                "dataset": "gist-960-euclidean",
+                "runner_name": "faiss",
+                "tag": "default",
             },
             "interleaved": {
                 "label": "ann",
@@ -1332,6 +1376,10 @@ COMPARISONS = {
     # the even mix: unreplication fires constantly and the policies separate
     "fio-read50-firsttouch-vs-balancing-vs-interleaved-vs-repl": fio_comparison(
         50
+    ),
+    # mostly reads, a little unreplication traffic
+    "fio-read95-firsttouch-vs-balancing-vs-interleaved-vs-repl": fio_comparison(
+        95
     ),
     "llama-tg128-baseline-vs-distribute-vs-interleaved-vs-repl": llama_comparison(
         "tg128"

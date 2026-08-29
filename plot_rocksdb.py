@@ -1,5 +1,6 @@
 import os
 import config
+import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from matplotlib.transforms import blended_transform_factory
@@ -44,7 +45,11 @@ def get_std():
 
 
 YLABEL_SIZE = 6.5
-UPI_LABEL_SIZE = 6
+XTICK_SIZE = 6.5
+XTICK_PAD = 0.5  # points between the method labels and the x axis
+VALUE_SIZE = 3  # MB/s printed at the end of each bar, stood up
+# a white halo, so a value crossing an error bar stays readable
+HALO = [pe.withStroke(linewidth=1.2, foreground="white")]
 
 METHODS = [
     "readrandom",
@@ -66,6 +71,7 @@ METHODS_LABELS = [
     "fscan-write",
     "rscan-write",
 ]
+BASELINE_TAG = ""  # Vanilla, the bar the absolute numbers sit on
 TAGS_ORDER = [
     "imbalanced",
     "",
@@ -80,21 +86,22 @@ TAG_LABELS = {
 }
 
 
-def _load_upi(arch):
-    """upi_out_gb per <variant>-<test> tag, from the stats pipeline.
+# a round more than this far from the median is an outlier: the rounds of a
+# tag sit within ~1% of each other, only the odd stall lands this far off
+OUTLIER_PCT = 7.5
 
-    Written by `just stats`; absent until that has been run, in which case the
-    bars simply carry no UPI annotation.
-    """
-    path = os.path.join(RESULT_DIR, arch, "stats", "rocksdb.csv")
-    if not os.path.exists(path):
-        return None
 
-    df = pd.read_csv(path)
-    if "upi_out_gb" not in df.columns:
-        return None
-
-    return df[["tag", "upi_out_gb"]].drop_duplicates(subset="tag")
+def _agg_rounds(values: pd.Series) -> pd.Series:
+    """Mean and std over the sane rounds, the outliers kept aside."""
+    med = values.median()
+    keep = (values - med).abs() / med * 100 <= OUTLIER_PCT
+    return pd.Series(
+        {
+            "mb_sec_mean": values[keep].mean(),
+            "mb_sec_std": values[keep].std(),
+            "outliers": list(values[~keep]),
+        }
+    )
 
 
 def _load_data():
@@ -120,19 +127,17 @@ def _load_data():
         if "nb_runs" in df.columns:
             df = (
                 df.groupby(["tag", "test", "arch"])["mb_sec"]
-                .agg(mb_sec_mean="mean", mb_sec_std="std")
+                .apply(_agg_rounds)
+                .unstack()
                 .reset_index()
             )
         else:
             df["mb_sec_mean"] = df["mb_sec"]
             df["mb_sec_std"] = float("nan")
-            df = df[["tag", "test", "arch", "mb_sec_mean", "mb_sec_std"]]
-
-        upi = _load_upi(arch)
-        if upi is not None:
-            df = df.merge(upi, on="tag", how="left")
-        else:
-            df["upi_out_gb"] = float("nan")
+            df["outliers"] = [[] for _ in range(len(df))]
+            df = df[
+                ["tag", "test", "arch", "mb_sec_mean", "mb_sec_std", "outliers"]
+            ]
 
         all_data.append(df)
 
@@ -151,11 +156,30 @@ def _normalize_relative_to_default(group):
         100 * (group["mb_sec_mean"] - default_mean) / default_mean
     )
     group["mb_sec_std_pct"] = 100 * group["mb_sec_std"] / default_mean
+    group["outliers_pct"] = group["outliers"].apply(
+        lambda vals: [100 * (v - default_mean) / default_mean for v in vals]
+    )
 
     return group
 
 
-def _plot_bars(ax, arch_data, show_absolute=False, strip_ax=None):
+def _short_value(value: float) -> str:
+    """Thousands with one decimal and a small k: "21.4k", "958"."""
+    return f"{value / 1000:.1f}k" if value >= 1000 else f"{value:.0f}"
+
+
+def _row_for(arch_data, tag: str, method: str):
+    """The row a bar is drawn from, None when this machine skipped it."""
+    if tag:
+        row = arch_data[arch_data["tag"] == f"{tag}-{method}"]
+    else:
+        row = arch_data[arch_data["tag"] == f"default-{method}"]
+        if len(row) == 0:
+            row = arch_data[arch_data["tag"] == method]
+    return row.iloc[0] if len(row) > 0 else None
+
+
+def _plot_bars(ax, arch_data, show_absolute=False):
     bar_width = 0.11
     bar_gap = 0.0
     n_bars = len(TAGS_ORDER)
@@ -171,37 +195,49 @@ def _plot_bars(ax, arch_data, show_absolute=False, strip_ax=None):
         "patched-repl": spare[7],
     }
 
+    # height of the plotted range, to lift the labels off their bar: only
+    # the bars actually drawn, the rest of the rows swing far wider
+    drawn = [
+        _row_for(arch_data, tag, method)
+        for tag in TAGS_ORDER
+        for method in METHODS
+    ]
+    ends = [0.0]
+    for row in drawn:
+        if row is None:
+            continue
+        mean = row["mb_sec_mean_pct"]
+        err = row["mb_sec_std_pct"] if pd.notna(row["mb_sec_std_pct"]) else 0
+        ends += [mean + err, mean - err]
+    span = max(ends) - min(ends)
+
+    dropped = []
+
     for i, tag in enumerate(TAGS_ORDER):
         means = []
         stds = []
         abs_values = []
         abs_stds = []
-        upi_values = []
+        outliers = []
 
         for method in METHODS:
-            if tag:
-                expected_tag = f"{tag}-{method}"
-                row = arch_data[arch_data["tag"] == expected_tag]
-            else:
-                row = arch_data[arch_data["tag"] == f"default-{method}"]
-                if len(row) == 0:
-                    row = arch_data[arch_data["tag"] == method]
-            if len(row) > 0:
-                means.append(row.iloc[0]["mb_sec_mean_pct"])
-                stds.append(row.iloc[0]["mb_sec_std_pct"])
-                abs_values.append(row.iloc[0]["mb_sec_mean"])
+            row = _row_for(arch_data, tag, method)
+            if row is not None:
+                means.append(row["mb_sec_mean_pct"])
+                stds.append(row["mb_sec_std_pct"])
+                abs_values.append(row["mb_sec_mean"])
                 abs_stds.append(
-                    row.iloc[0]["mb_sec_std"]
-                    if pd.notna(row.iloc[0]["mb_sec_std"])
-                    else 0
+                    row["mb_sec_std"] if pd.notna(row["mb_sec_std"]) else 0
                 )
-                upi_values.append(row.iloc[0].get("upi_out_gb", float("nan")))
+                outliers.append(
+                    row["outliers"] if show_absolute else row["outliers_pct"]
+                )
             else:
                 means.append(0)
                 stds.append(0)
                 abs_values.append(0)
                 abs_stds.append(0)
-                upi_values.append(float("nan"))
+                outliers.append([])
 
         positions = [
             pos - group_width / 2 + i * (bar_width + bar_gap) + bar_width / 2
@@ -235,24 +271,33 @@ def _plot_bars(ax, arch_data, show_absolute=False, strip_ax=None):
             linewidth=0.25,
         )
 
-        # cross-socket traffic each bar is paying for, on its own strip below
-        # so the throughput axis keeps its natural scale
-        if strip_ax is not None:
-            strip_ax.bar(
-                positions,
-                [0 if pd.isna(v) else v for v in upi_values],
-                width=bar_width,
-                color=palettes[tag],
-                edgecolor=palettes[tag],
-                linewidth=0.25,
-            )
+        # rounds dropped from the mean, kept visible without letting them
+        # stretch the axis: one that falls off the range sits on the edge
+        for pos, values in zip(positions, outliers):
+            for value in values:
+                dropped.append((pos, value, palettes[tag]))
 
-        for rect, pct, abs_val, upi, err in zip(
-            bars, means, abs_values, upi_values, bar_stds
-        ):
+        for rect, pct, abs_val, err in zip(bars, means, abs_values, bar_stds):
             h = rect.get_height()
             if h == 0:
                 continue
+
+            # one throughput per group, off the baseline bar: the others
+            # are read from it through their percentage
+            if not show_absolute and tag == BASELINE_TAG:
+                top = (h + err) if h >= 0 else 0
+                ax.text(
+                    rect.get_x() + rect.get_width() / 2,
+                    top + span * 0.008,
+                    _short_value(abs_val),
+                    ha="left",
+                    va="bottom",
+                    rotation=45,
+                    rotation_mode="anchor",
+                    fontsize=VALUE_SIZE,
+                    zorder=5,
+                    path_effects=HALO,
+                )
 
             if show_absolute:
                 offset = 0.3 if h >= 0 else -0.3
@@ -269,6 +314,14 @@ def _plot_bars(ax, arch_data, show_absolute=False, strip_ax=None):
                     fontsize=2,
                     color=color,
                 )
+
+    return dropped
+
+
+def _draw_dropped(ax, dropped):
+    """The excluded rounds, each at its own value."""
+    for pos, value, color in dropped:
+        ax.plot(pos, value, marker="x", ms=1.8, mew=0.4, color=color, zorder=4)
 
 
 def make_plot_rocksdb():
@@ -297,24 +350,12 @@ def _make_plot_rocksdb_variant(absolute=False):
             {"font.family": "serif", "font.serif": "DejaVu Serif"}
         )
 
-        # machines with no UPI stats get the plain single-axis layout rather
-        # than an empty strip
-        has_upi = arch_data["upi_out_gb"].fillna(0).gt(0).any()
-        if absolute or not has_upi:
-            fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(3.3, 1.47))
-            strip_ax = None
-        else:
-            # thin UPI strip under the bars, sharing their x
-            fig, (ax, strip_ax) = plt.subplots(
-                nrows=2,
-                ncols=1,
-                figsize=(3.3, 2.0),
-                sharex=True,
-                gridspec_kw={"height_ratios": [1, 0.26], "hspace": 0.12},
-            )
+        fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(3.3, 1.3))
 
-        _plot_bars(ax, arch_data, show_absolute=absolute, strip_ax=strip_ax)
+        dropped = _plot_bars(ax, arch_data, show_absolute=absolute)
 
+        ax.set_axisbelow(True)
+        ax.grid(axis="y", ls=":", lw=0.4, color="0.85", zorder=0)
         sns.despine(ax=ax)
         if not absolute:
             ax.axhline(
@@ -322,14 +363,27 @@ def _make_plot_rocksdb_variant(absolute=False):
             )
 
         ax.tick_params(axis="y", labelsize=6, length=2)
-        ax.tick_params(axis="x", labelsize=6, length=2)
+        ax.tick_params(axis="x", labelsize=6, length=2, pad=XTICK_PAD)
 
-        label_ax = ax if strip_ax is None else strip_ax
-        label_ax.set_xticks(np.arange(len(METHODS)) * 0.63)
-        label_ax.set_xticklabels(METHODS_LABELS, fontsize=7, rotation=25)
-        if strip_ax is not None:
-            ax.tick_params(labelbottom=False)
+        ax.set_xticks(np.arange(len(METHODS)) * 0.63)
+        ax.set_xticklabels(METHODS_LABELS, fontsize=XTICK_SIZE, rotation=25)
 
+        _draw_dropped(ax, dropped)
+        if not absolute:
+            # exactly the room the stood-up labels need, no more
+            fig.canvas.draw()
+            inv = ax.transData.inverted()
+            ys = [
+                inv.transform(t.get_window_extent().corners())[:, 1]
+                for t in ax.texts
+            ]
+            lo, hi = ax.get_ylim()
+            if ys:
+                pad = 0.02 * (hi - lo)
+                ax.set_ylim(
+                    min(lo, min(y.min() for y in ys) - pad),
+                    max(hi, max(y.max() for y in ys) + pad),
+                )
         ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
         ax.set_ylabel(
             "Throughput (MB/s)"
@@ -337,18 +391,7 @@ def _make_plot_rocksdb_variant(absolute=False):
             else "Improvement over \nNUMA Balancing (%)",
             fontsize=YLABEL_SIZE,
         )
-        if strip_ax is not None:
-            sns.despine(ax=strip_ax)
-            strip_ax.tick_params(axis="y", labelsize=6, length=2)
-            strip_ax.tick_params(axis="x", labelsize=6, length=2)
-            strip_ax.yaxis.set_major_locator(MaxNLocator(nbins=2))
-            strip_ax.set_ylim(bottom=0)
-            strip_ax.set_ylabel("UPI out\n(GB/s)", fontsize=UPI_LABEL_SIZE)
-            # same column, but placed clear of each row's tick labels
-            fig.align_ylabels([ax, strip_ax])
-
-        if strip_ax is None:
-            fig.tight_layout(pad=0)
+        fig.tight_layout(pad=0)
         suffix = "_rocksdb_abs" if absolute else "_rocksdb"
         path = os.path.join(
             config.PLOT_DIR_ROCKSDB, f"{config.ARCH_SUBNAMES[arch]}{suffix}.pdf"

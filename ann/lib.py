@@ -9,7 +9,7 @@ from . import mod_faiss
 from . import mod_annoy
 from . import mod_usearch
 
-# per variant warmup, same measured window for all, starting once it ends
+# per variant warmup, shared measured window
 WARMUP_TIME = 30
 MEASURE_TIME = 60
 
@@ -308,7 +308,7 @@ def runner_bench(
 
     end_time = get_time()
 
-    # steady state only, the warmup stays in the details
+    # steady state only
     kept = [i for i, warmup in enumerate(warmups) if not warmup]
     if not kept:
         print(f"[WARN] [{tag}] every run fell in the warmup, summarising all")

@@ -4,6 +4,7 @@ import bench_duckdb
 import bench_rocksdb
 import bench_fio
 import bench_llama
+import bench_locality
 import bench_micro
 import bench_sharing
 import monitoring
@@ -15,6 +16,7 @@ parser.add_argument(
     choices=[
         "ann",
         "ann-repl",
+        "locality",
         "pressure",
         "pressure-repl",
         "rocksdb",
@@ -32,6 +34,8 @@ parser.add_argument(
         "build-ann",
         "build-duckdb",
         "sharing",
+        "bench-pgtable-sync-baseline",
+        "bench-pgtable-sync-repl",
         "bench-pgtable-own",
         "bench-pgtable-carrefour",
         "bench-alloc-own",
@@ -47,6 +51,7 @@ parser.add_argument(
         "plot-sharing",
         "plot-pressure",
         "plot-microbench",
+        "plot-pgtable-sync",
         "plot-duckdb",
         "stats-monitoring",
     ],
@@ -73,6 +78,8 @@ if args.run == "ann":
     bench_and_monitor(bench_ann.run_bench_ann, "ann")
 elif args.run == "ann-repl":
     bench_and_monitor(bench_ann.run_bench_ann_repl, "ann-repl")
+elif args.run == "locality":
+    bench_and_monitor(bench_locality.run_bench_locality, "locality")
 elif args.run == "pressure":
     # 0.5s to catch the reclaim transient at each memory.high step
     bench_and_monitor(
@@ -116,6 +123,10 @@ elif args.run == "sharing":
     # the whole point of this bench is the coherence directory, so it is the
     # one run that pays for the uncore counters
     bench_and_monitor(bench_sharing.run_bench_sharing, "sharing", coherence=True)
+elif args.run == "bench-pgtable-sync-baseline":
+    bench_micro.run_bench_pgtable_sync("baseline")
+elif args.run == "bench-pgtable-sync-repl":
+    bench_micro.run_bench_pgtable_sync("on")
 elif args.run == "bench-pgtable-own":
     bench_micro.run_bench_pgtable("mmap")
 elif args.run == "bench-pgtable-carrefour":
@@ -164,6 +175,10 @@ elif args.run == "plot-microbench":
     import plot_microbench
 
     plot_microbench.make_plot_microbench()
+elif args.run == "plot-pgtable-sync":
+    import plot_pgtable_sync
+
+    plot_pgtable_sync.make_plot_pgtable_sync()
 elif args.run == "plot-duckdb":
     import plot_duckdb
 

@@ -37,17 +37,25 @@ jsonl_pattern = re.compile(
 # tag (as written by bench_fio.run_one) -> legend label and (palette, index),
 # ordered left to right. "linux" is the Oranges ramp, "spare" the Blues one.
 SERIES = [
-    ("default", "Vanilla", ("linux", 1)),
-    ("numabalancing", "NumaBalancing", ("linux", 3)),
+    ("numabalancing", "NUMA Balancing", ("linux", 3)),
     ("interleaved", "Interleaved", ("linux", 5)),
-    ("repl", "SPaRe (No Unreplication)", ("spare", 3)),
-    ("unrepl-bound", "SPaRe (Main Bound)", ("spare", 5)),
-    ("unrepl-firsttouch", "SPaRe (Main First Touch)", ("spare", 7)),
-    ("unrepl-interleaved", "SPaRe (Main Interleaved)", ("spare", 8)),
+    ("repl", "SPARe (No Unreplication)", ("spare", 3)),
+    ("unrepl-bound", "SPARe", ("spare", 5)),
+    ("unrepl-interleaved", "SPARe (Interleaved)", ("spare", 8)),
 ]
 
 # tags used by the older per-run .json result files
 LEGACY_TAGS = {"": "numabalancing", "unrepl": "unrepl-bound"}
+
+# jobs start staggered on every run, not just the first one
+DROP_FIRST_RUN = False
+
+# fio divides the whole group's io_bytes by *one* job's 30s runtime. On yeti4
+# the jobs start staggered (elapsed up to 97s for a 51s run), so those bytes
+# are really spread over a much longer window and the bandwidth comes out
+# inflated, up to 2.3x at write-heavy ratios. Divide by the wall-clock span of
+# the measured phase instead. tall4 is unaffected (<1%).
+USE_WALL_BW = True
 
 
 def make_plot_fio():
@@ -67,57 +75,88 @@ def make_plot_fio_arch(arch):
         print(f"No random fio data for {arch}, skipping.")
         return
 
-    agg_df = (
-        combined_df.groupby(["tag", "readratio", "writeratio", "benchmark"])
-        .agg(
-            read_bw_gb=("read_bw_gb", "mean"),
-            write_bw_gb=("write_bw_gb", "mean"),
-            read_bw_std=("read_bw_gb", "std"),  # std across runs
-            write_bw_std=("write_bw_gb", "std"),  # std across runs
-            nb_runs=("run", "count"),
-        )
-        .reset_index()
-    )
-    # std is NaN for a single run; matplotlib wants a number for yerr
-    agg_df[["read_bw_std", "write_bw_std"]] = agg_df[
-        ["read_bw_std", "write_bw_std"]
-    ].fillna(0)
-    agg_df["readratio"] = agg_df["readratio"].astype(int)
-    agg_df = agg_df.sort_values(
-        by=["readratio", "tag"], ascending=[False, True]
-    ).reset_index(drop=True)
+    agg_df = aggregate(combined_df)
 
     combined_df["readratio"] = combined_df["readratio"].astype(int)
     combined_df = combined_df.sort_values(
         by=["readratio", "tag", "run"], ascending=[False, True, True]
     ).reset_index(drop=True)
 
+    # the csvs keep every run; only the bars drop the first one
     result_dir = os.path.join(RESULT_DIR, arch, "fio")
     combined_df.to_csv(os.path.join(result_dir, "details.csv"), index=False)
     agg_df.to_csv(os.path.join(result_dir, "agg.csv"), index=False)
 
+    plot_df = agg_df
+    # old results are a single run
+    if DROP_FIRST_RUN and (combined_df["run"] > 1).any():
+        plot_df = aggregate(combined_df[combined_df["run"] > 1])
+
+    read_col = "read_bw_wall" if USE_WALL_BW else "read_bw"
+    write_col = "write_bw_wall" if USE_WALL_BW else "write_bw"
+
     plot_fio(
         arch,
         "read",
-        agg_df,
-        value_col="read_bw_gb",
-        std_col="read_bw_std",
+        plot_df,
+        value_col=f"{read_col}_gb",
+        std_col=f"{read_col}_std",
         ylabel="$\mathbf{Read}$ Bandwidth (GB/s)",
         is_write=False,
     )
     plot_fio(
         arch,
         "write",
-        agg_df,
-        value_col="write_bw_gb",
-        std_col="write_bw_std",
+        plot_df,
+        value_col=f"{write_col}_gb",
+        std_col=f"{write_col}_std",
         ylabel="$\mathbf{Write}$ Bandwidth (GB/s)",
         is_write=True,
     )
 
 
+def aggregate(df: pd.DataFrame) -> pd.DataFrame:
+    """Mean and std across the runs of each (tag, ratio, benchmark)."""
+    agg_df = (
+        df.groupby(["tag", "readratio", "writeratio", "benchmark"])
+        .agg(
+            read_bw_gb=("read_bw_gb", "mean"),
+            write_bw_gb=("write_bw_gb", "mean"),
+            read_bw_std=("read_bw_gb", "std"),  # std across runs
+            write_bw_std=("write_bw_gb", "std"),  # std across runs
+            read_bw_wall_gb=("read_bw_wall_gb", "mean"),
+            write_bw_wall_gb=("write_bw_wall_gb", "mean"),
+            read_bw_wall_std=("read_bw_wall_gb", "std"),
+            write_bw_wall_std=("write_bw_wall_gb", "std"),
+            wall_s=("wall_s", "mean"),
+            nb_runs=("run", "count"),
+        )
+        .reset_index()
+    )
+    # std is NaN for a single run; matplotlib wants a number for yerr
+    std_cols = [
+        "read_bw_std", "write_bw_std", "read_bw_wall_std", "write_bw_wall_std",
+    ]
+    agg_df[std_cols] = agg_df[std_cols].fillna(0)
+    agg_df["readratio"] = agg_df["readratio"].astype(int)
+    return agg_df.sort_values(
+        by=["readratio", "tag"], ascending=[False, True]
+    ).reset_index(drop=True)
+
+
+def wall_seconds(json_data) -> float:
+    """Wall-clock span of the measured phase, in seconds: job_start is stamped
+    when the first job leaves its ramp, timestamp_ms when fio writes the
+    output. Wider than fio's runtime whenever the jobs are staggered."""
+    jobs = json_data.get("jobs", [])
+    if not jobs or "timestamp_ms" not in json_data:
+        return 0.0
+    return (json_data["timestamp_ms"] - jobs[0].get("job_start", 0)) / 1000
+
+
 def bw_from_fio_output(json_data) -> dict:
     """Sum the bandwidth of every job group in one fio json output."""
+    read_bytes = write_bytes = 0
     read_bw = write_bw = 0.0
     read_bw_mean = read_bw_dev = 0.0
     write_bw_mean = write_bw_dev = 0.0
@@ -129,14 +168,23 @@ def bw_from_fio_output(json_data) -> dict:
         read_bw += read_stats.get("bw_bytes", 0) / (1000**3)
         write_bw += write_stats.get("bw_bytes", 0) / (1000**3)
 
+        read_bytes += read_stats.get("io_bytes", 0)
+        write_bytes += write_stats.get("io_bytes", 0)
+
         read_bw_mean += read_stats.get("bw_mean", 0) / (1000**2)
         read_bw_dev += read_stats.get("bw_dev", 0) / (1000**2)
         write_bw_mean += write_stats.get("bw_mean", 0) / (1000**2)
         write_bw_dev += write_stats.get("bw_dev", 0) / (1000**2)
 
+    wall = wall_seconds(json_data)
+
     return {
         "read_bw_gb": read_bw,
         "write_bw_gb": write_bw,
+        # same bytes, divided by the real window every job ran in
+        "read_bw_wall_gb": read_bytes / wall / (1000**3) if wall > 0 else 0,
+        "write_bw_wall_gb": write_bytes / wall / (1000**3) if wall > 0 else 0,
+        "wall_s": wall,
         "read_bw_std": read_bw_dev,
         "write_bw_std": write_bw_dev,
         "read_bw_std_pct": (read_bw_dev / read_bw_mean) * 100
@@ -323,15 +371,9 @@ def plot_fio(arch, title, df_param, value_col, std_col, ylabel, is_write=False):
             color=color, edgecolor=color, linewidth=0.3, zorder=2,
         )
 
-    # ax.grid(
-    #     axis="y",
-    #     which="major",
-    #     linestyle="--",
-    #     linewidth=0.4,
-    #     color="gray",
-    #     alpha=0.3,
-    #     zorder=1,
-    # )
+    # faint dotted rules at each tick, like the pressure plot
+    ax.set_axisbelow(True)
+    ax.grid(axis="y", ls=":", lw=0.4, color="0.85", zorder=0)
 
     sns.despine(ax=ax)
 

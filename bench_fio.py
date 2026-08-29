@@ -52,9 +52,10 @@ def run_bench(
 
 
 def run_one(json_path, run, tag, cmd, meta):
-    # the 1G file stays fully dirty between runs, so every run but the first
-    # starts throttled by the previous one's writeback: flush it first
-    sh("sync")
+    # reset system state between each run
+    sh(
+        "sync; echo 3 > /proc/sys/vm/drop_caches; echo 1 > /proc/sys/vm/compact_memory"
+    )
     ts_start = time.time()
     sh(cmd)
     ts_end = time.time()
@@ -98,12 +99,10 @@ def run_bench_readwrite(distrib, base_tag, num_readers, num_writers):
 
     # default (without NUMA balancing) — all runs first
     sh("echo 0 > /proc/sys/kernel/numa_balancing")
-    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
     for run in range(1, NB_RUNS + 1):
         run_one(json_path, run, "default", cmd, meta)
 
     # interleaved (still without NUMA balancing)
-    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
     for run in range(1, NB_RUNS + 1):
         run_one(
             json_path, run, "interleaved", cmd_interleaved, meta_interleaved
@@ -111,7 +110,6 @@ def run_bench_readwrite(distrib, base_tag, num_readers, num_writers):
 
     # baseline (with NUMA Balancing) — all runs together
     sh("echo 1 > /proc/sys/kernel/numa_balancing")
-    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
     for run in range(1, NB_RUNS + 1):
         run_one(json_path, run, "numabalancing", cmd, meta)
     sh("echo 0 > /proc/sys/kernel/numa_balancing")
@@ -129,7 +127,6 @@ def run_bench_readwrite_repl(distrib, base_tag, num_readers, num_writers):
     sh("echo 0 > /sys/kernel/debug/repl_pt/main_placement")
 
     # replication
-    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
     for run in range(1, NB_RUNS + 1):
         run_one(json_path, run, "repl", cmd, meta)
 
@@ -138,19 +135,16 @@ def run_bench_readwrite_repl(distrib, base_tag, num_readers, num_writers):
 
     # main bound
     sh("echo 0 > /sys/kernel/debug/repl_pt/main_placement")
-    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
     for run in range(1, NB_RUNS + 1):
         run_one(json_path, run, "unrepl-bound", cmd, meta)
 
     # (main first touch)
     sh("echo 1 > /sys/kernel/debug/repl_pt/main_placement")
-    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
     for run in range(1, NB_RUNS + 1):
         run_one(json_path, run, "unrepl-firsttouch", cmd, meta)
 
     # (main interleaved)
     sh("echo 2 > /sys/kernel/debug/repl_pt/main_placement")
-    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
     for run in range(1, NB_RUNS + 1):
         run_one(json_path, run, "unrepl-interleaved", cmd, meta)
 
@@ -230,7 +224,6 @@ def run_bench_fio_pgtable(json_path, tag, prepend="", spare_repl=False):
         size=SIZE,
     )
     for run in range(1, NB_RUNS_PGTABLE + 1):
-        sh("sync; echo 3 > /proc/sys/vm/drop_caches")
         run_one(json_path, run, tag, cmd, meta)
 
 

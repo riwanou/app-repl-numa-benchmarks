@@ -1,9 +1,9 @@
-"""What SPaRe's full replication buys over page table only replication.
+"""What SPARe's full replication buys over page table only replication.
 
 bench_fio.run_bench_fio_pgt_* writes one jsonl per kernel, holding an
-`interleave` run set and a `repl` one, plus a `repl-pt` one for SPaRe.
-Mitosis and Hydra replicate the page tables and leave the data interleaved,
-which is what SPaRe does under `repl-pt`; `repl` replicates the data too.
+`interleave` run set and a `repl` one, plus a `repl-pt` one for SPARe.
+Mitosis and Hydra replicate the page tables and leave the data interleaved.
+SPARe's `repl-pt` keeps the page tables local; `repl` replicates the data too.
 
 This reads the jsonl files, writes the per run CSV the stats pipeline slices
 on, and plots the three kernels side by side.
@@ -25,22 +25,30 @@ RESULT_DIR = config.RESULT_DIR
 # jsonl file suffix, in plot order
 KERNELS = ["spare", "mitosis", "hydra"]
 KERNELS = ["mitosis", "hydra", "spare"]
-KERNEL_LABELS = {"spare": "SPaRe", "mitosis": "Mitosis", "hydra": "Hydra"}
+KERNEL_LABELS = {"spare": "SPARe", "mitosis": "Mitosis", "hydra": "Hydra"}
 
-# two bars per kernel: interleaved, then its replicated run. For SPaRe that
-# replicates the whole mapping (page tables + data); for Mitosis/Hydra it's
-# the page tables only, hence a different hatch for the second bar
-TAGS = ["interleave", "repl"]
+# bars per kernel, in plot order
+TAGS = {
+    "spare": ["interleave", "repl-pt", "repl"],
+    "mitosis": ["interleave", "repl"],
+    "hydra": ["interleave", "repl"],
+}
 HATCH_DATA = "O"
 HATCH_PT = "/"
+HATCH_PINNED_PT = "\\"
 HATCH_COLOR = "0.9"
-REPL_HATCH = {"spare": HATCH_DATA, "mitosis": HATCH_PT, "hydra": HATCH_PT}
+BAR_HATCH = {
+    ("spare", "repl-pt"): HATCH_PINNED_PT,
+    ("spare", "repl"): HATCH_DATA,
+    ("mitosis", "repl"): HATCH_PT,
+    ("hydra", "repl"): HATCH_PT,
+}
 
 SIZE = "1G"
 BENCHMARK = "pgtable_1G"
 
-# one column of the paper wide, minimal height for 3 groups of 2 bars
-FIGSIZE = (3.3, 0.66)
+# one column of the paper wide, minimal height for the 7 bars
+FIGSIZE = (3.3, 0.77)
 
 # one ramp per kernel so the three stay apart at a glance
 KERNEL_RAMPS = {
@@ -53,7 +61,7 @@ KERNEL_RAMPS = {
 def _kernel_color(kernel: str, tag: str):
     """One hue per kernel, darker for the replicated bar."""
     ramp = sns.color_palette(KERNEL_RAMPS[kernel], n_colors=9)
-    return {"interleave": ramp[3], "repl": ramp[7]}[tag]
+    return {"interleave": ramp[3], "repl-pt": ramp[5], "repl": ramp[7]}[tag]
 
 
 # --- Data loading ---
@@ -72,7 +80,7 @@ def _read_jsonl(path: str, kernel: str) -> list:
                 print(f"Skipping {path}:{lineno}: {e}")
                 continue
 
-            # older files carry 768m and 4G run sets too
+            # older files carry other sizes
             if record.get("size") != SIZE:
                 continue
 
@@ -143,7 +151,7 @@ def plot_pgtable(arch: str, table: pd.DataFrame):
     y = 0
     for kernel in KERNELS:
         start = y
-        for tag in TAGS:
+        for tag in TAGS[kernel]:
             if (kernel, tag) in table.index:
                 bars.append((y, kernel, tag))
                 y += bar_step
@@ -171,7 +179,7 @@ def plot_pgtable(arch: str, table: pd.DataFrame):
     )
     for patch, (_, kernel, tag) in zip(patches, bars):
         if tag != "interleave":
-            patch.set_hatch(REPL_HATCH[kernel])
+            patch.set_hatch(BAR_HATCH[(kernel, tag)])
             patch.set_edgecolor(HATCH_COLOR)
             patch.set_linewidth(0)
 
@@ -193,8 +201,10 @@ def plot_pgtable(arch: str, table: pd.DataFrame):
     sns.despine(ax=ax)
     ax.set_yticks(ticks)
     ax.set_yticklabels(ticklabels, fontsize=6)
-    ax.tick_params(axis="x", labelsize=6, length=2)
-    ax.tick_params(axis="y", length=0)
+    ax.tick_params(axis="x", labelsize=6, length=2, width=1.0)
+    ax.tick_params(axis="y", length=2, width=1.0)
+    for side in ("bottom", "left"):
+        ax.spines[side].set_linewidth(1.0)
     ax.set_xlim(0, max(values) * 1.25)
     ax.invert_yaxis()
 
@@ -216,6 +226,13 @@ def plot_pgtable(arch: str, table: pd.DataFrame):
             facecolor="gray",
             edgecolor=HATCH_COLOR,
             linewidth=0,
+            hatch=HATCH_PINNED_PT + HATCH_PINNED_PT,
+            label="Pinned PT",
+        ),
+        Patch(
+            facecolor="gray",
+            edgecolor=HATCH_COLOR,
+            linewidth=0,
             hatch=HATCH_DATA,
             label="Replicated data",
         ),
@@ -232,12 +249,14 @@ def plot_pgtable(arch: str, table: pd.DataFrame):
         labelspacing=0.3,
     )
     fig.tight_layout(pad=0)
-    path = os.path.join(
-        config.PLOT_DIR_FIO, f"{config.ARCH_SUBNAMES[arch]}_fio_pgtable.pdf"
-    )
-    plt.savefig(path, bbox_inches="tight", pad_inches=0, dpi=300)
+    for ext in ("pdf", "svg"):
+        path = os.path.join(
+            config.PLOT_DIR_FIO,
+            f"{config.ARCH_SUBNAMES[arch]}_fio_pgtable.{ext}",
+        )
+        plt.savefig(path, bbox_inches="tight", pad_inches=0, dpi=300)
+        print(f"[OK] {path}")
     plt.close(fig)
-    print(f"[OK] {path}")
 
 
 def make_plot_fio_pgtable():

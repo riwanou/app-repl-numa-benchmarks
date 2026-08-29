@@ -1,5 +1,5 @@
 import os
-from config import sh, RESULT_DIR_MICROBENCH
+from config import sh, RESULT_DIR_MICROBENCH, RESULT_DIR_PGTABLE_SYNC
 
 BENCH_PGTABLE = "microbench/bench_pgtable"
 BENCH_ALLOC = "microbench/bench_alloc"
@@ -98,3 +98,34 @@ def run_bench_mem(method: str):
             sh(
                 f"{run_bench(BENCH_MEM, method, nthreads, repl_enabled=True, mmap_main_alloc=True)}"
             )
+
+
+# in pages: one, four, eight
+CHUNK_SIZES_KB = [4, 16, 32]
+
+
+def run_bench_pgtable_sync_chunk(variant: str, chunk_kb: int, nnodes: int | None = None):
+    """One (variant, chunk size, nnodes). nnodes unset means every node."""
+    result_dir = RESULT_DIR_PGTABLE_SYNC
+    if chunk_kb != CHUNK_SIZES_KB[0]:
+        result_dir = os.path.join(RESULT_DIR_PGTABLE_SYNC, f"{chunk_kb}kb_chunks")
+    prepare_dirs(result_dir)
+    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
+
+    repl_enabled = variant == "on"
+    nnodes_env = f"NNODES={nnodes} " if nnodes else ""
+    cmd = (
+        f"CSV_DIR={result_dir} SYNC=1 VARIANT={variant} CHUNK_KB={chunk_kb} "
+        f"{nnodes_env}REPLICATION={'1' if repl_enabled else '0'} ./{BENCH_PGTABLE} mmap"
+    )
+    sh(run_repl(cmd) if repl_enabled else cmd)
+
+
+def run_bench_pgtable_sync(variant: str):
+    """Every chunk size, for one variant; "on" also sweeps 1..num_nodes-1."""
+    num_nodes = get_numa_nodes()
+    for chunk_kb in CHUNK_SIZES_KB:
+        run_bench_pgtable_sync_chunk(variant, chunk_kb)
+        if variant == "on":
+            for nnodes in range(1, num_nodes):
+                run_bench_pgtable_sync_chunk(variant, chunk_kb, nnodes=nnodes)
