@@ -40,7 +40,7 @@ PLAN_4 = [
 
 PLAN_2 = [
     Phase("normal", "max", 60),
-    Phase("4G", "4G", 60),
+    Phase("3.5G", "3500M", 60),
     Phase("3G", "3G", 60),
     Phase("2.5G", "2560M", 60),
     Phase("release", "max", 60),
