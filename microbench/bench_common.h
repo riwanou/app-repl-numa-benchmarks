@@ -36,6 +36,7 @@ int use_madvise = 0;
 unsigned int nthreads = 0;
 unsigned int nprocs = 0;
 unsigned int nsockets = 0;
+unsigned int active_nodes = 0;
 
 void print_help(const char *progname) {
   fprintf(stderr, "Usage: %s <mmap|madvise|none> [num_threads]\n", progname);
@@ -83,6 +84,17 @@ void init_platform_parse_args(int argc, char *argv[]) {
 
 void common_init(int argc, char **argv) {
   init_platform_parse_args(argc, argv);
+
+  /* NNODES: how many NUMA nodes get worker threads; unset means every node. */
+  char *nnodes_env = getenv("NNODES");
+  active_nodes = nnodes_env ? (unsigned int)atoi(nnodes_env) : nsockets;
+  if (active_nodes < 1)
+    active_nodes = 1;
+  if (active_nodes > nsockets)
+    active_nodes = nsockets;
+  if (nnodes_env)
+    nthreads = active_nodes * (nprocs / nsockets);
+
   pthread_barrier_init(&barrier, NULL, nthreads);
   size = ARRAY_NB_ENTRIES * sizeof(int);
 

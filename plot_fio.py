@@ -37,17 +37,24 @@ jsonl_pattern = re.compile(
 # tag (as written by bench_fio.run_one) -> legend label and (palette, index),
 # ordered left to right. "linux" is the Oranges ramp, "spare" the Blues one.
 SERIES = [
-    ("default", "Vanilla", ("linux", 1)),
-    ("numabalancing", "NumaBalancing", ("linux", 3)),
-    ("interleaved", "Interleaved", ("linux", 5)),
-    ("repl", "SPaRe (No Unreplication)", ("spare", 3)),
-    ("unrepl-bound", "SPaRe (Main Bound)", ("spare", 5)),
-    ("unrepl-firsttouch", "SPaRe (Main First Touch)", ("spare", 7)),
-    ("unrepl-interleaved", "SPaRe (Main Interleaved)", ("spare", 8)),
+    ("numabalancing", "Linux Vanilla", ("linux", 3)),
+    ("interleaved", "Interleave", ("linux", 5)),
+    ("repl", "SPARe (No Unreplication)", ("spare", 3)),
+    ("unrepl-bound", "SPARe (Unreplication)", ("spare", 5)),
+    # I forgot to rename interleaved in bench, but its dynamic policy
+    (
+        "unrepl-interleaved",
+        "SPARe (Unrepl. + Dynamic Policy)",
+        ("spare", 8),
+    ),
 ]
 
 # tags used by the older per-run .json result files
 LEGACY_TAGS = {"": "numabalancing", "unrepl": "unrepl-bound"}
+
+# fio divides the group's bytes by one job's 30s runtime, which over-reports
+# up to 1.8x when the jobs stagger. Divide by wall_seconds() instead.
+USE_WALL_BW = True
 
 
 def make_plot_fio():
@@ -67,25 +74,7 @@ def make_plot_fio_arch(arch):
         print(f"No random fio data for {arch}, skipping.")
         return
 
-    agg_df = (
-        combined_df.groupby(["tag", "readratio", "writeratio", "benchmark"])
-        .agg(
-            read_bw_gb=("read_bw_gb", "mean"),
-            write_bw_gb=("write_bw_gb", "mean"),
-            read_bw_std=("read_bw_gb", "std"),  # std across runs
-            write_bw_std=("write_bw_gb", "std"),  # std across runs
-            nb_runs=("run", "count"),
-        )
-        .reset_index()
-    )
-    # std is NaN for a single run; matplotlib wants a number for yerr
-    agg_df[["read_bw_std", "write_bw_std"]] = agg_df[
-        ["read_bw_std", "write_bw_std"]
-    ].fillna(0)
-    agg_df["readratio"] = agg_df["readratio"].astype(int)
-    agg_df = agg_df.sort_values(
-        by=["readratio", "tag"], ascending=[False, True]
-    ).reset_index(drop=True)
+    agg_df = aggregate(combined_df)
 
     combined_df["readratio"] = combined_df["readratio"].astype(int)
     combined_df = combined_df.sort_values(
@@ -96,12 +85,15 @@ def make_plot_fio_arch(arch):
     combined_df.to_csv(os.path.join(result_dir, "details.csv"), index=False)
     agg_df.to_csv(os.path.join(result_dir, "agg.csv"), index=False)
 
+    read_col = "read_bw_wall" if USE_WALL_BW else "read_bw"
+    write_col = "write_bw_wall" if USE_WALL_BW else "write_bw"
+
     plot_fio(
         arch,
         "read",
         agg_df,
-        value_col="read_bw_gb",
-        std_col="read_bw_std",
+        value_col=f"{read_col}_gb",
+        std_col=f"{read_col}_std",
         ylabel="$\mathbf{Read}$ Bandwidth (GB/s)",
         is_write=False,
     )
@@ -109,15 +101,57 @@ def make_plot_fio_arch(arch):
         arch,
         "write",
         agg_df,
-        value_col="write_bw_gb",
-        std_col="write_bw_std",
+        value_col=f"{write_col}_gb",
+        std_col=f"{write_col}_std",
         ylabel="$\mathbf{Write}$ Bandwidth (GB/s)",
         is_write=True,
     )
 
 
+def aggregate(df: pd.DataFrame) -> pd.DataFrame:
+    """Mean and std across the runs of each (tag, ratio, benchmark)."""
+    agg_df = (
+        df.groupby(["tag", "readratio", "writeratio", "benchmark"])
+        .agg(
+            read_bw_gb=("read_bw_gb", "mean"),
+            write_bw_gb=("write_bw_gb", "mean"),
+            read_bw_std=("read_bw_gb", "std"),  # std across runs
+            write_bw_std=("write_bw_gb", "std"),  # std across runs
+            read_bw_wall_gb=("read_bw_wall_gb", "mean"),
+            write_bw_wall_gb=("write_bw_wall_gb", "mean"),
+            read_bw_wall_std=("read_bw_wall_gb", "std"),
+            write_bw_wall_std=("write_bw_wall_gb", "std"),
+            wall_s=("wall_s", "mean"),
+            nb_runs=("run", "count"),
+        )
+        .reset_index()
+    )
+    # std is NaN for a single run; matplotlib wants a number for yerr
+    std_cols = [
+        "read_bw_std",
+        "write_bw_std",
+        "read_bw_wall_std",
+        "write_bw_wall_std",
+    ]
+    agg_df[std_cols] = agg_df[std_cols].fillna(0)
+    agg_df["readratio"] = agg_df["readratio"].astype(int)
+    return agg_df.sort_values(
+        by=["readratio", "tag"], ascending=[False, True]
+    ).reset_index(drop=True)
+
+
+def wall_seconds(json_data) -> float:
+    """Span the jobs really covered: elapsed, less the 20s ramp and 1s of
+    setup. 30s when they run aligned, more when they stagger."""
+    jobs = json_data.get("jobs", [])
+    if not jobs:
+        return 0.0
+    return max(jobs[0].get("elapsed", 0) - 21, 30.0)
+
+
 def bw_from_fio_output(json_data) -> dict:
     """Sum the bandwidth of every job group in one fio json output."""
+    read_bytes = write_bytes = 0
     read_bw = write_bw = 0.0
     read_bw_mean = read_bw_dev = 0.0
     write_bw_mean = write_bw_dev = 0.0
@@ -129,14 +163,23 @@ def bw_from_fio_output(json_data) -> dict:
         read_bw += read_stats.get("bw_bytes", 0) / (1000**3)
         write_bw += write_stats.get("bw_bytes", 0) / (1000**3)
 
+        read_bytes += read_stats.get("io_bytes", 0)
+        write_bytes += write_stats.get("io_bytes", 0)
+
         read_bw_mean += read_stats.get("bw_mean", 0) / (1000**2)
         read_bw_dev += read_stats.get("bw_dev", 0) / (1000**2)
         write_bw_mean += write_stats.get("bw_mean", 0) / (1000**2)
         write_bw_dev += write_stats.get("bw_dev", 0) / (1000**2)
 
+    wall = wall_seconds(json_data)
+
     return {
         "read_bw_gb": read_bw,
         "write_bw_gb": write_bw,
+        # same bytes, divided by the real window every job ran in
+        "read_bw_wall_gb": read_bytes / wall / (1000**3) if wall > 0 else 0,
+        "write_bw_wall_gb": write_bytes / wall / (1000**3) if wall > 0 else 0,
+        "wall_s": wall,
         "read_bw_std": read_bw_dev,
         "write_bw_std": write_bw_dev,
         "read_bw_std_pct": (read_bw_dev / read_bw_mean) * 100
@@ -318,20 +361,22 @@ def plot_fio(arch, title, df_param, value_col, std_col, ylabel, is_write=False):
     for i, (values, stds, label, color) in enumerate(series):
         pos = x + (i - (len(series) - 1) / 2) * width
         ax.bar(
-            pos, values, width, yerr=stds,
-            error_kw=error_kw, capsize=capsize, label=label,
-            color=color, edgecolor=color, linewidth=0.3, zorder=2,
+            pos,
+            values,
+            width,
+            yerr=stds,
+            error_kw=error_kw,
+            capsize=capsize,
+            label=label,
+            color=color,
+            edgecolor=color,
+            linewidth=0.3,
+            zorder=2,
         )
 
-    # ax.grid(
-    #     axis="y",
-    #     which="major",
-    #     linestyle="--",
-    #     linewidth=0.4,
-    #     color="gray",
-    #     alpha=0.3,
-    #     zorder=1,
-    # )
+    # faint dotted rules at each tick, like the pressure plot
+    ax.set_axisbelow(True)
+    ax.grid(axis="y", ls=":", lw=0.4, color="0.85", zorder=0)
 
     sns.despine(ax=ax)
 
@@ -353,6 +398,9 @@ def plot_fio(arch, title, df_param, value_col, std_col, ylabel, is_write=False):
         ncol=1,
         framealpha=0.8,
         edgecolor="none",
+        handlelength=1.2,
+        handletextpad=0.4,
+        borderaxespad=0.3,
     )
 
     fig.tight_layout()

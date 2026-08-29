@@ -1,80 +1,80 @@
 == pg_stats @ normal end
--- pid 207188
-range 0x7f0000000000-0x7f8000000000 | main node 0
-node 0(main): locality=1.0 ptes=492.95K mapped=492.95K rdprot=0     wrprot=492.95K unrepl=0     remotemain=0     [ n0=492.95K(local) n1=0            ]
-node 1      : locality=1.0 ptes=492.94K mapped=492.94K rdprot=0     wrprot=492.94K unrepl=0     remotemain=0     [ n0=0             n1=492.94K(local)]
+-- pid 551525
+range 0x7d8000000000-0x7e0000000000 | main node 1
+node 0      : locality=1.0 ptes=492.92K mapped=492.92K rdprot=0     wrprot=492.92K unrepl=0     remotemain=0     [ n0=492.92K(local) n1=0            ]
+node 1(main): locality=1.0 ptes=492.92K mapped=492.92K rdprot=0     wrprot=492.92K unrepl=0     remotemain=0     [ n0=0             n1=492.92K(local)]
 cross-node sharing:
-  node 0: local=492.95K unique=492.95K shared: n1=0    
-  node 1: local=492.94K unique=492.94K shared: n0=0    
+  node 0: local=492.92K unique=492.92K shared: n1=0    
+  node 1: local=492.92K unique=492.92K shared: n0=0    
 page tables:
   node 0: root=n0 locality=100.0 tables=990    [ n0=990   (local) n1=0            ]
   node 1: root=n1 locality=100.0 tables=990    [ n0=0             n1=990   (local)]
-== pg_stats @ 4G end
--- pid 207188
-range 0x7f0000000000-0x7f8000000000 | main node 0
-node 0(main): locality=1.0 ptes=492.95K mapped=492.95K rdprot=0     wrprot=492.95K unrepl=0     remotemain=0     [ n0=492.95K(local) n1=0            ]
-node 1      : locality=0.9 ptes=492.47K mapped=492.47K rdprot=0     wrprot=492.47K unrepl=0     remotemain=0     [ n0=39.86K        n1=452.61K(local)]
+== pg_stats @ 3.5G end
+-- pid 551525
+range 0x7d8000000000-0x7e0000000000 | main node 1
+node 0      : locality=0.5 ptes=492.44K mapped=492.44K rdprot=0     wrprot=492.44K unrepl=0     remotemain=0     [ n0=256.00K(local) n1=236.44K       ]
+node 1(main): locality=1.0 ptes=492.45K mapped=492.45K rdprot=0     wrprot=492.45K unrepl=0     remotemain=0     [ n0=0             n1=492.45K(local)]
 cross-node sharing:
-  node 0: local=492.95K unique=453.09K shared: n1=39.86K
-  node 1: local=452.61K unique=452.61K shared: n0=39.86K
+  node 0: local=256.00K unique=256.00K shared: n1=236.44K
+  node 1: local=492.45K unique=256.01K shared: n0=236.44K
 page tables:
   node 0: root=n0 locality=100.0 tables=990    [ n0=990   (local) n1=0            ]
   node 1: root=n1 locality=100.0 tables=990    [ n0=0             n1=990   (local)]
 == pg_stats @ 3G end
--- pid 207188
-range 0x7f0000000000-0x7f8000000000 | main node 0
-node 0(main): locality=1.0 ptes=492.47K mapped=492.47K rdprot=0     wrprot=492.47K unrepl=0     remotemain=0     [ n0=492.47K(local) n1=0            ]
-node 1      : locality=0.3 ptes=492.47K mapped=492.47K rdprot=0     wrprot=492.47K unrepl=0     remotemain=0     [ n0=306.66K        n1=185.80K(local)]
+-- pid 551525
+range 0x7d8000000000-0x7e0000000000 | main node 1
+node 0      : locality=0.4 ptes=492.45K mapped=492.45K rdprot=0     wrprot=492.45K unrepl=0     remotemain=0     [ n0=207.05K(local) n1=285.39K       ]
+node 1(main): locality=1.0 ptes=492.45K mapped=492.45K rdprot=0     wrprot=492.45K unrepl=0     remotemain=0     [ n0=0             n1=492.45K(local)]
 cross-node sharing:
-  node 0: local=492.47K unique=185.80K shared: n1=306.66K
-  node 1: local=185.80K unique=185.80K shared: n0=306.66K
+  node 0: local=207.05K unique=207.05K shared: n1=285.39K
+  node 1: local=492.45K unique=207.05K shared: n0=285.39K
 page tables:
   node 0: root=n0 locality=100.0 tables=990    [ n0=990   (local) n1=0            ]
   node 1: root=n1 locality=100.0 tables=990    [ n0=0             n1=990   (local)]
 == pg_stats @ 2.5G end
--- pid 207188
-range 0x7f0000000000-0x7f8000000000 | main node 0
-node 0(main): locality=1.0 ptes=492.47K mapped=492.47K rdprot=0     wrprot=492.47K unrepl=0     remotemain=0     [ n0=492.47K(local) n1=0            ]
-node 1      : locality=0.1 ptes=492.47K mapped=492.47K rdprot=0     wrprot=492.47K unrepl=0     remotemain=0     [ n0=407.84K        n1=84.63K(local)]
+-- pid 551525
+range 0x7d8000000000-0x7e0000000000 | main node 1
+node 0      : locality=0.1 ptes=492.37K mapped=492.37K rdprot=0     wrprot=492.37K unrepl=0     remotemain=0     [ n0=86.80K(local) n1=405.57K       ]
+node 1(main): locality=1.0 ptes=492.45K mapped=492.45K rdprot=0     wrprot=492.45K unrepl=0     remotemain=0     [ n0=0             n1=492.45K(local)]
 cross-node sharing:
-  node 0: local=492.47K unique=84.63K shared: n1=407.84K
-  node 1: local=84.63K unique=84.63K shared: n0=407.84K
+  node 0: local=86.80K unique=86.80K shared: n1=405.57K
+  node 1: local=492.45K unique=86.87K shared: n0=405.57K
 page tables:
   node 0: root=n0 locality=100.0 tables=990    [ n0=990   (local) n1=0            ]
   node 1: root=n1 locality=100.0 tables=990    [ n0=0             n1=990   (local)]
 == pg_stats @ release end
--- pid 207188
-range 0x7f0000000000-0x7f8000000000 | main node 0
-node 0(main): locality=1.0 ptes=492.47K mapped=492.47K rdprot=0     wrprot=492.47K unrepl=0     remotemain=0     [ n0=492.47K(local) n1=0            ]
-node 1      : locality=1.0 ptes=492.47K mapped=492.47K rdprot=0     wrprot=492.47K unrepl=0     remotemain=0     [ n0=0             n1=492.47K(local)]
+-- pid 551525
+range 0x7d8000000000-0x7e0000000000 | main node 1
+node 0      : locality=1.0 ptes=492.43K mapped=492.43K rdprot=0     wrprot=492.43K unrepl=0     remotemain=0     [ n0=492.43K(local) n1=0            ]
+node 1(main): locality=1.0 ptes=492.45K mapped=492.45K rdprot=0     wrprot=492.45K unrepl=0     remotemain=0     [ n0=0             n1=492.45K(local)]
 cross-node sharing:
-  node 0: local=492.47K unique=492.47K shared: n1=0    
-  node 1: local=492.47K unique=492.47K shared: n0=0    
+  node 0: local=492.43K unique=492.43K shared: n1=0    
+  node 1: local=492.45K unique=492.45K shared: n0=0    
 page tables:
   node 0: root=n0 locality=100.0 tables=990    [ n0=990   (local) n1=0            ]
   node 1: root=n1 locality=100.0 tables=990    [ n0=0             n1=990   (local)]
 == cgroup summary
 low 0
-high 3852
+high 3340
 max 0
 oom 0
 oom_kill 0
 oom_group_kill 0
-peak 4444000256
+peak 4444352512
 == repl stats
-repl_fail_events 737818
+repl_fail_events 556220
 repl_lock_main_lost 0
 repl_pg_private_alloc 0
 repl_pg_private_free 0
-repl_pte_miss_events 2736252
+repl_pte_miss_events 2320178
 repl_rdprotect_handled 0
-repl_reclaimed 278179
-repl_reclaimed_replicas 460055
-repl_remote_faults_on_main 483409
-repl_repl_allocated 986021
-repl_repl_copy_events 986021
-repl_skipped_pressure 445795
-repl_tlb_flushed 2696016
-repl_total_faults 3176032
+repl_reclaimed 97388
+repl_reclaimed_replicas 367592
+repl_remote_faults_on_main 455615
+repl_repl_allocated 920131
+repl_repl_copy_events 920131
+repl_skipped_pressure 443769
+repl_tlb_flushed 2381419
+repl_total_faults 2731439
 repl_unreplicated 0
 repl_writes_to_replicated 0

@@ -7,9 +7,22 @@ counters that explain them underneath, all cut on the same phase windows.
 import os
 import re
 
+import matplotlib
+
+# headless, and pinned rather than left to the default: the rounded phase
+# band in plot_qps precomputes its position in display pixels, and macOS's
+# native backend applies a Retina pixel-ratio scale Agg does not, throwing
+# that precomputed position off
+matplotlib.use("Agg")
+
+import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
+import matplotlib.transforms as mtransforms
 import pandas as pd
 import seaborn as sns
+from matplotlib.legend_handler import HandlerTuple
+from matplotlib.lines import Line2D
+from matplotlib.ticker import MultipleLocator
 
 import config
 
@@ -21,7 +34,27 @@ RESULT_DIR = config.RESULT_DIR
 STOCK = ["firsttouch", "interleaved", "numa-balancing"]
 REPL = ["repl-bound", "repl-firsttouch", "repl-interleaved", "repl-dynamic"]
 
-BAND = "#e8e8e8"  # phase shading, alternating
+# legend names, the variant tag itself when absent
+VARIANT_LABELS = {
+    "firsttouch": "First Touch",
+    "interleaved": "Interleave",
+    "numa-balancing": "Linux Vanilla",
+    "repl-bound": "SPARe (First Touch)",
+    "repl-firsttouch": "SPARe (First Touch)",
+    "repl-interleaved": "SPARe (Interleave)",
+    "repl-dynamic": "SPARe (Dynamic)",
+}
+
+# an interleaved variant is drawn as its twin's color, dashed
+INTERLEAVED_TWIN = {
+    "interleaved": "firsttouch",
+    "repl-interleaved": "repl-bound",
+}
+BALANCING_COLOR = "#7a4fa3"
+VANILLA_COLOR = "#FBBC04"  # vanilla and its dashed interleaved twin
+DYNAMIC_COLOR = "#EA4335"  # gold: the one hue no other figure uses
+
+BAND = "#f8f8f8"  # phase shading, alternating
 
 # counters are read every 0.5s, so ~2s of samples: enough to average out the
 # scan bursts without hiding a phase transition
@@ -29,7 +62,166 @@ EVENT_WINDOW = 4
 
 # summary reports steady state: skip this much of each phase, the rest is
 # the reclaim transient rather than what the limit costs
-STEADY_FROM = 2 / 3
+STEADY_FROM = 1 / 2
+
+QPS_FIGSIZE = (12, 4.2)
+QPS_FONTSIZE = 17  # legend
+QPS_PHASE_FONTSIZE = 18  # phase labels, bold so a bit under the ticks
+QPS_TICK_FONTSIZE = 19  # axis numbers, x and y alike
+QPS_AXIS_LABEL_FONTSIZE = 20  # "time (s)" / "QPS"
+QPS_TICK_WIDTH = 2.0
+QPS_SPINE_WIDTH = QPS_TICK_WIDTH
+QPS_BAND_TOP = 1.1  # phase shading top, in axes fraction, to cover the label
+QPS_BAND_RADIUS = 6  # phase shading corner radius, in points
+QPS_LINEWIDTH = 2.1
+
+
+def plot_qps(arch: str, variants: list[str]):
+    """QPS over time, every variant on one axis. Kept separate from
+    plot_metric: this is the one that goes in the paper, so its style is
+    tuned by hand rather than shared with the debug plots.
+
+    repl-firsttouch is left out, it sits on top of repl-bound.
+    """
+    variants = [v for v in variants if v != "repl-firsttouch"]
+
+    fig, ax = plt.subplots(figsize=QPS_FIGSIZE, dpi=150)
+    band = None
+    x_max = 0
+    handles, labels = [], []
+    for variant in variants:
+        ph = phases(arch, variant)
+        band = band if band is not None else ph
+        t0 = ph.start_time.iloc[0]
+        df = pd.read_csv(
+            f"{base(arch, variant)}-ann.csv", parse_dates=["start_time"]
+        ).dropna(subset=["phase"])
+        df["elapsed"] = (df.start_time - t0).dt.total_seconds()
+        df = df.sort_values("elapsed")
+        x, y = df.elapsed, df.qps.rolling(5, center=True).median()
+        x_max = max(x_max, x.max())
+        (line,) = ax.plot(
+            x,
+            y,
+            lw=QPS_LINEWIDTH,
+            color=variant_color(variant),
+            ls=variant_style(variant),
+        )
+        handles.append(line)
+        labels.append(variant_label(variant))
+
+    ax.set_xlabel("time (s)", fontsize=QPS_AXIS_LABEL_FONTSIZE)
+    ax.set_ylabel("QPS", fontsize=QPS_AXIS_LABEL_FONTSIZE, labelpad=1)
+    ax.set_xlim(left=0, right=x_max + 1)
+    # headroom, so the phase labels do not sit on top of the curves
+    ax.set_ylim(bottom=0, top=ax.get_ylim()[1] * 1.12)
+    ax.xaxis.set_major_locator(MultipleLocator(60))
+    ax.tick_params(
+        axis="both", labelsize=QPS_TICK_FONTSIZE, length=4, width=QPS_TICK_WIDTH
+    )
+    # faint dotted rules at each QPS tick, to read a level off the curves
+    ax.set_axisbelow(True)
+    ax.grid(axis="y", ls=":", lw=0.9, color="0.8", zorder=0)
+    plot_qps_legend(variants)
+    # margins fixed by hand rather than bbox_inches="tight": the rounded
+    # band below is placed in pixels computed before saving, and a "tight"
+    # bbox resizes the canvas at save time, invalidating them
+    fig.subplots_adjust(left=0.095, right=0.99, top=0.9, bottom=0.16)
+    shade_phases(
+        ax,
+        band,
+        label=True,
+        divider=False,
+        band_top=QPS_BAND_TOP,
+        radius=QPS_BAND_RADIUS,
+        label_fontsize=QPS_PHASE_FONTSIZE,
+        label_weight="bold",
+        max_label=MACHINE_RAM.get(short(arch)),
+    )
+
+    # the y-axis already carries the shared origin, so x's own 0 is
+    # redundant; hide just that tick's mark and label rather than dropping
+    # it from the locator, which would let autoscale re-expand the view
+    for tick in ax.xaxis.get_major_ticks():
+        if tick.get_loc() == 0:
+            tick.tick1line.set_visible(False)
+            tick.label1.set_visible(False)
+
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    ax.spines["bottom"].set_linewidth(QPS_SPINE_WIDTH)
+    # the real left spine stops at the axes box; redraw it up to the top of
+    # the phase band so it doesn't fall short of the gray rectangle. It stops
+    # on the bottom spine, with a projecting cap: that extends it by exactly
+    # half a linewidth, squaring off the corner instead of overshooting it
+    ax.spines["left"].set_visible(False)
+    ax.plot(
+        [0, 0],
+        [0, QPS_BAND_TOP],
+        transform=ax.transAxes,
+        color="black",
+        lw=QPS_SPINE_WIDTH,
+        clip_on=False,
+        zorder=10,
+        solid_capstyle="projecting",
+    )
+
+    os.makedirs(config.PLOT_DIR_PRESSURE, exist_ok=True)
+    os.makedirs(config.PLOT_DIR_PRESSURE_DETAILS, exist_ok=True)
+    # only the pdf is the paper figure, the svg is a working copy
+    for ext, out_dir in (
+        ("pdf", config.PLOT_DIR_PRESSURE),
+        ("svg", config.PLOT_DIR_PRESSURE_DETAILS),
+    ):
+        out = os.path.join(out_dir, f"{short(arch)}_qps.{ext}")
+        fig.savefig(out, dpi=150)
+        print(f"[OK] {out}")
+    plt.close(fig)
+
+
+def plot_qps_legend(variants: list[str]):
+    """Its own file, so the two arch figures can share one legend."""
+    fig = plt.figure(figsize=(9, 0.9))
+
+    def entry(variant):
+        line = Line2D(
+            [],
+            [],
+            lw=QPS_LINEWIDTH,
+            color=variant_color(variant),
+            ls=variant_style(variant),
+        )
+        return line, variant_label(variant)
+
+    # baselines on the first row, SPARe on the second: the legend fills
+    # column by column, so the two rows are zipped together here
+    rows = [
+        [v for v in variants if v in STOCK],
+        [v for v in variants if v in REPL],
+    ]
+    handles, labels = [], []
+    for pair in zip(*rows):
+        for variant in pair:
+            handle, label = entry(variant)
+            handles.append(handle)
+            labels.append(label)
+
+    fig.legend(
+        handles,
+        labels,
+        handler_map={tuple: HandlerTuple(ndivide=1)},
+        loc="center",
+        fontsize=QPS_FONTSIZE,
+        ncol=len(rows[0]),
+        columnspacing=1.5,
+        handlelength=1.6,
+        frameon=False,
+    )
+    os.makedirs(config.PLOT_DIR_PRESSURE, exist_ok=True)
+    out = os.path.join(config.PLOT_DIR_PRESSURE, "qps_legend.pdf")
+    fig.savefig(out, bbox_inches="tight", pad_inches=0.02, dpi=150)
+    plt.close(fig)
+    print(f"[OK] {out}")
 
 
 def base(arch: str, variant: str) -> str:
@@ -125,6 +317,9 @@ def read_sched_events(arch: str, variant: str, t0, t1) -> pd.DataFrame:
     df["t"] = anchor + pd.to_timedelta(
         pd.to_numeric(df.offset, errors="coerce"), unit="s"
     )
+    # the same file carries the PMU counters (CPU_CLK_UNHALTED, CYCLE_ACTIVITY,
+    # MEM_LOAD_*): a different family, and not what this panel is about
+    df = df[df.event.str.startswith("sched:", na=False)]
     df = df[(df.t >= t0) & (df.t <= t1)].copy()
     df["elapsed"] = (df.t - t0).dt.total_seconds()
     df["count"] = pd.to_numeric(df["count"], errors="coerce")
@@ -188,6 +383,18 @@ def read_coverage(arch: str, variant: str) -> pd.DataFrame:
     return df
 
 
+# the M limits we run, spelled the way their phase labels spell them
+LIMIT_NAMES = {"4500M": "4.5G", "3500M": "3.5G", "2560M": "2.5G"}
+
+# no memory.high at all: the phase label names what the machine actually has
+MACHINE_RAM = {"silver": "384G", "gold": "768G"}
+
+
+def _display_limit(limit: str) -> str:
+    """memory.high values in M read as GB, e.g. "2560M" -> "2.5G"."""
+    return LIMIT_NAMES.get(limit, limit)
+
+
 def fits_pct(limit: str, full_gb: float) -> str:
     """How much of a fully replicated footprint this limit still allows."""
     if limit == "max" or not full_gb:
@@ -196,22 +403,78 @@ def fits_pct(limit: str, full_gb: float) -> str:
     return f"{min(100, gb / full_gb * 100):.0f}%"
 
 
-def shade_phases(ax, ph, label: bool = False, full_gb: float = 0):
+def shade_phases(
+    ax,
+    ph,
+    label: bool = False,
+    full_gb: float = 0,
+    divider: bool = True,
+    band_top: float = 1.0,
+    radius: float = 0,
+    label_fontsize: float = 8,
+    label_one_line: bool = False,
+    label_weight: str = "normal",
+    max_label: str | None = None,
+):
+    # x in data seconds, y in axes fraction: those two units cover very
+    # different physical distances, so a uniform rounding_size on a patch
+    # in that mixed space draws an ellipse, not a round corner. mutation_aspect
+    # corrects for it, computed from figure/subplot geometry alone (inches
+    # and the data xlim) rather than rendered pixels, so it comes out the
+    # same in a vector PDF/SVG as in a raster PNG.
+    if radius:
+        ax.figure.canvas.draw()  # settles autoscale, so xlim below is final
+        pos = ax.get_position()
+        axes_w_in = pos.width * ax.figure.get_figwidth()
+        axes_h_in = pos.height * ax.figure.get_figheight()
+        xlim = ax.get_xlim()
+        scale_x = axes_w_in / (xlim[1] - xlim[0])  # inches per data-second
+        mutation_aspect = scale_x / axes_h_in
+        rounding_size = (radius / 72) / scale_x  # radius in points -> seconds
+    blended = mtransforms.blended_transform_factory(ax.transData, ax.transAxes)
     for i, row in ph.iterrows():
         if i % 2:
-            ax.axvspan(row.start_s, row.end_s, color=BAND, zorder=0)
-        ax.axvline(row.start_s, color="0.6", lw=0.6, zorder=1)
+            if radius:
+                ax.add_patch(
+                    mpatches.FancyBboxPatch(
+                        (row.start_s, 0),
+                        row.end_s - row.start_s,
+                        band_top,
+                        boxstyle=f"round,pad=0,rounding_size={rounding_size}",
+                        mutation_aspect=mutation_aspect,
+                        transform=blended,
+                        facecolor=BAND,
+                        edgecolor="none",
+                        clip_on=False,
+                        zorder=0,
+                    )
+                )
+            else:
+                ax.axvspan(
+                    row.start_s,
+                    row.end_s,
+                    ymax=band_top,
+                    color=BAND,
+                    zorder=0,
+                    clip_on=False,
+                )
+        if divider:
+            ax.axvline(row.start_s, color="0.6", lw=0.6, zorder=1)
         if label:
-            text = row.limit
-            if full_gb:
-                text += f"\n{fits_pct(row.limit, full_gb)}"
+            text = _display_limit(row.limit)
+            if row.limit == "max" and max_label:
+                text = max_label
+            pct = fits_pct(row.limit, full_gb) if full_gb else ""
+            if pct:
+                text += f" ({pct})" if label_one_line else f"\n{pct}"
             ax.text(
                 (row.start_s + row.end_s) / 2,
                 1.02,
                 text,
                 transform=ax.get_xaxis_transform(),
                 ha="center",
-                fontsize=8,
+                fontsize=label_fontsize,
+                fontweight=label_weight,
             )
 
 
@@ -413,23 +676,40 @@ def plot_variant(arch: str, variant: str, full_gb: float = 0):
         twin.set_ylabel("% hint faults local (dashed)")
         twin.set_ylim(0, 100)
 
-    os.makedirs(config.PLOT_DIR_PRESSURE, exist_ok=True)
-    out = os.path.join(config.PLOT_DIR_PRESSURE, f"{short(arch)}_{variant}.png")
+    os.makedirs(config.PLOT_DIR_PRESSURE_DETAILS, exist_ok=True)
+    out = os.path.join(
+        config.PLOT_DIR_PRESSURE_DETAILS, f"{short(arch)}_{variant}.png"
+    )
     fig.savefig(out, bbox_inches="tight", dpi=150)
     plt.close(fig)
     print(f"[OK] {out}")
 
 
+def variant_label(variant: str) -> str:
+    return VARIANT_LABELS.get(variant, variant)
+
+
 def variant_color(variant: str):
     """Patched in blues, stock in oranges, same convention as plot_ann.
-    dynamic gets its own hue, a fourth blue is too close to the others."""
+    A variant and its interleaved twin share a color, told apart by the
+    dash; vanilla, balancing and dynamic get a hue each."""
+    if variant == "numa-balancing":
+        return BALANCING_COLOR
     if variant == "repl-dynamic":
-        return "#984ea3"
+        return DYNAMIC_COLOR
+    variant = INTERLEAVED_TWIN.get(variant, variant)
+    if variant == "firsttouch":
+        return VANILLA_COLOR
     stock = sns.color_palette(config.LINUX_COLOR, n_colors=3 + len(STOCK))
     patched = sns.color_palette(config.SPARE_COLOR, n_colors=3 + len(REPL))
     if variant in REPL:
         return patched[3 + REPL.index(variant)]
     return stock[3 + STOCK.index(variant)]
+
+
+def variant_style(variant: str) -> str:
+    """The interleaved twin is the dashed one of its pair."""
+    return "--" if variant in INTERLEAVED_TWIN else "-"
 
 
 def plot_metric(
@@ -464,7 +744,14 @@ def plot_metric(
             df["elapsed"] = (df.start_time - t0).dt.total_seconds()
             df = df.sort_values("elapsed")
             x, y = df.elapsed, df.qps.rolling(5, center=True).median()
-        ax.plot(x, y, lw=1.4, color=color, label=variant)
+        ax.plot(
+            x,
+            y,
+            lw=1.4,
+            color=color,
+            ls=variant_style(variant),
+            label=variant_label(variant),
+        )
 
     ax.set_xlabel("time (s)")
     ax.set_ylabel(
@@ -478,8 +765,10 @@ def plot_metric(
     ax.legend(loc="lower left", fontsize=8, ncol=2)
     shade_phases(ax, band, label=True, full_gb=full_gb)
 
-    os.makedirs(config.PLOT_DIR_PRESSURE, exist_ok=True)
-    out = os.path.join(config.PLOT_DIR_PRESSURE, f"{short(arch)}_{metric}.png")
+    os.makedirs(config.PLOT_DIR_PRESSURE_DETAILS, exist_ok=True)
+    out = os.path.join(
+        config.PLOT_DIR_PRESSURE_DETAILS, f"{short(arch)}_{metric}.png"
+    )
     fig.savefig(out, bbox_inches="tight", dpi=150)
     plt.close(fig)
     print(f"[OK] {out}")
@@ -520,7 +809,7 @@ def plot_summary(arch: str, variants: list[str]):
             [med.get(p, float("nan")) for p in order],
             marker="o",
             color=variant_color(variant),
-            label=variant,
+            label=variant_label(variant),
         )
 
         loc = []
@@ -581,7 +870,7 @@ def plot_summary(arch: str, variants: list[str]):
         ax.set_xticks(range(len(order)))
         ax.set_xticklabels(
             [
-                limit if p == limit else f"{p}\n{limit}"
+                p if p == _display_limit(limit) else f"{p}\n{limit}"
                 for p, limit in zip(order, limits)
             ]
         )
@@ -622,8 +911,10 @@ def plot_summary(arch: str, variants: list[str]):
     ax_cov.set_ylim(0, 105)
     ax_cov.grid(axis="y", alpha=0.3)
 
-    os.makedirs(config.PLOT_DIR_PRESSURE, exist_ok=True)
-    out = os.path.join(config.PLOT_DIR_PRESSURE, f"{short(arch)}_summary.png")
+    os.makedirs(config.PLOT_DIR_PRESSURE_DETAILS, exist_ok=True)
+    out = os.path.join(
+        config.PLOT_DIR_PRESSURE_DETAILS, f"{short(arch)}_summary.png"
+    )
     fig.savefig(out, bbox_inches="tight", dpi=150)
     plt.close(fig)
     print(f"[OK] {out}")
@@ -658,7 +949,7 @@ def make_plot_pressure():
         full_gb = full_footprint(arch)
         for variant in available:
             plot_variant(arch, variant, full_gb)
-        plot_metric(arch, available, "qps", full_gb)
+        plot_qps(arch, available)
         plot_metric(arch, available, "bandwidth", full_gb)
         plot_metric(arch, available, "memory", full_gb)
         plot_summary(arch, available)

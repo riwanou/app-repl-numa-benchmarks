@@ -23,22 +23,35 @@ def get_interleaved_cpus_one_node() -> str:
 
 
 PRESSURE_DATASET = "gist-960-euclidean.hdf5"
+DATASETS = ["glove-100-angular.hdf5", "gist-960-euclidean.hdf5"]
 
-# AutoNUMA plateaus at ~135s, the others by run 2
+# per runner
 WARMUP = 30
-WARMUP_BALANCING = 150
+WARMUP_BALANCING = 60
+
+# one process per runner and dataset
+RUNNERS = ["--faiss", "--annoy", "--usearch"]
 
 
-def run_bench(tag: str, warmup: int = WARMUP) -> str:
+def run_bench(
+    runner: str, dataset: str, tag: str, warmup: int = WARMUP
+) -> str:
     return (
-        "uv run run_ann.py --faiss --annoy --usearch --bench"
+        f"uv run run_ann.py {runner} --bench --datasets {dataset}"
         f" --tag {tag} --warmup-time {warmup}"
     )
 
 
+def run_variant(tag: str, warmup: int = WARMUP, prepend: str = ""):
+    """One runner and dataset per process, cold cache."""
+    for runner in RUNNERS:
+        for dataset in DATASETS:
+            sh("sync; echo 3 > /proc/sys/vm/drop_caches")
+            sh(f"{prepend}{run_bench(runner, dataset, tag, warmup)}")
+
+
 def build_ann():
-    """Download every dataset and build the index each runner needs. Existing
-    indices are kept, pass --recreate-index to run_ann.py to rebuild them."""
+    """Download the datasets and build every index, keeping existing ones."""
     sh("uv run run_ann.py --faiss --annoy --usearch")
 
 
@@ -47,21 +60,17 @@ def run_bench_ann():
     sh("echo 0 > /proc/sys/kernel/numa_balancing")
 
     # all cores
-    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
-    sh(f"{run_bench('default')}")
+    run_variant("default")
 
     # worst case (mem in 1 node)
-    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
-    sh(f"numactl --membind={0} {run_bench('imbalanced-memory')}")
+    run_variant("imbalanced-memory", prepend=f"numactl --membind={0} ")
 
     # best case (interleaved)
-    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
-    sh(f"numactl --interleave=all {run_bench('interleaved-memory')}")
+    run_variant("interleaved-memory", prepend="numactl --interleave=all ")
 
     # a case (numa balancing)
     sh("echo 1 > /proc/sys/kernel/numa_balancing")
-    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
-    sh(f"{run_bench('numa-balancing', WARMUP_BALANCING)}")
+    run_variant("numa-balancing", WARMUP_BALANCING)
     sh("echo 0 > /proc/sys/kernel/numa_balancing")
 
 
@@ -75,12 +84,14 @@ def run_bench_ann_repl():
     sh("echo .usearch > /sys/kernel/debug/repl_pt/registered")
 
     # run
-    sh("sync; echo 3 > /proc/sys/vm/drop_caches")
-    sh(f"""(
-      echo 1 > /sys/kernel/debug/repl_pt/policy &&
-      {run_bench("patched-repl")};
-      echo 0 > /sys/kernel/debug/repl_pt/policy
-    )""")
+    for runner in RUNNERS:
+        for dataset in DATASETS:
+            sh("sync; echo 3 > /proc/sys/vm/drop_caches")
+            sh(f"""(
+              echo 1 > /sys/kernel/debug/repl_pt/policy &&
+              {run_bench(runner, dataset, "patched-repl")};
+              echo 0 > /sys/kernel/debug/repl_pt/policy
+            )""")
 
 
 # The pressure bench is the odd one out: it does not run its own command, it
@@ -123,7 +134,7 @@ def run_bench_pressure(variant: PressureVariant, running_time: int) -> str:
     set explicitly so a variant cannot inherit the previous one's state."""
     sh(f"echo {int(variant.numa_balancing)} > /proc/sys/kernel/numa_balancing")
 
-    # no warmup, the phases split these runs at plot time
+    # no warmup, the phases split these runs
     cmd = (
         f"uv run run_ann.py --usearch --bench --tag pressure-{variant.tag}"
         f" --datasets {PRESSURE_DATASET} --running-time {running_time}"
