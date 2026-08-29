@@ -52,6 +52,9 @@ def run_bench(
 
 
 def run_one(json_path, run, tag, cmd, meta):
+    # the 1G file stays fully dirty between runs, so every run but the first
+    # starts throttled by the previous one's writeback: flush it first
+    sh("sync")
     ts_start = time.time()
     sh(cmd)
     ts_end = time.time()
