@@ -32,6 +32,9 @@ parser.add_argument(
 )
 parser.add_argument("--tag", default=TAG, help="CSV filename tag")
 parser.add_argument(
+    "--result-dir", default=RESULT_DIR, help="Where the CSVs are written"
+)
+parser.add_argument(
     "--datasets",
     nargs="*",
     default=ann.lib.DATASETS,
@@ -55,7 +58,7 @@ args = parser.parse_args()
 ann.lib.run(
     DATA_DIR,
     INDEX_DIR,
-    RESULT_DIR,
+    args.result_dir,
     args.datasets,
     args.faiss,
     args.annoy,

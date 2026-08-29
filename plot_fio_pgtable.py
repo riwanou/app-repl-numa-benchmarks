@@ -1,16 +1,19 @@
-"""What SPaRe's full replication buys over page table only replication.
+"""What SPARe's full replication buys over page table only replication.
 
-bench_fio.run_bench_fio_pgt_* writes one jsonl per kernel, holding an
-`interleave` run set and a `repl` one, plus a `repl-pt` one for SPaRe.
-Mitosis and Hydra replicate the page tables and leave the data interleaved,
-which is what SPaRe does under `repl-pt`; `repl` replicates the data too.
+bench_fio.run_bench_fio_pgt_* writes one jsonl per kernel, holding a baseline
+run set and a `repl` one, plus a `repl-pt` one for SPARe. The three baselines
+are the same vanilla Linux, so they pool into one bar. Every arm but SPARe's
+`repl` leaves the data to the kernel, first touch with NUMA balancing, so the
+delta over the baseline is the page table replication alone. Mitosis, Hydra
+and SPARe's `repl-pt` replicate the page tables only; `repl` the data too.
 
 This reads the jsonl files, writes the per run CSV the stats pipeline slices
-on, and plots the three kernels side by side.
+on, and plots the five bars side by side.
 """
 
 import json
 import os
+from typing import NamedTuple
 
 import config
 import matplotlib.pyplot as plt
@@ -22,38 +25,54 @@ from plot_fio import bw_from_fio_output
 
 RESULT_DIR = config.RESULT_DIR
 
-# jsonl file suffix, in plot order
-KERNELS = ["spare", "mitosis", "hydra"]
+# jsonl file suffix, in read order
 KERNELS = ["mitosis", "hydra", "spare"]
-KERNEL_LABELS = {"spare": "SPaRe", "mitosis": "Mitosis", "hydra": "Hydra"}
 
-# two bars per kernel: interleaved, then its replicated run. For SPaRe that
-# replicates the whole mapping (page tables + data); for Mitosis/Hydra it's
-# the page tables only, hence a different hatch for the second bar
-TAGS = ["interleave", "repl"]
-HATCH_DATA = "O"
-HATCH_PT = "/"
+HATCH_DATA = "/"
 HATCH_COLOR = "0.9"
-REPL_HATCH = {"spare": HATCH_DATA, "mitosis": HATCH_PT, "hydra": HATCH_PT}
+
+# Linux orange as always, SPARe blue; Mitosis yellow and Hydra green between
+MITOSIS_COLOR = "YlOrBr"
+HYDRA_COLOR = config.CARREFOUR_COLOR
+
+
+class Bar(NamedTuple):
+    key: str
+    label: str
+    ramp: str
+    shade: int  # index into the 9 colour ramp
+    hatch: str | None
+
+
+# the five bars, top to bottom
+BARS = [
+    Bar("linux", "Linux*", config.LINUX_COLOR, 5, None),
+    Bar("mitosis", "Mitosis", MITOSIS_COLOR, 3, None),
+    Bar("hydra", "Hydra", HYDRA_COLOR, 5, None),
+    Bar("spare-pt", "SPARe", config.SPARE_COLOR, 4, None),
+    Bar("spare", "SPARe", config.SPARE_COLOR, 7, HATCH_DATA),
+]
+
+# (kernel, tag) -> bar. the three kernels' baselines pool into the Linux bar.
+# `interleave` is the old baseline, `firsttouch` the one the bench runs now.
+BAR_OF = {
+    ("mitosis", "interleave"): "linux",
+    ("hydra", "interleave"): "linux",
+    ("spare", "interleave"): "linux",
+    ("mitosis", "firsttouch"): "linux",
+    ("hydra", "firsttouch"): "linux",
+    ("spare", "firsttouch"): "linux",
+    ("mitosis", "repl"): "mitosis",
+    ("hydra", "repl"): "hydra",
+    ("spare", "repl-pt"): "spare-pt",
+    ("spare", "repl"): "spare",
+}
 
 SIZE = "1G"
 BENCHMARK = "pgtable_1G"
 
-# one column of the paper wide, minimal height for 3 groups of 2 bars
-FIGSIZE = (3.3, 0.66)
-
-# one ramp per kernel so the three stay apart at a glance
-KERNEL_RAMPS = {
-    "spare": config.SPARE_COLOR,
-    "mitosis": config.LINUX_COLOR,
-    "hydra": config.CARREFOUR_COLOR,
-}
-
-
-def _kernel_color(kernel: str, tag: str):
-    """One hue per kernel, darker for the replicated bar."""
-    ramp = sns.color_palette(KERNEL_RAMPS[kernel], n_colors=9)
-    return {"interleave": ramp[3], "repl": ramp[7]}[tag]
+# one column of the paper wide, minimal height for the 5 bars
+FIGSIZE = (3.3, 0.65)
 
 
 # --- Data loading ---
@@ -72,7 +91,7 @@ def _read_jsonl(path: str, kernel: str) -> list:
                 print(f"Skipping {path}:{lineno}: {e}")
                 continue
 
-            # older files carry 768m and 4G run sets too
+            # older files carry other sizes
             if record.get("size") != SIZE:
                 continue
 
@@ -109,19 +128,27 @@ def get_data(arch: str) -> pd.DataFrame:
 
 
 def _aggregate(df: pd.DataFrame) -> pd.DataFrame:
-    """Mean and std over the runs of each (kernel, tag), indexed for lookup."""
+    """Mean and std over the runs of each bar, indexed for lookup. The Linux
+    bar pools the baseline runs of the three kernels."""
+    df = df.copy()
+    df["bar"] = [BAR_OF.get((k, t)) for k, t in zip(df.kernel, df.pgt_tag)]
     return (
-        df.groupby(["kernel", "pgt_tag"])
+        df.dropna(subset=["bar"])
+        .groupby("bar")
         .agg(
             read_bw_gb=("read_bw_gb", "mean"), read_bw_std=("read_bw_gb", "std")
         )
         .fillna({"read_bw_std": 0})
-        .reset_index()
-        .set_index(["kernel", "pgt_tag"])
     )
 
 
 # --- Plot ---
+
+
+def _bar_color(key: str):
+    """The colour of one bar, for the legend to reuse."""
+    bar = next(b for b in BARS if b.key == key)
+    return sns.color_palette(bar.ramp, n_colors=9)[bar.shade]
 
 
 def _setup_style():
@@ -131,30 +158,33 @@ def _setup_style():
 
 
 def plot_pgtable(arch: str, table: pd.DataFrame):
-    """Two bars per kernel (interleaved, replicated), grouped with no gap
-    within a group and a small gap between kernels."""
+    """One bar per system, Linux first, SPARe's two flush under one tick."""
     _setup_style()
 
     bar_height = 0.8
     bar_step = bar_height
     group_gap = 0.3
 
-    bars, ticks, ticklabels = [], [], []
-    y = 0
-    for kernel in KERNELS:
-        start = y
-        for tag in TAGS:
-            if (kernel, tag) in table.index:
-                bars.append((y, kernel, tag))
-                y += bar_step
-        ticks.append((start + y - bar_step) / 2)
-        ticklabels.append(KERNEL_LABELS[kernel])
-        y += group_gap
+    bars = [b for b in BARS if b.key in table.index]
 
-    ys = [b[0] for b in bars]
-    values = [table.loc[(k, t), "read_bw_gb"] for _, k, t in bars]
-    std = [table.loc[(k, t), "read_bw_std"] for _, k, t in bars]
-    colors = [_kernel_color(k, t) for _, k, t in bars]
+    ys = []
+    y = 0.0
+    for i, bar in enumerate(bars):
+        if i and bar.label != bars[i - 1].label:
+            y += group_gap
+        ys.append(y)
+        y += bar_step
+
+    # one tick per label, centred on its bars; SPARe owns two
+    ticks, ticklabels = [], []
+    for label in dict.fromkeys(b.label for b in bars):
+        group = [ys[i] for i, b in enumerate(bars) if b.label == label]
+        ticks.append(sum(group) / len(group))
+        ticklabels.append(label)
+
+    values = [table.loc[b.key, "read_bw_gb"] for b in bars]
+    std = [table.loc[b.key, "read_bw_std"] for b in bars]
+    colors = [_bar_color(b.key) for b in bars]
 
     fig, ax = plt.subplots(figsize=FIGSIZE)
     plt.rcParams["hatch.linewidth"] = 1.2
@@ -169,15 +199,15 @@ def plot_pgtable(arch: str, table: pd.DataFrame):
         capsize=1.1,
         error_kw=dict(lw=0.4, capthick=0.5, color="gray", alpha=1.0),
     )
-    for patch, (_, kernel, tag) in zip(patches, bars):
-        if tag != "interleave":
-            patch.set_hatch(REPL_HATCH[kernel])
+    for patch, bar in zip(patches, bars):
+        if bar.hatch:
+            patch.set_hatch(bar.hatch)
             patch.set_edgecolor(HATCH_COLOR)
             patch.set_linewidth(0)
 
-    for i, (_, kernel, tag) in enumerate(bars):
-        base = table.loc[(kernel, "interleave"), "read_bw_gb"]
-        if tag == "interleave" or not base:
+    base = table.loc["linux", "read_bw_gb"] if "linux" in table.index else 0
+    for i, bar in enumerate(bars):
+        if bar.key == "linux" or not base:
             continue
         pct = 100 * (values[i] - base) / base
         ax.text(
@@ -193,30 +223,26 @@ def plot_pgtable(arch: str, table: pd.DataFrame):
     sns.despine(ax=ax)
     ax.set_yticks(ticks)
     ax.set_yticklabels(ticklabels, fontsize=6)
-    ax.tick_params(axis="x", labelsize=6, length=2)
-    ax.tick_params(axis="y", length=0)
+    ax.tick_params(axis="x", labelsize=6, length=2, width=1.0)
+    ax.tick_params(axis="y", length=2, width=1.0)
+    for side in ("bottom", "left"):
+        ax.spines[side].set_linewidth(1.0)
+    ax.set_xlabel("Read Bandwidth (GB/s)", fontsize=6, labelpad=1)
     ax.set_xlim(0, max(values) * 1.25)
     ax.invert_yaxis()
 
     legend = [
         Patch(
-            facecolor="lightgray",
+            facecolor=_bar_color("spare-pt"),
             edgecolor="none",
             linewidth=0,
-            label="Interleaved",
+            label="Non replicated data",
         ),
         Patch(
-            facecolor="gray",
+            facecolor=_bar_color("spare"),
             edgecolor=HATCH_COLOR,
             linewidth=0,
-            hatch=HATCH_PT + HATCH_PT,
-            label="Replicated PT",
-        ),
-        Patch(
-            facecolor="gray",
-            edgecolor=HATCH_COLOR,
-            linewidth=0,
-            hatch=HATCH_DATA,
+            hatch=HATCH_DATA + HATCH_DATA,
             label="Replicated data",
         ),
     ]
@@ -232,12 +258,14 @@ def plot_pgtable(arch: str, table: pd.DataFrame):
         labelspacing=0.3,
     )
     fig.tight_layout(pad=0)
-    path = os.path.join(
-        config.PLOT_DIR_FIO, f"{config.ARCH_SUBNAMES[arch]}_fio_pgtable.pdf"
-    )
-    plt.savefig(path, bbox_inches="tight", pad_inches=0, dpi=300)
+    for ext in ("pdf", "svg"):
+        path = os.path.join(
+            config.PLOT_DIR_FIO,
+            f"{config.ARCH_SUBNAMES[arch]}_fio_pgtable.{ext}",
+        )
+        plt.savefig(path, bbox_inches="tight", pad_inches=0, dpi=300)
+        print(f"[OK] {path}")
     plt.close(fig)
-    print(f"[OK] {path}")
 
 
 def make_plot_fio_pgtable():

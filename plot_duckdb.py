@@ -18,7 +18,7 @@ def stream_label(n):
 TAG_LABELS = {
     "firsttouch": "First touch",
     "imbalanced": "Imbalanced",
-    "interleaved": "Interleaved",
+    "interleaved": "Interleave",
     "numa-balancing": "NUMA balancing",
     "repl": "Replication",
 }
