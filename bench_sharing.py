@@ -31,7 +31,7 @@ BIN = os.path.join(DIRTEST_DIR, "dirtest")
 CSV_PATH = os.path.join(config.RESULT_DIR_SHARING, "results.csv")
 
 GB = 8  # must dwarf the LLC, and fit on one node
-SECS = 120
+SECS = 100
 THREADS = 16  # total readers, kept equal across phases, even
 MEM_NODE = 0  # the buffer goes on these two nodes, the readers sit on them
 FAR_NODE = 1
