@@ -31,16 +31,6 @@ COHERENCE_EVENTS = [
     "UNC_M2M_DIRECTORY_LOOKUP.STATE_S",
     "UNC_M2M_DIRECTORY_LOOKUP.STATE_A",
     "UNC_M2M_DIRECTORY_UPDATE.ANY",
-    # the only transition the hardware reports. The other five read 0.01 in
-    # every phase: they ride a writeback, which this counter cannot see.
-    "UNC_M2M_DIRECTORY_UPDATE.I2A",
-    # the directory cache. Once the churn has drained and nearly every line is
-    # S, the writes carry on anyway, and nothing above accounts for them.
-    # Evictions from here are the suspect.
-    "UNC_M2M_DIRECTORY_HIT.CLEAN_S",
-    "UNC_M2M_DIRECTORY_HIT.DIRTY_S",
-    "UNC_M2M_DIRECTORY_MISS.CLEAN_S",
-    "UNC_M2M_DIRECTORY_MISS.DIRTY_S",
     "UNC_CHA_DIR_LOOKUP.SNP",
     "UNC_CHA_DIR_LOOKUP.NO_SNP",
 ]

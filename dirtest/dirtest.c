@@ -9,6 +9,10 @@
  * Each thread has its own slice. Sharing a window, threads drift together and
  * feed each other out of the LLC.
  *
+ * `pingpong` starts the second group half a slice into the same lines. The
+ * two sockets never read a line close enough in time for the directory to
+ * settle on shared, so it flips between states for ever.
+ *
  *   numactl --membind=0 ./dirtest/dirtest 256 30 0,1,2,16,17,18 overlap=50
  *
  * Driven by bench_sharing.py. RESULT reports the measured window, which starts
@@ -37,11 +41,17 @@ static volatile int stop;
 struct worker {
     pthread_t th;
     int cpu;
-    size_t base; /* window it reads, [base, end) */
+    size_t base; /* the slice it reads, [base, end) */
     size_t end;
+    size_t start; /* where in it this thread begins */
     uint64_t lines;
     uint64_t sum;
 };
+
+static size_t align_line(size_t bytes) {
+    return bytes & ~(size_t)(LINE - 1);
+}
+
 
 static double mono(void) {
     struct timespec ts;
@@ -71,7 +81,7 @@ static void *reader(void *arg) {
     }
 
     /* one load per line, volatile so the compiler keeps it */
-    size_t base = w->base, end = w->end, off = base;
+    size_t base = w->base, end = w->end, off = w->start;
     uint64_t sum = 0, lines = 0;
 
     while (!stop) {
@@ -102,8 +112,10 @@ static void show_placement(void) {
 }
 
 int main(int argc, char **argv) {
-    if (argc != 4 && argc != 5) {
-        fprintf(stderr, "usage: %s <mb> <secs> <cpu,cpu,...> [overlap=0..100]\n",
+    if (argc < 4 || argc > 6) {
+        fprintf(stderr,
+                "usage: %s <mb> <secs> <cpu,cpu,...> [overlap=0..100]"
+                " [pingpong]\n",
                 argv[0]);
         return 2;
     }
@@ -112,17 +124,21 @@ int main(int argc, char **argv) {
     int secs = atoi(argv[2]);
     len = mb << 20;
 
-    /* -1: no grouping, the whole buffer is one window */
-    int overlap = -1;
-    if (argc == 5) {
-        if (strncmp(argv[4], "overlap=", 8) != 0) {
-            fprintf(stderr, "expected overlap=<0..100>, got '%s'\n",
-                    argv[4]);
-            return 2;
-        }
-        overlap = atoi(argv[4] + 8);
-        if (overlap < 0 || overlap > 100) {
-            fprintf(stderr, "overlap must be 0..100, got %d\n", overlap);
+    int overlap = -1; /* -1: one group over the whole buffer */
+    int pingpong = 0;
+    for (int k = 4; k < argc; k++) {
+        if (strcmp(argv[k], "pingpong") == 0) {
+            pingpong = 1;
+        } else if (strncmp(argv[k], "overlap=", 8) == 0) {
+            overlap = atoi(argv[k] + 8);
+            if (overlap < 0 || overlap > 100) {
+                fprintf(stderr, "overlap must be 0..100, got %d\n", overlap);
+                return 2;
+            }
+        } else {
+            fprintf(stderr,
+                    "expected overlap=<0..100> or pingpong, got '%s'\n",
+                    argv[k]);
             return 2;
         }
     }
@@ -149,31 +165,38 @@ int main(int argc, char **argv) {
      * shared zero page, which would collapse 8 GB into one cache line */
     memset(buf, 0xa5, len);
 
-    printf("buffer %zu MB, %d threads on cpus %s, %d s, overlap %d\n", mb, n,
-           cpulist, secs, overlap);
+    /* group A reads [0, window), group B reads [group_b_start, +window), the
+       two overlapping by `overlap` percent. Inside a group every thread gets
+       its own slice of that window. The overlap is rounded down to whole
+       slices, so a thread of one group shares with exactly one thread of the
+       other rather than straddling two. */
+    int one_group = (overlap < 0);
+    int threads_per_group = one_group ? n : n / 2;
+    size_t window = one_group ? len : len / 2;
+    size_t overlap_pct = one_group ? 0 : (size_t)overlap;
+    size_t thread_slice = align_line(window / (size_t)threads_per_group);
+    size_t shared_slices = window * overlap_pct / 100 / thread_slice;
+    size_t group_b_start = window - shared_slices * thread_slice;
+
+    printf("buffer %zu MB, %d threads on cpus %s, %d s, overlap %d"
+           " (%zu of %d slices), pingpong %d\n",
+           mb, n, cpulist, secs, overlap, shared_slices, threads_per_group,
+           pingpong);
     show_placement();
     fflush(stdout);
 
-    /* group A takes [0, len/2). group B takes the same width, slid so that the
-     * two windows share `overlap` percent of their lines: at 0 B sits right
-     * after A, at 100 it sits exactly on top of it. */
-    size_t span = (overlap < 0) ? len : len / 2;
-    /* double, not span/100*overlap: integer division leaves overlap=100 a
-     * cache line short, and exact is the point of that endpoint */
-    size_t slide = (size_t)((double)span * (overlap < 0 ? 0 : overlap) / 100.0);
-    slide &= ~(size_t)(LINE - 1);
-
     struct worker *w = calloc(n, sizeof *w);
-    int group = (overlap < 0) ? n : n / 2;
-    size_t slice = (span / (size_t)group) & ~(size_t)(LINE - 1);
     for (int i = 0; i < n; i++) {
+        int group_b = i / threads_per_group;
+        int index_in_group = i % threads_per_group;
+        size_t window_start = group_b ? group_b_start : 0;
+
         w[i].cpu = cpus[i];
-        /* the second group's window slides up by the overlap */
-        size_t base = (i >= group) ? span - slide : 0;
-        /* a slice each, same slice at the same index in both groups: two
-         * threads on a socket never meet, the two sockets always do */
-        w[i].base = base + slice * (size_t)(i % group);
-        w[i].end = w[i].base + slice;
+        w[i].base = window_start + index_in_group * thread_slice;
+        w[i].end = w[i].base + thread_slice;
+        w[i].start = w[i].base;
+        if (pingpong && group_b)
+            w[i].start += thread_slice / 2;
     }
 
     for (int i = 0; i < n; i++)

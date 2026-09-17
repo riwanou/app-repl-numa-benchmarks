@@ -51,9 +51,16 @@ PHASE_LABELS = {
     "remote": "all far",
     "disjoint": "own lines",
     "shared": "same lines",
-    "pingpong": "same lines, ping pong",
+    "pingpong": "ping pong",
 }
-POLICY_LABELS = {"membind": "data on 1 node", "interleaved": "data on 2 nodes"}
+POLICY_LABELS = {
+    "membind": "membind · data on 1 node",
+    "interleaved": "interleave · data on 2 nodes",
+}
+
+# all near and all far put every reader on one node; these three put 8 on each
+SPLIT_PHASES = ("disjoint", "shared", "pingpong")
+SPLIT_LABEL = "readers on both nodes"
 
 
 def load(arch: str, label: str) -> pd.DataFrame:
@@ -72,6 +79,26 @@ def load(arch: str, label: str) -> pd.DataFrame:
             "time": time,
             "read": pd.to_numeric(df[("System", "Read")], errors="coerce") * MB_TO_GB,
             "write": pd.to_numeric(df[("System", "Write")], errors="coerce") * MB_TO_GB,
+        }
+    ).dropna()
+
+
+def upi(arch: str, label: str) -> pd.DataFrame:
+    """Data received over the interconnect, GB/s. Its own capture, so its
+    timestamps are not the ones the memory capture uses."""
+    path = os.path.join(config.RESULT_DIR, arch, "monitor", f"pcm_{label}.csv")
+    if not os.path.exists(path):
+        return pd.DataFrame()
+    df = pd.read_csv(path, header=[0, 1])
+    time = pd.to_datetime(
+        df[("System", "Date")].astype(str) + " " + df[("System", "Time")].astype(str),
+        errors="coerce",
+    )
+    return pd.DataFrame(
+        {
+            "time": time,
+            "upi": pd.to_numeric(df[("System", "TotalUPIin")], errors="coerce")
+            * MB_TO_GB,
         }
     ).dropna()
 
@@ -140,8 +167,12 @@ def compress(secs: pd.Series, windows: list[tuple[float, float]],
     outside a window come back NaN, which is what breaks the line between
     phases."""
     out = pd.Series(float("nan"), index=secs.index, dtype=float)
+    # a sample covers the interval ending at its timestamp. Drop one interval
+    # at each end of a phase: those samples straddle the boundary and average
+    # in the idle either side, which plots as a cliff.
+    interval = secs.diff().median()
     for (a, b), (lo, _) in zip(windows, boxes):
-        inside = (secs >= a) & (secs <= b)
+        inside = (secs - interval >= a) & (secs + interval <= b)
         out[inside] = lo + (secs[inside] - a)
     return out
 
@@ -235,7 +266,7 @@ PANEL_GAP = 0.11  # panel to the next legend
 PANELS = 3        # stacked measures per block
 AXIS = 0.40       # tick labels plus "seconds" under a block
 HEADER = 0.30     # the policy line and the rule under it
-PHASES = 0.26     # the row of phase names
+PHASES = 0.50     # the phase names and the bracket over them
 COL_GAP = 0.14    # between the two columns
 MARGIN = 0.10
 
@@ -246,6 +277,9 @@ def plot(arch: str, sub: str, label: str):
     secs = (df["time"] - start).dt.total_seconds()
     coh = coherence(arch, label)
     csecs = (coh["time"] - start).dt.total_seconds() if not coh.empty else None
+    link = upi(arch, label)
+    if not link.empty:
+        link_secs = (link["time"] - start).dt.total_seconds()
 
     spans = [
         (
@@ -253,15 +287,17 @@ def plot(arch: str, sub: str, label: str):
             (row["end_time"] - start).total_seconds(),
             row.get("policy", ""),
             row["phase"],
+            float(row["mb"]),
         )
         for _, row in phases(arch, label).iterrows()
     ]
 
     columns = []
-    for policy in dict.fromkeys(p for _, _, p, _ in spans):
-        group = [(a, b, ph) for a, b, p, ph in spans if p == policy]
+    for policy in dict.fromkeys(p for _, _, p, _, _ in spans):
+        group = [(a, b, ph, mb) for a, b, p, ph, mb in spans
+                 if p == policy]
         base = group[0][0]
-        windows = [(a - base, b - base) for a, b, _ in group]
+        windows = [(a - base, b - base) for a, b, _, _ in group]
         boxes = phase_boxes(windows)
         columns.append((policy, group, base, windows, boxes))
 
@@ -305,6 +341,13 @@ def plot(arch: str, sub: str, label: str):
         entries = {ax: [(df["read"], BLUE), (df["write"], ORANGE)],
                    ax2: [], ax3: []}
 
+        # onto the memory capture's clock, so one time base does this panel
+        if not link.empty:
+            crossing = pd.Series(np.interp(secs, link_secs, link["upi"]),
+                                 index=secs.index)
+            draw(ax, x, crossing, "over the link", VIOLET)
+            entries[ax].append((crossing, VIOLET))
+
         if not coh.empty:
             cx = compress(csecs - base, windows, boxes)
             # the writes panel 1 measures, in lines instead of bytes. The
@@ -328,15 +371,26 @@ def plot(arch: str, sub: str, label: str):
                     entries[ax3].append((coh[events[state]],
                                          STATE_COLORS[state]))
 
+
         for lo, hi in boxes:
             for axis in (ax, ax2, ax3):
                 axis.axvspan(lo, hi, color=BAND, lw=0, zorder=0)
 
         span_ax = ax.get_xaxis_transform()
-        for (a, b), (_, _, phase) in zip(boxes, group):
+        for (a, b), (_, _, phase, _) in zip(boxes, group):
             ax.text((a + b) / 2, up(LEGEND_GAP + LEGEND + 0.07),
                     PHASE_LABELS.get(phase, phase), transform=span_ax,
                     ha="center", va="bottom", fontsize=8, color=INK)
+
+        split = [box for box, (_, _, phase, _) in zip(boxes, group)
+                 if phase in SPLIT_PHASES]
+        if len(split) > 1:
+            bar = up(LEGEND_GAP + LEGEND + 0.25)
+            ax.plot([split[0][0], split[-1][1]], [bar, bar], transform=span_ax,
+                    color="#cfcecb", lw=1, clip_on=False)
+            ax.text((split[0][0] + split[-1][1]) / 2, bar + 0.02 / PANEL,
+                    SPLIT_LABEL, transform=span_ax, ha="center", va="bottom",
+                    fontsize=7.5, color=INK)
 
         rule = up(LEGEND_GAP + LEGEND + PHASES)
         ax.plot([boxes[0][0], boxes[-1][1]], [rule, rule], transform=span_ax,
@@ -347,7 +401,7 @@ def plot(arch: str, sub: str, label: str):
 
         for axis, name in ((ax, "DRAM GB/s"),
                            (ax2, "directory\nwrites M/s"),
-                           (ax3, "directory\nlookups M/s")):
+                           (ax3, "directory\nstate M/s")):
             axis.spines[["top", "right"]].set_visible(False)
             axis.spines[["left", "bottom"]].set_color("#cfcecb")
             axis.tick_params(colors=INK, labelsize=7.5, length=2.5,
@@ -356,13 +410,18 @@ def plot(arch: str, sub: str, label: str):
             axis.margins(x=0.015, y=0.10)
             edge = max(b - a for a, b in windows) * PAD_FRAC / 2
             axis.set_xlim(-edge, boxes[-1][1] + edge)
-            # a tick at each phase boundary and midpoint, labelled with the
-            # measured seconds so far
-            ticks, cum = [(0.0, 0.0)], 0.0
-            for (a, b), (lo, hi) in zip(windows, boxes):
-                ticks.append(((lo + hi) / 2, cum + (b - a) / 2))
-                ticks.append((hi, cum + (b - a)))
-                cum += b - a
+            # each phase is its own run, so each one counts from zero. The
+            # zero itself is left off: it would sit on the end of the phase
+            # before it, and the last tick says how long a phase ran.
+            ticks = []
+            for (a, b), (lo, _) in zip(windows, boxes):
+                length = b - a
+                step = next(x for x in (10, 20, 25, 50, 100, 200, 250, 500)
+                            if length / x <= 3)
+                mark = step
+                while mark <= length + step / 2:
+                    ticks.append((lo + mark, mark))
+                    mark += step
             axis.set_xticks([t for t, _ in ticks])
             axis.set_xticklabels([f"{round(v / 10) * 10:g}" for _, v in ticks])
             if axis is not ax3:
@@ -384,7 +443,8 @@ def plot(arch: str, sub: str, label: str):
                     borderpad=0, borderaxespad=0)
 
         drawn.append(((ax, ax2, ax3), entries, base, windows, boxes))
-        fig.text(lefts[i] + widths[i] / 2, rows[-1] - 0.32 * inch, "seconds",
+        fig.text(lefts[i] + widths[i] / 2, rows[-1] - 0.32 * inch,
+                 "seconds in phase",
                  ha="center", va="bottom", fontsize=8, color=INK)
 
     # one scale per row, so the columns read against each other and only the

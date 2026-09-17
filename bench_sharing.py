@@ -9,6 +9,7 @@ membind puts the buffer on one node, interleaved stripes it over both.
     remote    all 16 readers on the other node    (membind only)
     disjoint  8 readers a node, different lines
     shared    8 readers a node, the same lines
+    pingpong  the same lines, but the two nodes read them far apart in time
 
 disjoint against shared is the pair that matters: same placement, same remote
 fraction, only the sharing differs. Interleaved has no local or remote phase:
@@ -31,10 +32,9 @@ DIRTEST_DIR = os.path.join(
 BIN = os.path.join(DIRTEST_DIR, "dirtest")
 CSV_PATH = os.path.join(config.RESULT_DIR_SHARING, "results.csv")
 
-# must dwarf the LLC, and fit on one node. Also sets how long shared takes to
-# drain into S: lines settle at a fixed rate, so fewer of them is the only way
-# to reach that state inside a phase.
-MB = 512
+# must dwarf the LLC, and fit on one node
+MB = 512            # small, so shared settles into S inside a phase
+MB_PINGPONG = 8192  # big, so pingpong does not
 SECS = 200
 THREADS = 16  # readers, same in every phase, even
 MEM_NODE = 0  # buffer and readers use these two nodes
@@ -50,7 +50,6 @@ POLICIES = {
 FIELDS = [
     "policy",
     "phase",
-    "overlap",
     "run_id",
     "threads",
     "mb",
@@ -77,8 +76,8 @@ def node_cpus(node: int) -> list[int]:
     return []
 
 
-def phases(policy: str) -> list[tuple[str, list[int], int | None]]:
-    """(name, cpus, overlap percent; None means one group)."""
+def phases(policy: str) -> list[tuple[str, list[int], list[str]]]:
+    """(name, cpus, the flags dirtest gets)."""
     near = node_cpus(MEM_NODE)
     far = node_cpus(FAR_NODE)
     if len(near) < THREADS or len(far) < THREADS:
@@ -90,25 +89,27 @@ def phases(policy: str) -> list[tuple[str, list[int], int | None]]:
     half = THREADS // 2
     mixed = near[:half] + far[:half]
 
-    grouped = [("disjoint", mixed, 0), ("shared", mixed, 100)]
+    grouped = [("disjoint", mixed, ["overlap=0"]),
+               ("shared", mixed, ["overlap=100"]),
+               ("pingpong", mixed, ["overlap=100", "pingpong"])]
     if policy == "interleaved":
         return grouped
-    return [("local", near[:THREADS], None),
-            ("remote", far[:THREADS], None)] + grouped
+    return [("local", near[:THREADS], []),
+            ("remote", far[:THREADS], [])] + grouped
 
 
 def run_phase(
-    name: str, cpus: list[int], overlap: int | None, run_id: int, policy: str
+    name: str, cpus: list[int], flags: list[str], run_id: int, policy: str
 ):
+    mb = MB_PINGPONG if name == "pingpong" else MB
     cmd = [
         *POLICIES[policy],
         BIN,
-        str(MB),
+        str(mb),
         str(SECS),
         ",".join(str(cpu) for cpu in cpus),
+        *flags,
     ]
-    if overlap is not None:
-        cmd.append(f"overlap={overlap}")
 
     print(f"$ {' '.join(cmd)}")
     proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -123,10 +124,9 @@ def run_phase(
     return {
         "policy": policy,
         "phase": name,
-        "overlap": "" if overlap is None else overlap,
         "run_id": run_id,
         "threads": len(cpus),
-        "mb": MB,
+        "mb": mb,
         "secs": SECS,
         "read_gb_s": result["read_gb_s"],
         "cpus": " ".join(str(cpu) for cpu in cpus),
@@ -146,8 +146,8 @@ def run_bench_sharing():
     rows = []
     for run_id in range(1, RUNS + 1):
         for policy in POLICIES:
-            for name, cpus, overlap in phases(policy):
-                rows.append(run_phase(name, cpus, overlap, run_id, policy))
+            for name, cpus, flags in phases(policy):
+                rows.append(run_phase(name, cpus, flags, run_id, policy))
                 # let the counters go idle between phases
                 sh("sleep 5")
 
