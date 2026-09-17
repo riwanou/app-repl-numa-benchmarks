@@ -1,17 +1,18 @@
 """Cross socket cache line sharing microbenchmark.
 
-Threads stream reads and never write, so any DRAM write the monitors
-record is coherence directory traffic. It decays over a run as the directory
-settles.
+Threads only read, so any DRAM write a monitor sees is the coherence directory
+being rewritten. Each thread gets a slice of the buffer to itself.
 
-    local     every reader on one node
-    remote    every reader on the other node
-    disjoint  half the readers on each node, on different lines
-    shared    half the readers on each node, on the same lines
+membind puts the buffer on one node, interleaved stripes it over both.
 
-disjoint and shared are the pair that matters: same placement, same remote
-fraction, same footprint, differing only in whether the two sockets read common
-lines. Every phase runs under both policies.
+    local     all 16 readers on one node          (membind only)
+    remote    all 16 readers on the other node    (membind only)
+    disjoint  8 readers a node, different lines
+    shared    8 readers a node, the same lines
+
+disjoint against shared is the pair that matters: same placement, same remote
+fraction, only the sharing differs. Interleaved has no local or remote phase:
+with the buffer striped, every reader is half local wherever it sits.
 
     uv run run.py sharing
 """
@@ -30,17 +31,20 @@ DIRTEST_DIR = os.path.join(
 BIN = os.path.join(DIRTEST_DIR, "dirtest")
 CSV_PATH = os.path.join(config.RESULT_DIR_SHARING, "results.csv")
 
-GB = 8  # must dwarf the LLC, and fit on one node
-SECS = 100
-THREADS = 16  # total readers, kept equal across phases, even
-MEM_NODE = 0  # the buffer goes on these two nodes, the readers sit on them
+# must dwarf the LLC, and fit on one node. Also sets how long shared takes to
+# drain into S: lines settle at a fixed rate, so fewer of them is the only way
+# to reach that state inside a phase.
+MB = 512
+SECS = 200
+THREADS = 16  # readers, same in every phase, even
+MEM_NODE = 0  # buffer and readers use these two nodes
 FAR_NODE = 1
 RUNS = 1
 
-# where the buffer goes, both in the same pass
+# what to run dirtest under
 POLICIES = {
-    "membind": [f"--membind={MEM_NODE}"],
-    "interleaved": [f"--interleave={MEM_NODE},{FAR_NODE}"],
+    "membind": ["numactl", f"--membind={MEM_NODE}"],
+    "interleaved": ["numactl", f"--interleave={MEM_NODE},{FAR_NODE}"],
 }
 
 FIELDS = [
@@ -49,7 +53,7 @@ FIELDS = [
     "overlap",
     "run_id",
     "threads",
-    "gb",
+    "mb",
     "secs",
     "read_gb_s",
     "cpus",
@@ -59,7 +63,7 @@ FIELDS = [
 
 
 def build():
-    """make keeps the compile flags in one place and skips the rebuild itself."""
+    """the Makefile holds the flags and skips the rebuild itself."""
     sh(f"make -C {DIRTEST_DIR}")
 
 
@@ -73,8 +77,8 @@ def node_cpus(node: int) -> list[int]:
     return []
 
 
-def phases() -> list[tuple[str, list[int], int | None]]:
-    """(name, cpu list, overlap percent or None for one undivided group)."""
+def phases(policy: str) -> list[tuple[str, list[int], int | None]]:
+    """(name, cpus, overlap percent; None means one group)."""
     near = node_cpus(MEM_NODE)
     far = node_cpus(FAR_NODE)
     if len(near) < THREADS or len(far) < THREADS:
@@ -85,22 +89,21 @@ def phases() -> list[tuple[str, list[int], int | None]]:
 
     half = THREADS // 2
     mixed = near[:half] + far[:half]
-    return [
-        ("local", near[:THREADS], None),
-        ("remote", far[:THREADS], None),
-        ("disjoint", mixed, 0),
-        ("shared", mixed, 100),
-    ]
+
+    grouped = [("disjoint", mixed, 0), ("shared", mixed, 100)]
+    if policy == "interleaved":
+        return grouped
+    return [("local", near[:THREADS], None),
+            ("remote", far[:THREADS], None)] + grouped
 
 
 def run_phase(
     name: str, cpus: list[int], overlap: int | None, run_id: int, policy: str
 ):
     cmd = [
-        "numactl",
         *POLICIES[policy],
         BIN,
-        str(GB),
+        str(MB),
         str(SECS),
         ",".join(str(cpu) for cpu in cpus),
     ]
@@ -111,7 +114,7 @@ def run_phase(
     proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
     print(proc.stdout, end="")
 
-    # the window the program actually measured, which excludes the first touch
+    # the window it measured, which excludes the first touch
     match = re.search(r"^RESULT (.*)$", proc.stdout, re.M)
     if not match:
         raise RuntimeError(f"{name}: no RESULT line in dirtest output")
@@ -123,7 +126,7 @@ def run_phase(
         "overlap": "" if overlap is None else overlap,
         "run_id": run_id,
         "threads": len(cpus),
-        "gb": GB,
+        "mb": MB,
         "secs": SECS,
         "read_gb_s": result["read_gb_s"],
         "cpus": " ".join(str(cpu) for cpu in cpus),
@@ -136,18 +139,16 @@ def run_bench_sharing():
     build()
     os.makedirs(config.RESULT_DIR_SHARING, exist_ok=True)
 
-    # autonuma would react to the remote phases by migrating pages, and page
-    # migration is itself a write: that would produce the effect under test for
-    # entirely the wrong reason
+    # autonuma migrates pages, and a migration is a write: it would fake the
+    # effect under test
     sh("echo 0 > /proc/sys/kernel/numa_balancing")
 
     rows = []
     for run_id in range(1, RUNS + 1):
         for policy in POLICIES:
-            for name, cpus, overlap in phases():
+            for name, cpus, overlap in phases(policy):
                 rows.append(run_phase(name, cpus, overlap, run_id, policy))
-                # let the counters fall back to idle so a phase never bleeds
-                # into the next one's window
+                # let the counters go idle between phases
                 sh("sleep 5")
 
                 with open(CSV_PATH, "w", newline="") as f:

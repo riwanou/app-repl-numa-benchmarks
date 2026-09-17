@@ -618,6 +618,25 @@ def _(w: Window) -> float:
     return coherence(w, DIR_NO_SNP, scale=PER_M)
 
 
+# what state each lookup found. A lookup that finds S costs nothing; one that
+# finds I or A is a state change, and every change is a 64 B write back.
+for _state in ("I", "S", "A"):
+    stat(f"dir_state_{_state.lower()}_m_s")(
+        lambda w, e=f"UNC_M2M_DIRECTORY_LOOKUP.STATE_{_state}": coherence(
+            w, e, scale=PER_M
+        )
+    )
+
+# which way an update went. Only I2A is ever reported: the other legs ride a
+# write back, which the counter does not see, so they read zero.
+for _move in ("I2A", "A2I", "I2S", "A2S", "S2I", "S2A"):
+    stat(f"dir_{_move.lower()}_m_s")(
+        lambda w, e=f"UNC_M2M_DIRECTORY_UPDATE.{_move}": coherence(
+            w, e, scale=PER_M
+        )
+    )
+
+
 # topdown: where the pipeline stalls, off the tma_memory_bound_group already
 # in the universal perf capture. NaN wherever that run's capture has no
 # metric line for it.
@@ -907,7 +926,7 @@ BENCHES = {
     "sharing": Bench(
         labels=["sharing"],
         keep_file=lambda name: name == "results.csv",
-        group_by=["policy", "phase", "overlap"],
+        group_by=["policy", "phase"],
         std_of=(
             "read_gb_s",
             "mem_write_gb",

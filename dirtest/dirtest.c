@@ -1,15 +1,18 @@
 /* dirtest - what does cross socket cache line sharing cost?
  *
- * Streams one buffer from a chosen set of CPUs and never writes
- * it, so any DRAM write bandwidth a monitor reports is not from this program.
+ * Reads one buffer from a set of CPUs and never writes it, so any DRAM write
+ * a monitor reports is not from this program.
  *
  * `overlap=<0..100>` splits the CPUs in two groups reading len/2 each and
  * sharing that percentage of their lines. Same footprint per group either way.
  *
- *   numactl --membind=0 ./dirtest/dirtest 8 30 0,1,2,16,17,18 overlap=50
+ * Each thread has its own slice. Sharing a window, threads drift together and
+ * feed each other out of the LLC.
+ *
+ *   numactl --membind=0 ./dirtest/dirtest 256 30 0,1,2,16,17,18 overlap=50
  *
  * Driven by bench_sharing.py. RESULT reports the measured window, which starts
- * after the first touch: the memset is 8 GB of real writes.
+ * after the memset, which is the buffer written once for real.
  */
 
 #define _GNU_SOURCE
@@ -36,7 +39,6 @@ struct worker {
     int cpu;
     size_t base; /* window it reads, [base, end) */
     size_t end;
-    size_t start; /* where in the window it starts */
     uint64_t lines;
     uint64_t sum;
 };
@@ -47,8 +49,7 @@ static double mono(void) {
     return ts.tv_sec + ts.tv_nsec * 1e-9;
 }
 
-/* same shape as config.get_time() on the python side: naive local time with
- * microseconds, so the stamps can be compared against the monitor CSVs */
+/* same shape as config.get_time(), so the stamps line up with the monitors */
 static void wallclock(char *out, size_t n) {
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
@@ -70,7 +71,7 @@ static void *reader(void *arg) {
     }
 
     /* one load per line, volatile so the compiler keeps it */
-    size_t off = w->start, base = w->base, end = w->end;
+    size_t base = w->base, end = w->end, off = base;
     uint64_t sum = 0, lines = 0;
 
     while (!stop) {
@@ -88,8 +89,7 @@ static void *reader(void *arg) {
     return NULL;
 }
 
-/* the one failure mode that would silently invalidate the whole run: the
- * buffer not actually landing on the node we think it did */
+/* check the buffer landed on the node we asked for */
 static void show_placement(void) {
     FILE *f = fopen("/proc/self/numa_maps", "r");
     if (!f)
@@ -103,20 +103,21 @@ static void show_placement(void) {
 
 int main(int argc, char **argv) {
     if (argc != 4 && argc != 5) {
-        fprintf(stderr, "usage: %s <gb> <secs> <cpu,cpu,...> [overlap=0..100]\n",
+        fprintf(stderr, "usage: %s <mb> <secs> <cpu,cpu,...> [overlap=0..100]\n",
                 argv[0]);
         return 2;
     }
 
-    size_t gb = strtoul(argv[1], NULL, 10);
+    size_t mb = strtoul(argv[1], NULL, 10);
     int secs = atoi(argv[2]);
-    len = gb << 30;
+    len = mb << 20;
 
-    /* -1: no grouping, every thread sweeps the whole buffer */
+    /* -1: no grouping, the whole buffer is one window */
     int overlap = -1;
     if (argc == 5) {
         if (strncmp(argv[4], "overlap=", 8) != 0) {
-            fprintf(stderr, "expected overlap=<0..100>, got '%s'\n", argv[4]);
+            fprintf(stderr, "expected overlap=<0..100>, got '%s'\n",
+                    argv[4]);
             return 2;
         }
         overlap = atoi(argv[4] + 8);
@@ -144,12 +145,11 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    /* memset, not just MAP_POPULATE: a private anonymous mapping that is only
-     * ever read maps every page to the shared zero page, which would collapse
-     * an 8 GB footprint into one cache line and make the whole test lie */
+    /* memset, not MAP_POPULATE: pages that are only read all map to the one
+     * shared zero page, which would collapse 8 GB into one cache line */
     memset(buf, 0xa5, len);
 
-    printf("buffer %zu GB, %d threads on cpus %s, %d s, overlap %d\n", gb, n,
+    printf("buffer %zu MB, %d threads on cpus %s, %d s, overlap %d\n", mb, n,
            cpulist, secs, overlap);
     show_placement();
     fflush(stdout);
@@ -158,24 +158,22 @@ int main(int argc, char **argv) {
      * two windows share `overlap` percent of their lines: at 0 B sits right
      * after A, at 100 it sits exactly on top of it. */
     size_t span = (overlap < 0) ? len : len / 2;
-    /* double, not span/100*overlap: integer division there leaves overlap=100
-     * a cache line short of exact, and exact is the point of that endpoint */
+    /* double, not span/100*overlap: integer division leaves overlap=100 a
+     * cache line short, and exact is the point of that endpoint */
     size_t slide = (size_t)((double)span * (overlap < 0 ? 0 : overlap) / 100.0);
     slide &= ~(size_t)(LINE - 1);
 
     struct worker *w = calloc(n, sizeof *w);
-    int half = n / 2;
+    int group = (overlap < 0) ? n : n / 2;
+    size_t slice = (span / (size_t)group) & ~(size_t)(LINE - 1);
     for (int i = 0; i < n; i++) {
         w[i].cpu = cpus[i];
-
         /* the second group's window slides up by the overlap */
-        size_t base = (overlap >= 0 && i >= half) ? span - slide : 0;
-
-        w[i].base = base;
-        w[i].end = base + span;
-        /* spread the threads out, or they all read the same line at once and
-         * the LLC serves nearly everything */
-        w[i].start = base + (((span / n) * i) & ~(size_t)(LINE - 1));
+        size_t base = (i >= group) ? span - slide : 0;
+        /* a slice each, same slice at the same index in both groups: two
+         * threads on a socket never meet, the two sockets always do */
+        w[i].base = base + slice * (size_t)(i % group);
+        w[i].end = w[i].base + slice;
     }
 
     for (int i = 0; i < n; i++)

@@ -21,16 +21,26 @@ PR_SET_PDEATHSIG = 1
 # swap = two tasks exchanged, stick = the balancer gave up on a move
 NUMA_SCHED_EVENTS = ["sched_move_numa", "sched_swap_numa", "sched_stick_numa"]
 
-# Coherence directory counters for the sharing bench: the transitions, the
-# state each lookup found, and the same lookups at the cache agent split by
-# whether they forced a snoop. Four on the m2m box, two on the cha, which is
-# what each has. The states are for the plot, the write bandwidth follows the
-# transitions.
+# Coherence directory counters for the sharing bench: the state each lookup
+# found, the updates, which transition each was, and the same lookups at the
+# cache agent split by whether they forced a snoop. Ten on the m2m box, which
+# has four counters, so perf shares them and scales. Check the enabled column
+# before trusting a number.
 COHERENCE_EVENTS = [
-    "UNC_M2M_DIRECTORY_UPDATE.ANY",
     "UNC_M2M_DIRECTORY_LOOKUP.STATE_I",
     "UNC_M2M_DIRECTORY_LOOKUP.STATE_S",
     "UNC_M2M_DIRECTORY_LOOKUP.STATE_A",
+    "UNC_M2M_DIRECTORY_UPDATE.ANY",
+    # the only transition the hardware reports. The other five read 0.01 in
+    # every phase: they ride a writeback, which this counter cannot see.
+    "UNC_M2M_DIRECTORY_UPDATE.I2A",
+    # the directory cache. Once the churn has drained and nearly every line is
+    # S, the writes carry on anyway, and nothing above accounts for them.
+    # Evictions from here are the suspect.
+    "UNC_M2M_DIRECTORY_HIT.CLEAN_S",
+    "UNC_M2M_DIRECTORY_HIT.DIRTY_S",
+    "UNC_M2M_DIRECTORY_MISS.CLEAN_S",
+    "UNC_M2M_DIRECTORY_MISS.DIRTY_S",
     "UNC_CHA_DIR_LOOKUP.SNP",
     "UNC_CHA_DIR_LOOKUP.NO_SNP",
 ]
