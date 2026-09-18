@@ -260,6 +260,7 @@ def draw(axis, x, y, label, color, style="-"):
 FIG_W = 6.2
 PANEL = 0.92      # every panel, same height; the figure follows from it
 LEFT, RIGHT = 0.107, 0.985
+YLABEL_X = -0.105  # axes fraction, clear of the widest tick label
 LEGEND = 0.17     # the line of keys above a panel
 LEGEND_GAP = 0.05  # legend to the panel it labels
 PANEL_GAP = 0.11  # panel to the next legend
@@ -358,10 +359,14 @@ def plot(arch: str, sub: str, label: str):
             draw(ax2, cx, writeback, "writes / 64 B", BLUE, "--")
             entries[ax2].append((writeback, BLUE))
 
-            event = "UNC_M2M_DIRECTORY_UPDATE.ANY"
-            if event in coh:
-                draw(ax2, cx, coh[event], "directory updates", ORANGE)
-                entries[ax2].append((coh[event], ORANGE))
+            ha = "UNC_CHA_DIR_UPDATE.HA"
+            tor = "UNC_CHA_DIR_UPDATE.TOR"
+            if ha in coh:
+                draw(ax2, cx, coh[ha], "directory update HA", ORANGE)
+                entries[ax2].append((coh[ha], ORANGE))
+            if tor in coh:
+                draw(ax2, cx, coh[tor], "directory update TOR", VIOLET)
+                entries[ax2].append((coh[tor], VIOLET))
 
             events = {s: f"UNC_M2M_DIRECTORY_LOOKUP.STATE_{s}" for s in "ISA"}
             for state in ("I", "A", "S"):
@@ -399,7 +404,7 @@ def plot(arch: str, sub: str, label: str):
                 transform=ax.transAxes, ha="center", va="bottom",
                 fontsize=10.5, color="#0b0b0b")
 
-        for axis, name in ((ax, "DRAM GB/s"),
+        for axis, name in ((ax, "DRAM\nGB/s"),
                            (ax2, "directory\nwrites M/s"),
                            (ax3, "directory\nstate M/s")):
             axis.spines[["top", "right"]].set_visible(False)
@@ -441,6 +446,12 @@ def plot(arch: str, sub: str, label: str):
                     # both default to font sized padding, which is most of the
                     # space under a legend
                     borderpad=0, borderaxespad=0)
+
+        # tick labels differ in width across rows, so pin the y labels to one
+        # x instead of letting each sit next to its own ticks
+        if not i:
+            for axis in (ax, ax2, ax3):
+                axis.yaxis.set_label_coords(YLABEL_X, 0.5)
 
         drawn.append(((ax, ax2, ax3), entries, base, windows, boxes))
         fig.text(lefts[i] + widths[i] / 2, rows[-1] - 0.32 * inch,

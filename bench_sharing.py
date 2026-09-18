@@ -33,9 +33,14 @@ BIN = os.path.join(DIRTEST_DIR, "dirtest")
 CSV_PATH = os.path.join(config.RESULT_DIR_SHARING, "results.csv")
 
 # must dwarf the LLC, and fit on one node
-MB = 512            # small, so shared settles into S inside a phase
+MB = 512  # small, so shared settles into S inside a phase
 MB_PINGPONG = 8192  # big, so pingpong does not
 SECS = 200
+# False turns off all four hardware prefetchers. Not the cause of the writes,
+# but the numbers are far steadier without them.
+PREFETCHERS = False
+# which phases to run. Empty runs them all; narrow it while chasing one.
+ONLY = ()
 THREADS = 16  # readers, same in every phase, even
 MEM_NODE = 0  # buffer and readers use these two nodes
 FAR_NODE = 1
@@ -50,6 +55,7 @@ POLICIES = {
 FIELDS = [
     "policy",
     "phase",
+    "prefetchers",
     "run_id",
     "threads",
     "mb",
@@ -59,6 +65,23 @@ FIELDS = [
     "start_time",
     "end_time",
 ]
+
+
+def set_prefetchers(on: bool):
+    """MSR 0x1a4, one bit per prefetcher: 0 is all on, 0xf is all off."""
+    want = 0x0 if on else 0xf
+    sh("modprobe msr")
+    sh(f"wrmsr -a 0x1a4 {want:#x}")
+
+    # read it back. wrmsr can return success without the value sticking, and
+    # a whole run would then look like the prefetchers made no difference.
+    out = subprocess.run(
+        ["rdmsr", "-a", "0x1a4"], capture_output=True, text=True, check=True
+    ).stdout.split()
+    got = {int(v, 16) for v in out}
+    if got != {want}:
+        raise RuntimeError(f"prefetcher msr did not stick: wanted {want:#x},"
+                           f" cpus report {sorted(hex(v) for v in got)}")
 
 
 def build():
@@ -89,13 +112,19 @@ def phases(policy: str) -> list[tuple[str, list[int], list[str]]]:
     half = THREADS // 2
     mixed = near[:half] + far[:half]
 
-    grouped = [("disjoint", mixed, ["overlap=0"]),
-               ("shared", mixed, ["overlap=100"]),
-               ("pingpong", mixed, ["overlap=100", "pingpong"])]
+    grouped = [
+        ("disjoint", mixed, ["overlap=0"]),
+        ("shared", mixed, ["overlap=100"]),
+        ("pingpong", mixed, ["overlap=100", "pingpong"]),
+    ]
     if policy == "interleaved":
-        return grouped
-    return [("local", near[:THREADS], []),
-            ("remote", far[:THREADS], [])] + grouped
+        chosen = grouped
+    else:
+        chosen = [
+            ("local", near[:THREADS], []),
+            ("remote", far[:THREADS], []),
+        ] + grouped
+    return [p for p in chosen if not ONLY or p[0] in ONLY]
 
 
 def run_phase(
@@ -124,6 +153,7 @@ def run_phase(
     return {
         "policy": policy,
         "phase": name,
+        "prefetchers": int(PREFETCHERS),
         "run_id": run_id,
         "threads": len(cpus),
         "mb": mb,
@@ -142,18 +172,22 @@ def run_bench_sharing():
     # autonuma migrates pages, and a migration is a write: it would fake the
     # effect under test
     sh("echo 0 > /proc/sys/kernel/numa_balancing")
+    set_prefetchers(PREFETCHERS)
 
     rows = []
-    for run_id in range(1, RUNS + 1):
-        for policy in POLICIES:
-            for name, cpus, flags in phases(policy):
-                rows.append(run_phase(name, cpus, flags, run_id, policy))
-                # let the counters go idle between phases
-                sh("sleep 5")
+    try:
+        for run_id in range(1, RUNS + 1):
+            for policy in POLICIES:
+                for name, cpus, flags in phases(policy):
+                    rows.append(run_phase(name, cpus, flags, run_id, policy))
+                    # let the counters go idle between phases
+                    sh("sleep 5")
 
-                with open(CSV_PATH, "w", newline="") as f:
-                    writer = csv.DictWriter(f, fieldnames=FIELDS)
-                    writer.writeheader()
-                    writer.writerows(rows)
+                    with open(CSV_PATH, "w", newline="") as f:
+                        writer = csv.DictWriter(f, fieldnames=FIELDS)
+                        writer.writeheader()
+                        writer.writerows(rows)
+    finally:
+        set_prefetchers(True)
 
     print(f"[OK] {len(rows)} phases -> {CSV_PATH}")

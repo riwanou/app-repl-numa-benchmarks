@@ -21,18 +21,19 @@ PR_SET_PDEATHSIG = 1
 # swap = two tasks exchanged, stick = the balancer gave up on a move
 NUMA_SCHED_EVENTS = ["sched_move_numa", "sched_swap_numa", "sched_stick_numa"]
 
-# Coherence directory counters for the sharing bench: the state each lookup
-# found, the updates, which transition each was, and the same lookups at the
-# cache agent split by whether they forced a snoop. Ten on the m2m box, which
-# has four counters, so perf shares them and scales. Check the enabled column
-# before trusting a number.
+# Coherence directory counters for the sharing bench. Four on the m2m box and
+# four on the cha box, which is what each has, so nothing is multiplexed.
 COHERENCE_EVENTS = [
     "UNC_M2M_DIRECTORY_LOOKUP.STATE_I",
     "UNC_M2M_DIRECTORY_LOOKUP.STATE_S",
     "UNC_M2M_DIRECTORY_LOOKUP.STATE_A",
     "UNC_M2M_DIRECTORY_UPDATE.ANY",
-    "UNC_CHA_DIR_LOOKUP.SNP",
-    "UNC_CHA_DIR_LOOKUP.NO_SNP",
+    # writes = 2 * dir_update.ha + dir_update.tor. The M2M event above only
+    # counts ha, which is why a settled S looked free.
+    "UNC_CHA_DIR_UPDATE.HA",
+    "UNC_CHA_DIR_UPDATE.TOR",
+    "UNC_CHA_IMC_WRITES_COUNT.FULL",
+    "UNC_CHA_IMC_WRITES_COUNT.PARTIAL",
 ]
 
 
