@@ -16,6 +16,36 @@ ARCH_SUBNAMES = {
     "IntelR_XeonR_Gold_5320_CPU_@_2.20GHz_X86_64": "gold5320",
 }
 
+# 6.18 (debugfs) or 7.3 (sysfs and /proc/<pid>/numa_repl)
+REPL_DEBUGFS = "/sys/kernel/debug/repl_pt"
+REPL_SYSFS = "/sys/kernel/mm/numa_replication"
+REPL_PLACEMENTS = ["bound", "first_touch", "interleave", "dynamic"]
+
+
+def repl_setup(placement: int, exts: list[str]):
+    """Main placement and the replicated files, on either kernel."""
+    if os.path.isdir(REPL_SYSFS):
+        sh(f"echo {REPL_PLACEMENTS[placement]} > {REPL_SYSFS}/main_placement")
+        sh(f"echo > {REPL_SYSFS}/files")
+        for ext in exts:
+            sh(f"echo {ext} > {REPL_SYSFS}/files")
+        return
+    sh(f"echo {placement} > {REPL_DEBUGFS}/main_placement")
+    sh(f"echo 1 > {REPL_DEBUGFS}/clear_registered")
+    for ext in exts:
+        sh(f"echo {ext} > {REPL_DEBUGFS}/registered")
+
+
+def repl_cmd(cmd: str) -> str:
+    """cmd replicated: 7.3 flags the process, its children inherit it."""
+    if os.path.isdir(REPL_SYSFS):
+        return f"(echo 1 > /proc/self/numa_repl && exec {cmd})"
+    return f"""(
+      echo 1 > {REPL_DEBUGFS}/policy &&
+      {cmd};
+      echo 0 > {REPL_DEBUGFS}/policy
+    )"""
+
 
 def get_safe_platform_string():
     arch = os.uname().machine.upper()

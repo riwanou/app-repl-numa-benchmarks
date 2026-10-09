@@ -152,15 +152,18 @@ def sample(variant, phase: Phase, elapsed: float) -> dict:
 
 
 def pg_stats() -> str:
-    """Per process replication table. pg_stats/<pid> is generated on open, so
-    listing the directory yields nothing: walk the python processes instead."""
-    if not os.path.isdir(REPL_PG_STATS) or not os.path.isdir("/proc"):
-        return ""
+    """Per process replication table, from debugfs (6.18) or /proc (7.3)."""
+
+    def path(pid):
+        if os.path.isdir(REPL_PG_STATS):
+            return os.path.join(REPL_PG_STATS, pid)
+        return f"/proc/{pid}/numa_repl_stat"
+
     return "\n".join(
         f"-- pid {pid}\n{out}"
         for pid in sorted(os.listdir("/proc"), key=lambda p: p.zfill(9))
         if pid.isdigit() and "python" in read_text(f"/proc/{pid}/comm")
-        if (out := read_text(os.path.join(REPL_PG_STATS, pid)))
+        if (out := read_text(path(pid)))
         and not out.startswith("replication not enabled")
     )
 
@@ -230,13 +233,11 @@ def save_results(base: str, variant, since, windows):
 def run_phase(phase, variant, bench, writer, log, start) -> bool:
     print(f"=== {phase.label}: memory.high={phase.limit} ({phase.seconds}s)")
 
-    # The write blocks until the kernel has reclaimed the cgroup back under
-    # the limit, up to 8 s, which is exactly the transient we are here to
-    # measure. Off-thread so the loop below samples all the way through it.
-    setter = threading.Thread(
-        target=sh, args=(f"echo {phase.limit} > {CGROUP}/memory.high",)
-    )
-    setter.start()
+    # O_NONBLOCK: set the limit and return, the bench's own allocations
+    # reclaim down to it, and a later phase's limit takes effect at once
+    fd = os.open(f"{CGROUP}/memory.high", os.O_WRONLY | os.O_NONBLOCK)
+    os.write(fd, phase.limit.encode())
+    os.close(fd)
 
     # fixed grid so we do not drift away from the pcm one
     tick = time.monotonic()
@@ -249,7 +250,6 @@ def run_phase(phase, variant, bench, writer, log, start) -> bool:
         tick += SAMPLE_INTERVAL
         time.sleep(max(0.0, tick - time.monotonic()))
 
-    setter.join()
     log(f"== pg_stats @ {phase.label} end", pg_stats())
     return True
 

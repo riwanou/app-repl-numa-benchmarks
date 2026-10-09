@@ -1,7 +1,7 @@
 import subprocess
 from dataclasses import dataclass
 
-from config import sh
+from config import repl_setup, repl_cmd, sh
 
 
 def get_interleaved_cpus_one_node() -> str:
@@ -31,11 +31,10 @@ WARMUP_BALANCING = 60
 
 # one process per runner and dataset
 RUNNERS = ["--faiss", "--annoy", "--usearch"]
+REPL_EXTS = [".ivf", ".ann", ".usearch"]
 
 
-def run_bench(
-    runner: str, dataset: str, tag: str, warmup: int = WARMUP
-) -> str:
+def run_bench(runner: str, dataset: str, tag: str, warmup: int = WARMUP) -> str:
     return (
         f"uv run run_ann.py {runner} --bench --datasets {dataset}"
         f" --tag {tag} --warmup-time {warmup}"
@@ -75,23 +74,11 @@ def run_bench_ann():
 
 
 def run_bench_ann_repl():
-    sh("echo 0 > /sys/kernel/debug/repl_pt/main_placement")
-
-    # baseline patched, all cores, repl
-    sh("echo 1 > /sys/kernel/debug/repl_pt/clear_registered")
-    sh("echo .ivf > /sys/kernel/debug/repl_pt/registered")
-    sh("echo .ann > /sys/kernel/debug/repl_pt/registered")
-    sh("echo .usearch > /sys/kernel/debug/repl_pt/registered")
-
-    # run
+    repl_setup(MAIN_BOUND, REPL_EXTS)
     for runner in RUNNERS:
         for dataset in DATASETS:
             sh("sync; echo 3 > /proc/sys/vm/drop_caches")
-            sh(f"""(
-              echo 1 > /sys/kernel/debug/repl_pt/policy &&
-              {run_bench(runner, dataset, "patched-repl")};
-              echo 0 > /sys/kernel/debug/repl_pt/policy
-            )""")
+            sh(repl_cmd(run_bench(runner, dataset, "patched-repl")))
 
 
 # The pressure bench is the odd one out: it does not run its own command, it
@@ -144,19 +131,8 @@ def run_bench_pressure(variant: PressureVariant, running_time: int) -> str:
         cmd = f"{variant.numactl} {cmd}"
 
     if variant.main_placement is not None:
-        sh(
-            f"echo {variant.main_placement} >"
-            " /sys/kernel/debug/repl_pt/main_placement"
-        )
-        sh("echo 1 > /sys/kernel/debug/repl_pt/clear_registered")
-        sh("echo .ivf > /sys/kernel/debug/repl_pt/registered")
-        sh("echo .ann > /sys/kernel/debug/repl_pt/registered")
-        sh("echo .usearch > /sys/kernel/debug/repl_pt/registered")
-        cmd = f"""(
-          echo 1 > /sys/kernel/debug/repl_pt/policy &&
-          {cmd};
-          echo 0 > /sys/kernel/debug/repl_pt/policy
-        )"""
+        repl_setup(variant.main_placement, REPL_EXTS)
+        cmd = repl_cmd(cmd)
 
     sh("sync; echo 3 > /proc/sys/vm/drop_caches")
     return cmd
