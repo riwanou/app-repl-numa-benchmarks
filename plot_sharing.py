@@ -259,7 +259,7 @@ def draw(axis, x, y, label, color, style="-"):
 # when the rows differ in height, which is what made the spacing look random.
 FIG_W = 6.2
 PANEL = 0.92      # every panel, same height; the figure follows from it
-LEFT, RIGHT = 0.107, 0.985
+LEFT, RIGHT = 0.100, 0.985
 YLABEL_X = -0.105  # axes fraction, clear of the widest tick label
 LEGEND = 0.17     # the line of keys above a panel
 LEGEND_GAP = 0.05  # legend to the panel it labels
@@ -421,14 +421,15 @@ def plot(arch: str, sub: str, label: str):
             ticks = []
             for (a, b), (lo, _) in zip(windows, boxes):
                 length = b - a
-                step = next(x for x in (10, 20, 25, 50, 100, 200, 250, 500)
-                            if length / x <= 3)
+                # whole minutes, so the labels stay round
+                steps = (30, 60, 120, 300, 600, 900, 1200, 1800, 3600)
+                step = next((x for x in steps if length / x <= 3), steps[-1])
                 mark = step
                 while mark <= length + step / 2:
                     ticks.append((lo + mark, mark))
                     mark += step
             axis.set_xticks([t for t, _ in ticks])
-            axis.set_xticklabels([f"{round(v / 10) * 10:g}" for _, v in ticks])
+            axis.set_xticklabels([f"{v / 60:g}" for _, v in ticks])
             if axis is not ax3:
                 axis.tick_params(labelbottom=False)
             if i:
@@ -455,7 +456,7 @@ def plot(arch: str, sub: str, label: str):
 
         drawn.append(((ax, ax2, ax3), entries, base, windows, boxes))
         fig.text(lefts[i] + widths[i] / 2, rows[-1] - 0.32 * inch,
-                 "seconds in phase",
+                 "minutes in phase",
                  ha="center", va="bottom", fontsize=8, color=INK)
 
     # one scale per row, so the columns read against each other and only the
