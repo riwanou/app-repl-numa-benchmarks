@@ -8,20 +8,26 @@ apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
   git curl build-essential pcm libomp-dev libnuma-dev numactl time sysstat \
   cmake flex bison bc libncurses-dev libelf-dev libssl-dev kexec-tools \
-  tmux libgflags-dev clang libzstd-dev psmisc rsync sudo linux-perf autoconf libtool
+  tmux libgflags-dev libzstd-dev psmisc rsync sudo linux-perf autoconf \
+  libtool clang llvm lld
 apt-get install -y ./helix_25.1.1-1_amd64.deb ./zenith_0.14.1-1_amd64.deb
 
 echo "Installing tools"
-curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh < /dev/null
+# atuin (bash history)
+curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh -o /tmp/atuin.sh
+sh /tmp/atuin.sh --non-interactive < /dev/null
+sed -i '/atuin/d' ~/.bashrc
+cat >> ~/.bashrc <<'EOF'
+. "$HOME/.atuin/bin/env"
+[[ $- == *i* ]] && eval "$(atuin init bash --disable-up-arrow)"
+EOF
+# uv (python)
 curl -LsSf https://astral.sh/uv/install.sh | sh
+# rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 . "$HOME/.cargo/env"
 cargo install just
 
-# Ensure atuin is initialized only once
-LINE='eval "$(atuin init bash --disable-up-arrow)"'
-sed -i '/atuin init bash/d' ~/.bashrc
-grep -qxF "$LINE" ~/.bashrc || echo "$LINE" >> ~/.bashrc
 echo "✅ Finished setting up dependencies and tools."
 
 # Docker

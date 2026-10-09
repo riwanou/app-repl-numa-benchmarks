@@ -3,6 +3,8 @@ host := "tall10"
 config := "data/config/" + family + "-config"
 virtu_config := "virtu/qemu_config/" + family + "-qemu.sh" 
 workdir := "~"
+kdev := "git@github.com:riwanou/kdev-infra.git"
+
 
 [group('provision')]
 provision:
@@ -12,6 +14,16 @@ provision:
     scp -r data/helix {{host}}:~/.config/
     # installation
     ssh {{host}} 'bash -s' < ./install.sh
+
+# 7.3: kdev-infra builds and installs, then kexec (name: repl or base)
+[group('kernel')]
+kernel name="repl":
+    ssh {{host}} '[ -d {{workdir}}/kdev-infra ] || \
+                  (ssh-keyscan github.com >> ~/.ssh/known_hosts && \
+                  git clone {{kdev}} {{workdir}}/kdev-infra)'
+    ssh {{host}} 'cd {{workdir}}/kdev-infra && git pull --ff-only && \
+                  { [ ! -d linux ] || git -C linux pull --ff-only; } && \
+                  just install {{name}} && just kexec {{name}}'
 
 [group('kernel')]
 kernel-patched:
@@ -38,9 +50,12 @@ bench:
 [group('bench')]
 bench-repl:
     scp run_bench.sh {{host}}:{{workdir}}/run_bench.sh
-    ssh -tt {{host}} "[ -d /sys/kernel/debug/repl_pt ] || (cd {{workdir}}/linux-repl-6.18.6 && just test) && \
-                      cd {{workdir}} && chmod +x run_bench.sh && \
-                      ./run_bench.sh bench-all {{workdir}} 'cd {{workdir}}/app-repl-numa-benchmarks && uv sync --all-extras && just build && just bench-repl'"
+    # 7.3 has replication built in, 6.18 loads the repl_pt module
+    ssh {{host}} '[ -d /sys/kernel/mm/numa_replication ] || [ -d /sys/kernel/debug/repl_pt ] || \
+                  (cd {{workdir}}/linux-repl-6.18.6 && just test)'
+    ssh -tt {{host}} "cd {{workdir}} && chmod +x run_bench.sh && \
+                      ./run_bench.sh bench-all {{workdir}} \
+                      'cd {{workdir}}/app-repl-numa-benchmarks && uv sync --all-extras && just build && just bench-repl'"
 
 [group('bench')]
 bench-list:
