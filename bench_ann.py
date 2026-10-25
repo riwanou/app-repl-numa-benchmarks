@@ -97,8 +97,6 @@ class PressureVariant:
     numactl: str = ""
     numa_balancing: bool = False
     main_placement: int | None = None  # None on the stock kernel
-    # some warmup time
-    settle: int = 30
 
 
 PRESSURE_VARIANTS = [

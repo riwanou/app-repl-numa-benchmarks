@@ -258,13 +258,11 @@ def plot_pgtable(arch: str, table: pd.DataFrame):
         labelspacing=0.3,
     )
     fig.tight_layout(pad=0)
-    for ext in ("pdf", "svg"):
-        path = os.path.join(
-            config.PLOT_DIR_FIO,
-            f"{config.ARCH_SUBNAMES[arch]}_fio_pgtable.{ext}",
-        )
-        plt.savefig(path, bbox_inches="tight", pad_inches=0, dpi=300)
-        print(f"[OK] {path}")
+    path = os.path.join(
+        config.PLOT_DIR_FIO, f"{config.ARCH_SUBNAMES[arch]}_fio_pgtable.pdf"
+    )
+    plt.savefig(path, bbox_inches="tight", pad_inches=0, dpi=300)
+    print(f"[OK] {path}")
     plt.close(fig)
 
 

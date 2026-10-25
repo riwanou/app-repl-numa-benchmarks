@@ -1,110 +1,64 @@
 == pg_stats @ normal end
--- pid 255364
-range 0x7d8000000000-0x7e0000000000 | main node 2
-node 0      : locality=1.0 ptes=492.44K mapped=492.44K rdprot=0     wrprot=492.44K unrepl=0     remotemain=0     [ n0=492.44K(local) n1=0             n2=0             n3=0            ]
-node 1      : locality=1.0 ptes=492.49K mapped=492.49K rdprot=0     wrprot=492.49K unrepl=0     remotemain=0     [ n0=0             n1=492.49K(local) n2=0             n3=0            ]
-node 2(main): locality=0.4 ptes=492.97K mapped=492.97K rdprot=0     wrprot=492.97K unrepl=0     remotemain=0     [ n0=120.97K        n1=57.59K        n2=243.86K(local) n3=70.54K       ]
-node 3      : locality=1.0 ptes=492.50K mapped=492.50K rdprot=0     wrprot=492.50K unrepl=0     remotemain=0     [ n0=0             n1=0             n2=0             n3=492.50K(local)]
-cross-node sharing:
-  node 0: local=492.44K unique=371.47K shared: n1=0     n2=120.97K n3=0    
-  node 1: local=492.49K unique=434.89K shared: n0=0     n2=57.59K n3=0    
-  node 2: local=243.86K unique=243.86K shared: n0=120.97K n1=57.59K n3=70.54K
-  node 3: local=492.50K unique=421.95K shared: n0=0     n1=0     n2=70.54K
-page tables:
-  node 0: root=n0 locality=100.0 tables=990    [ n0=990   (local) n1=0             n2=0             n3=0            ]
-  node 1: root=n1 locality=100.0 tables=990    [ n0=0             n1=990   (local) n2=0             n3=0            ]
-  node 2: root=n2 locality=100.0 tables=990    [ n0=0             n1=0             n2=990   (local) n3=0            ]
-  node 3: root=n3 locality=100.0 tables=990    [ n0=0             n1=0             n2=0             n3=990   (local)]
+-- pid 1324405
+write budget: 0/0
+main folios: 0:468247 1:38 2:23 3:8 4:10 5:1131
+node        write    read   stale   dirty   young   local  remote  copies |    main   pages
+n0              0  504804       0       0  504804  504804       0  324692 |  180112  504804
+n1              0  504323       0       0  504323  504323       0  415708 |   88625  504333
+n2              0  504321       0       0  504321  504321       0  397013 |  107316  504329
+n3 (main)       0  504831       0       0  504831  128778  376053       - |  128778  128778
 == pg_stats @ 6G end
--- pid 255364
-range 0x7d8000000000-0x7e0000000000 | main node 2
-node 0      : locality=0.8 ptes=492.50K mapped=492.50K rdprot=0     wrprot=492.50K unrepl=0     remotemain=0     [ n0=419.49K(local) n1=12.81K        n2=43.52K        n3=16.66K       ]
-node 1      : locality=0.8 ptes=492.50K mapped=492.50K rdprot=0     wrprot=492.50K unrepl=0     remotemain=0     [ n0=32.68K        n1=400.38K(local) n2=41.05K        n3=18.36K       ]
-node 2(main): locality=0.4 ptes=492.50K mapped=492.50K rdprot=0     wrprot=492.50K unrepl=0     remotemain=0     [ n0=120.97K        n1=57.59K        n2=243.39K(local) n3=70.54K       ]
-node 3      : locality=0.7 ptes=492.50K mapped=492.50K rdprot=0     wrprot=492.50K unrepl=0     remotemain=0     [ n0=42.90K        n1=24.76K        n2=68.79K        n3=356.04K(local)]
-cross-node sharing:
-  node 0: local=419.49K unique=298.51K shared: n1=62.57K n2=193.98K n3=81.82K
-  node 1: local=400.38K unique=342.79K shared: n0=62.57K n2=149.70K n3=71.58K
-  node 2: local=243.39K unique=128.55K shared: n0=193.98K n1=149.70K n3=206.99K
-  node 3: local=356.04K unique=285.50K shared: n0=81.82K n1=71.58K n2=206.99K
-page tables:
-  node 0: root=n0 locality=100.0 tables=990    [ n0=990   (local) n1=0             n2=0             n3=0            ]
-  node 1: root=n1 locality=100.0 tables=990    [ n0=0             n1=990   (local) n2=0             n3=0            ]
-  node 2: root=n2 locality=100.0 tables=990    [ n0=0             n1=0             n2=990   (local) n3=0            ]
-  node 3: root=n3 locality=100.0 tables=990    [ n0=0             n1=0             n2=0             n3=990   (local)]
-== pg_stats @ 4.5G end
--- pid 255364
-range 0x7d8000000000-0x7e0000000000 | main node 2
-node 0      : locality=0.4 ptes=492.48K mapped=492.48K rdprot=0     wrprot=492.48K unrepl=0     remotemain=0     [ n0=241.91K(local) n1=36.48K        n2=153.81K        n3=60.27K       ]
-node 1      : locality=0.4 ptes=492.50K mapped=492.50K rdprot=0     wrprot=492.50K unrepl=0     remotemain=0     [ n0=45.99K        n1=221.39K(local) n2=163.06K        n3=62.05K       ]
-node 2(main): locality=0.5 ptes=492.50K mapped=492.50K rdprot=0     wrprot=492.50K unrepl=0     remotemain=0     [ n0=73.66K        n1=42.39K        n2=294.35K(local) n3=82.08K       ]
-node 3      : locality=0.4 ptes=492.50K mapped=492.50K rdprot=0     wrprot=492.50K unrepl=0     remotemain=0     [ n0=47.53K        n1=36.77K        n2=188.32K        n3=219.86K(local)]
-cross-node sharing:
-  node 0: local=241.91K unique=168.25K shared: n1=257.59K n2=324.22K n3=265.13K
-  node 1: local=221.39K unique=178.99K shared: n0=257.59K n2=313.50K n3=267.04K
-  node 2: local=294.35K unique=62.68K shared: n0=324.22K n1=313.50K n3=354.71K
-  node 3: local=219.86K unique=137.78K shared: n0=265.13K n1=267.04K n2=354.71K
-page tables:
-  node 0: root=n0 locality=100.0 tables=990    [ n0=990   (local) n1=0             n2=0             n3=0            ]
-  node 1: root=n1 locality=100.0 tables=990    [ n0=0             n1=990   (local) n2=0             n3=0            ]
-  node 2: root=n2 locality=100.0 tables=990    [ n0=0             n1=0             n2=990   (local) n3=0            ]
-  node 3: root=n3 locality=100.0 tables=990    [ n0=0             n1=0             n2=0             n3=990   (local)]
+-- pid 1324405
+write budget: 0/0
+main folios: 0:468238 1:36 2:23 3:8 4:10 5:1131
+node        write    read   stale   dirty   young   local  remote  copies |    main   pages
+n0              0  504805       0       0  504339  471461   33344  281956 |  189505  471461
+n1              0  504323       0       0  504310  469219   35104  373978 |   95242  469220
+n2              0  504323       0       0  504323  459577   44746  344696 |  114888  459584
+n3 (main)       0  504818       0       0  504323  105183  399635       - |  105183  105183
 == pg_stats @ 3G end
--- pid 255364
-range 0x7d8000000000-0x7e0000000000 | main node 2
-node 0      : locality=0.3 ptes=492.50K mapped=492.50K rdprot=0     wrprot=492.50K unrepl=0     remotemain=0     [ n0=168.23K(local) n1=46.10K        n2=210.35K        n3=67.81K       ]
-node 1      : locality=0.2 ptes=492.50K mapped=492.50K rdprot=0     wrprot=492.50K unrepl=0     remotemain=0     [ n0=84.19K        n1=114.61K(local) n2=223.13K        n3=70.56K       ]
-node 2(main): locality=0.5 ptes=492.50K mapped=492.50K rdprot=0     wrprot=492.50K unrepl=0     remotemain=0     [ n0=87.47K        n1=48.02K        n2=278.66K(local) n3=78.33K       ]
-node 3      : locality=0.3 ptes=492.50K mapped=492.50K rdprot=0     wrprot=492.50K unrepl=0     remotemain=0     [ n0=74.27K        n1=45.03K        n2=213.99K        n3=159.19K(local)]
-cross-node sharing:
-  node 0: local=168.23K unique=80.76K shared: n1=377.96K n2=411.74K n3=357.51K
-  node 1: local=114.61K unique=66.58K shared: n0=377.96K n2=425.91K n3=370.32K
-  node 2: local=278.66K unique=12.97K shared: n0=411.74K n1=425.91K n3=411.64K
-  node 3: local=159.19K unique=80.85K shared: n0=357.51K n1=370.32K n2=411.64K
-page tables:
-  node 0: root=n0 locality=100.0 tables=990    [ n0=990   (local) n1=0             n2=0             n3=0            ]
-  node 1: root=n1 locality=100.0 tables=990    [ n0=0             n1=990   (local) n2=0             n3=0            ]
-  node 2: root=n2 locality=100.0 tables=990    [ n0=0             n1=0             n2=990   (local) n3=0            ]
-  node 3: root=n3 locality=100.0 tables=990    [ n0=0             n1=0             n2=0             n3=990   (local)]
+-- pid 1324405
+write budget: 0/0
+main folios: 0:468232 1:32 2:14 3:8 4:8 5:1119
+node        write    read   stale   dirty   young   local  remote  copies |    main   pages
+n0              0  504341       0       0  504318  250272  254069   54755 |  195517  250272
+n1              0  504313       0       0  504279  204148  300165  104100 |  100048  204148
+n2              0  504317       0       0  504312  212187  292130   91588 |  120606  212194
+n3 (main)       0  504352       0       0  504306   88181  416171       - |   88181   88181
+== pg_stats @ 4.5G end
+-- pid 1324405
+write budget: 0/0
+main folios: 0:468232 1:32 2:14 3:8 4:8 5:1119
+node        write    read   stale   dirty   young   local  remote  copies |    main   pages
+n0              0  504339       0       0  504316  333496  170843  137979 |  195517  333496
+n1              0  504304       0       0  504289  291175  213129  191127 |  100048  291175
+n2              0  504315       0       0  504315  296954  207361  176355 |  120606  296961
+n3 (main)       0  504352       0       0  504320   88181  416171       - |   88181   88181
+== pg_stats @ 6G back end
+-- pid 1324405
+write budget: 0/0
+main folios: 0:468232 1:32 2:14 3:8 4:8 5:1119
+node        write    read   stale   dirty   young   local  remote  copies |    main   pages
+n0              0  504345       0       0  504323  458316   46029  262799 |  195517  458316
+n1              0  504323       0       0  504323  419998   84325  319950 |  100048  419998
+n2              0  504312       0       0  504312  421707   82605  301108 |  120606  421714
+n3 (main)       0  504352       0       0  504320   88181  416171       - |   88181   88181
 == pg_stats @ release end
--- pid 255364
-range 0x7d8000000000-0x7e0000000000 | main node 2
-node 0      : locality=1.0 ptes=492.49K mapped=492.49K rdprot=0     wrprot=492.49K unrepl=0     remotemain=0     [ n0=492.49K(local) n1=0             n2=0             n3=0            ]
-node 1      : locality=1.0 ptes=492.50K mapped=492.50K rdprot=0     wrprot=492.50K unrepl=0     remotemain=0     [ n0=0             n1=492.50K(local) n2=0             n3=0            ]
-node 2(main): locality=0.5 ptes=492.50K mapped=492.50K rdprot=0     wrprot=492.50K unrepl=0     remotemain=0     [ n0=87.47K        n1=48.02K        n2=278.66K(local) n3=78.33K       ]
-node 3      : locality=1.0 ptes=492.50K mapped=492.50K rdprot=0     wrprot=492.50K unrepl=0     remotemain=0     [ n0=0             n1=0             n2=0             n3=492.50K(local)]
-cross-node sharing:
-  node 0: local=492.49K unique=405.01K shared: n1=0     n2=87.47K n3=0    
-  node 1: local=492.50K unique=444.47K shared: n0=0     n2=48.02K n3=0    
-  node 2: local=278.66K unique=278.66K shared: n0=87.47K n1=48.02K n3=78.33K
-  node 3: local=492.50K unique=414.16K shared: n0=0     n1=0     n2=78.33K
-page tables:
-  node 0: root=n0 locality=100.0 tables=990    [ n0=990   (local) n1=0             n2=0             n3=0            ]
-  node 1: root=n1 locality=100.0 tables=990    [ n0=0             n1=990   (local) n2=0             n3=0            ]
-  node 2: root=n2 locality=100.0 tables=990    [ n0=0             n1=0             n2=990   (local) n3=0            ]
-  node 3: root=n3 locality=100.0 tables=990    [ n0=0             n1=0             n2=0             n3=990   (local)]
+-- pid 1324405
+write budget: 0/0
+main folios: 0:468232 1:32 2:14 3:8 4:8 5:1119
+node        write    read   stale   dirty   young   local  remote  copies |    main   pages
+n0              0  504342       0       0  504320  504342       0  308825 |  195517  504342
+n1              0  504321       0       0  504321  504321       0  404273 |  100048  504321
+n2              0  504314       0       0  504314  504314       0  383715 |  120606  504321
+n3 (main)       0  504352       0       0  504320   88181  416171       - |   88181   88181
 == cgroup summary
 low 0
-high 6669
+high 6920
 max 0
 oom 0
 oom_kill 0
 oom_group_kill 0
-peak 7590391808
+sock_throttled 0
+peak 7088115712
 == repl stats
-repl_fail_events 777837
-repl_lock_main_lost 0
-repl_pg_private_alloc 0
-repl_pg_private_free 0
-repl_pte_miss_events 5382150
-repl_rdprotect_handled 0
-repl_reclaimed 316027
-repl_reclaimed_replicas 705624
-repl_remote_faults_on_main 861781
-repl_repl_allocated 2384083
-repl_repl_copy_events 2384083
-repl_skipped_pressure 1515872
-repl_tlb_flushed 6874184
-repl_total_faults 6204121
-repl_unreplicated 0
-repl_writes_to_replicated 0

@@ -1,5 +1,5 @@
 import os
-from config import sh, RESULT_DIR_MICROBENCH, RESULT_DIR_PGTABLE_SYNC
+from config import repl_cmd, sh, RESULT_DIR_MICROBENCH, RESULT_DIR_PGTABLE_SYNC
 
 BENCH_PGTABLE = "microbench/bench_pgtable"
 BENCH_ALLOC = "microbench/bench_alloc"
@@ -11,11 +11,7 @@ def prepare_dirs(result_dir):
 
 
 def run_repl(cmd: str) -> str:
-    return f"""(
-      echo 1 > /sys/kernel/debug/repl_pt/policy &&
-      {cmd};
-      echo 0 > /sys/kernel/debug/repl_pt/policy
-    )"""
+    return repl_cmd(f"env {cmd}")
 
 
 def run_bench(
@@ -102,13 +98,17 @@ def run_bench_mem(method: str):
 
 # in pages: one, four, eight
 CHUNK_SIZES_KB = [4, 16, 32]
+NB_RUNS_PGTABLE_SYNC = 5
 
 
-def run_bench_pgtable_sync_chunk(variant: str, chunk_kb: int, nnodes: int | None = None):
-    """One (variant, chunk size, nnodes). nnodes unset means every node."""
+def run_bench_pgtable_sync_chunk(
+    variant: str, chunk_kb: int, run: int, nnodes: int | None = None
+):
+    """One (variant, chunk size, run, nnodes). nnodes unset means every node."""
     result_dir = RESULT_DIR_PGTABLE_SYNC
     if chunk_kb != CHUNK_SIZES_KB[0]:
         result_dir = os.path.join(RESULT_DIR_PGTABLE_SYNC, f"{chunk_kb}kb_chunks")
+    result_dir = os.path.join(result_dir, f"run{run}")
     prepare_dirs(result_dir)
     sh("sync; echo 3 > /proc/sys/vm/drop_caches")
 
@@ -121,16 +121,19 @@ def run_bench_pgtable_sync_chunk(variant: str, chunk_kb: int, nnodes: int | None
     sh(run_repl(cmd) if repl_enabled else cmd)
 
 
-def run_bench_pgtable_sync(variant: str):
-    """Every chunk size, for one variant; "on" also sweeps 1..num_nodes-1."""
+def run_bench_pgtable_sync(variants: list[str]):
+    """Every chunk size, the variants interleaved run after run; "on" also
+    sweeps 1..num_nodes-1. "off" and "on" share a kernel and a boot, so
+    "off" is the baseline the plot divides by."""
     num_nodes = get_numa_nodes()
-    # the baseline is the Linux default: first touch with NUMA balancing
-    if variant == "baseline":
-        sh("echo 1 > /proc/sys/kernel/numa_balancing")
-    for chunk_kb in CHUNK_SIZES_KB:
-        run_bench_pgtable_sync_chunk(variant, chunk_kb)
-        if variant == "on":
-            for nnodes in range(1, num_nodes):
-                run_bench_pgtable_sync_chunk(variant, chunk_kb, nnodes=nnodes)
-    if variant == "baseline":
-        sh("echo 0 > /proc/sys/kernel/numa_balancing")
+    # the stock baseline is the Linux default: first touch with NUMA balancing
+    balancing = 1 if "baseline" in variants else 0
+    sh(f"echo {balancing} > /proc/sys/kernel/numa_balancing")
+    for run in range(NB_RUNS_PGTABLE_SYNC):
+        for chunk_kb in CHUNK_SIZES_KB:
+            for variant in variants:
+                run_bench_pgtable_sync_chunk(variant, chunk_kb, run)
+                if variant == "on":
+                    for nnodes in range(1, num_nodes):
+                        run_bench_pgtable_sync_chunk(variant, chunk_kb, run, nnodes)
+    sh("echo 0 > /proc/sys/kernel/numa_balancing")

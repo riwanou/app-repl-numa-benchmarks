@@ -1,4 +1,4 @@
-from config import RESULT_DIR_LOCALITY, sh
+from config import RESULT_DIR_LOCALITY, repl_cmd, repl_setup, sh
 
 DATASET = "gist-960-euclidean.hdf5"
 
@@ -7,7 +7,6 @@ RUNNER = "--usearch"
 WARMUP = 30
 WARMUP_BALANCING = 60
 
-REPL = "/sys/kernel/debug/repl_pt"
 
 
 def run(tag: str, numactl: str = "", warmup: int = WARMUP, repl: bool = False):
@@ -18,16 +17,14 @@ def run(tag: str, numactl: str = "", warmup: int = WARMUP, repl: bool = False):
         f" --result-dir {RESULT_DIR_LOCALITY}"
     )
     if repl:
-        cmd = f"(echo 1 > {REPL}/policy && {cmd}; echo 0 > {REPL}/policy)"
+        cmd = repl_cmd(cmd)
 
     sh("sync; echo 3 > /proc/sys/vm/drop_caches")
     sh(cmd)
 
 
 def register_repl():
-    sh(f"echo 0 > {REPL}/main_placement")
-    sh(f"echo 1 > {REPL}/clear_registered")
-    sh(f"echo .usearch > {REPL}/registered")
+    repl_setup(0, [".usearch"])
 
 
 def run_bench_locality():

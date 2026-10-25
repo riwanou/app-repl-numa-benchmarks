@@ -3,45 +3,12 @@ import config
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
-from matplotlib.transforms import blended_transform_factory
 import seaborn as sns
 import pandas as pd
 import numpy as np
 
 
 RESULT_DIR = config.RESULT_DIR
-
-
-def get_std():
-    for arch in os.listdir(RESULT_DIR):
-        arch_dir = os.path.join(RESULT_DIR, arch, "rocksdb", "outputs")
-        if not os.path.isdir(arch_dir):
-            continue
-
-        for benchmark in os.listdir(arch_dir):
-            benchmark_path = os.path.join(arch_dir, benchmark)
-            if os.path.isdir(benchmark_path):
-                csv_file = next(
-                    (
-                        f
-                        for f in os.listdir(benchmark_path)
-                        if f.endswith(".log.r.csv")
-                    ),
-                    None,
-                )
-                if csv_file:
-                    csv_path = os.path.join(benchmark_path, csv_file)
-                    data = pd.read_csv(csv_path)
-                    values = pd.to_numeric(
-                        data["interval_qps"], errors="coerce"
-                    )
-
-                    mean_val = values.mean()
-                    std_val = values.std()
-
-                    print(
-                        f"{arch}: {benchmark}: mean = {mean_val:.2f}, std = {std_val:.2f}, std percent = {(std_val / mean_val) * 100:.2f}"
-                    )
 
 
 YLABEL_SIZE = 6.5
@@ -86,213 +53,125 @@ TAG_LABELS = {
 }
 
 
-# a round more than this far from the median is an outlier: the rounds of a
-# tag sit within ~1% of each other, only the odd stall lands this far off
-OUTLIER_PCT = 7.5
-
-
-def _agg_rounds(values: pd.Series) -> pd.Series:
-    """Mean and std over the sane rounds, the outliers kept aside."""
-    med = values.median()
-    keep = (values - med).abs() / med * 100 <= OUTLIER_PCT
-    return pd.Series(
-        {
-            "mb_sec_mean": values[keep].mean(),
-            "mb_sec_std": values[keep].std(),
-            "outliers": list(values[~keep]),
-        }
-    )
-
-
 def _load_data():
-    all_data = []
+    """Mean and std over the rounds of each (tag, test), per machine, in GB/s."""
+    frames = []
     for arch in os.listdir(RESULT_DIR):
-        arch_dir = os.path.join(RESULT_DIR, arch, "rocksdb")
-        if not os.path.isdir(arch_dir):
-            continue
-
-        csv_path = os.path.join(arch_dir, "results.csv")
+        csv_path = os.path.join(RESULT_DIR, arch, "rocksdb", "results.csv")
         if not os.path.exists(csv_path):
             continue
 
         df = pd.read_csv(csv_path)
         df["mb_sec"] = df["mb_sec"] / 1000  # MB/s -> GB/s
-
         df["arch"] = arch
-        df["test"] = (
-            df["test"]
-            .str.replace(r"\.t\d+", "", regex=True)
-            .str.replace(r"\.s\d+", "", regex=True)
+        df["test"] = df["test"].str.replace(r"\.[ts]\d+", "", regex=True)
+        frames.append(
+            df.groupby(["tag", "test", "arch"])["mb_sec"]
+            .agg(mb_sec_mean="mean", mb_sec_std="std")
+            .reset_index()
         )
-
-        if "nb_runs" in df.columns:
-            df = (
-                df.groupby(["tag", "test", "arch"])["mb_sec"]
-                .apply(_agg_rounds)
-                .unstack()
-                .reset_index()
-            )
-        else:
-            df["mb_sec_mean"] = df["mb_sec"]
-            df["mb_sec_std"] = float("nan")
-            df["outliers"] = [[] for _ in range(len(df))]
-            df = df[
-                ["tag", "test", "arch", "mb_sec_mean", "mb_sec_std", "outliers"]
-            ]
-
-        all_data.append(df)
-
-    return pd.concat(all_data, ignore_index=True)
+    return pd.concat(frames, ignore_index=True)
 
 
-def _normalize_relative_to_default(group):
-    method = group.iloc[0]["test"].rsplit(".", 2)[0]
-    default_row = group[group["tag"] == f"balancing-{method}"]
-    if default_row.empty:
-        return group
-
-    default_mean = default_row["mb_sec_mean"].iloc[0]
-    group = group.copy()
-    group["mb_sec_mean_pct"] = (
-        100 * (group["mb_sec_mean"] - default_mean) / default_mean
-    )
-    group["mb_sec_std_pct"] = 100 * group["mb_sec_std"] / default_mean
-    group["outliers_pct"] = group["outliers"].apply(
-        lambda vals: [100 * (v - default_mean) / default_mean for v in vals]
-    )
-
-    return group
-
-
-def _short_value(value: float) -> str:
-    """One decimal, with the unit: "21.4 GB/s"."""
-    return f"{value:.1f} GB/s"
+def _normalize_relative_to_default(df):
+    """Mean and std as a percentage over Linux Vanilla (numa balancing)."""
+    vanilla = df[df["tag"] == "balancing-" + df["test"]].set_index(
+        ["arch", "test"]
+    )["mb_sec_mean"]
+    base = df.set_index(["arch", "test"]).index.map(vanilla)
+    df = df.copy()
+    df["mb_sec_mean_pct"] = 100 * (df["mb_sec_mean"] - base) / base
+    df["mb_sec_std_pct"] = 100 * df["mb_sec_std"] / base
+    return df
 
 
 def _row_for(arch_data, tag: str, method: str):
     """The row a bar is drawn from, None when this machine skipped it."""
-    if tag:
-        row = arch_data[arch_data["tag"] == f"{tag}-{method}"]
-    else:
-        row = arch_data[arch_data["tag"] == f"default-{method}"]
-        if len(row) == 0:
-            row = arch_data[arch_data["tag"] == method]
-    return row.iloc[0] if len(row) > 0 else None
+    names = [f"{tag}-{method}"] if tag else [f"default-{method}", method]
+    for name in names:
+        row = arch_data[arch_data["tag"] == name]
+        if len(row) > 0:
+            return row.iloc[0]
+    return None
+
+
+BAR_WIDTH = 0.11
+GROUP_STEP = 0.63
 
 
 def _plot_bars(ax, arch_data, show_absolute=False):
-    bar_width = 0.11
-    bar_gap = 0.0
-    n_bars = len(TAGS_ORDER)
-    group_width = n_bars * bar_width + (n_bars - 1) * bar_gap
-    x = np.arange(len(METHODS)) * 0.63
+    x = np.arange(len(METHODS)) * GROUP_STEP
+    group_width = len(TAGS_ORDER) * BAR_WIDTH
 
     linux = sns.color_palette(config.LINUX_COLOR, n_colors=5)
     spare = sns.color_palette(config.SPARE_COLOR, n_colors=9)
     palettes = {
-        # "imbalanced": linux[0],
         "": linux[0],  # the pale orange llama and ann give First Touch
         "interleaved": linux[2],
         "patched-repl": spare[7],
     }
 
-    # height of the plotted range, to lift the labels off their bar: only
-    # the bars actually drawn, the rest of the rows swing far wider
-    drawn = [
-        _row_for(arch_data, tag, method)
+    rows = {
+        (tag, method): _row_for(arch_data, tag, method)
         for tag in TAGS_ORDER
         for method in METHODS
-    ]
+    }
+    # height of the plotted range, to lift the labels off their bar
     ends = [0.0]
-    for row in drawn:
-        if row is None:
-            continue
-        mean = row["mb_sec_mean_pct"]
+    for row in filter(lambda r: r is not None, rows.values()):
         err = row["mb_sec_std_pct"] if pd.notna(row["mb_sec_std_pct"]) else 0
-        ends += [mean + err, mean - err]
+        ends += [row["mb_sec_mean_pct"] + err, row["mb_sec_mean_pct"] - err]
     span = max(ends) - min(ends)
 
-    dropped = []
-
     for i, tag in enumerate(TAGS_ORDER):
-        means = []
-        stds = []
-        abs_values = []
-        abs_stds = []
-        outliers = []
+        positions = x - group_width / 2 + (i + 0.5) * BAR_WIDTH
+        tag_rows = [rows[(tag, method)] for method in METHODS]
 
-        for method in METHODS:
-            row = _row_for(arch_data, tag, method)
-            if row is not None:
-                means.append(row["mb_sec_mean_pct"])
-                stds.append(row["mb_sec_std_pct"])
-                abs_values.append(row["mb_sec_mean"])
-                abs_stds.append(
-                    row["mb_sec_std"] if pd.notna(row["mb_sec_std"]) else 0
-                )
-                outliers.append(
-                    row["outliers"] if show_absolute else row["outliers_pct"]
-                )
-            else:
-                means.append(0)
-                stds.append(0)
-                abs_values.append(0)
-                abs_stds.append(0)
-                outliers.append([])
+        def col(name):
+            return [
+                0 if r is None or pd.isna(r[name]) else r[name] for r in tag_rows
+            ]
 
-        positions = [
-            pos - group_width / 2 + i * (bar_width + bar_gap) + bar_width / 2
-            for pos in x
-        ]
-
-        if show_absolute:
-            bar_values = abs_values
-            bar_stds = abs_stds
-        else:
-            bar_values = means
-            bar_stds = stds
-
-        if show_absolute:
-            error_kw = dict(lw=0.3, capthick=0.3)
-            capsize = 0.6
-        else:
-            error_kw = dict(lw=0.3, capthick=0.3)
-            capsize = 0.7
+        pcts, abs_values = col("mb_sec_mean_pct"), col("mb_sec_mean")
+        values = abs_values if show_absolute else pcts
+        stds = col("mb_sec_std") if show_absolute else col("mb_sec_std_pct")
 
         bars = ax.bar(
             positions,
-            bar_values,
-            width=bar_width,
+            values,
+            width=BAR_WIDTH,
             label=TAG_LABELS[tag],
             color=palettes[tag],
             edgecolor=palettes[tag],
-            yerr=bar_stds,
-            capsize=capsize,
-            error_kw=error_kw,
+            yerr=stds,
+            capsize=0.6 if show_absolute else 0.7,
+            error_kw=dict(lw=0.3, capthick=0.3),
             linewidth=0.25,
         )
 
-        # rounds dropped from the mean, kept visible without letting them
-        # stretch the axis: one that falls off the range sits on the edge
-        for pos, values in zip(positions, outliers):
-            for value in values:
-                dropped.append((pos, value))
-
-        for rect, pct, abs_val, err in zip(bars, means, abs_values, bar_stds):
+        for rect, pct, abs_val, err in zip(bars, pcts, abs_values, stds):
             h = rect.get_height()
             if h == 0:
                 continue
+            centre = rect.get_x() + rect.get_width() / 2
 
-            # one throughput per group, off the SPARe bar: the others
-            # are read from it through their percentage
-            if not show_absolute and tag == VALUE_TAG:
-                # the error bar's upper cap, which a slightly negative bar
-                # still pushes above zero
-                top = max(h + err, 0)
+            if show_absolute:
                 ax.text(
-                    rect.get_x() + rect.get_width() / 2,
-                    top + span * 0.02,
-                    _short_value(abs_val),
+                    centre,
+                    h + (0.3 if h >= 0 else -0.3),
+                    f"{pct:+.0f}%" if pct != 0 else f"{abs_val:.1f} GB/s",
+                    ha="center",
+                    va="bottom" if h >= 0 else "top",
+                    fontsize=2,
+                    color="green" if pct > 0 else "red" if pct < 0 else "black",
+                )
+            elif tag == VALUE_TAG:
+                # one throughput per group, off the SPARe bar's upper cap,
+                # which a slightly negative bar still pushes above zero
+                ax.text(
+                    centre,
+                    max(h + err, 0) + span * 0.02,
+                    f"{abs_val:.1f} GB/s",
                     ha="left",
                     va="bottom",
                     rotation=45,
@@ -302,74 +181,20 @@ def _plot_bars(ax, arch_data, show_absolute=False):
                     path_effects=HALO,
                 )
 
-            if show_absolute:
-                offset = 0.3 if h >= 0 else -0.3
-                va = "bottom" if h >= 0 else "top"
-                label = f"{pct:+.0f}%" if pct != 0 else f"{abs_val:.1f} GB/s"
-                color = "green" if pct > 0 else "red" if pct < 0 else "black"
 
-                ax.text(
-                    rect.get_x() + rect.get_width() / 2,
-                    h + offset,
-                    label,
-                    ha="center",
-                    va=va,
-                    fontsize=2,
-                    color=color,
-                )
-
-    return dropped
-
-
-DROPPED_SIZE = 4.0  # points: the excluded round's own throughput
-DROPPED_DX = 0.035  # data units: clear of the marker, inside the group
-DROPPED_LIFTS = 8  # give up after this many, rather than run off the axis
-
-
-def _draw_dropped(ax, dropped):
-    """The excluded rounds, each at its own value, with that value beside it.
-
-    A label is wider than a bar, so two outliers on neighbouring bars would
-    overlap whenever their values are close. Each label is lifted by its own
-    height until it clears the ones already placed, lowest value first."""
-    texts = []
-    for pos, value in sorted(dropped, key=lambda d: (d[1], d[0])):
-        ax.plot(
-            pos, value, marker="+", ms=2.2, mew=0.5, color="black", zorder=4
-        )
-        texts.append(
-            ax.text(
-                pos + DROPPED_DX,
-                value,
-                _short_value(value),
-                ha="left",
-                va="center",
-                fontsize=DROPPED_SIZE,
-                zorder=5,
-                path_effects=HALO,
-            )
-        )
-
-    fig = ax.figure
-    fig.canvas.draw()
-    placed = []
-    for text in texts:
-        box = text.get_window_extent()
-        for _ in range(DROPPED_LIFTS):
-            if not any(box.overlaps(other) for other in placed):
-                break
-            x, y = text.get_position()
-            text.set_position((x, y + _data_height(ax, box.height)))
-            fig.canvas.draw()
-            box = text.get_window_extent()
-        placed.append(box)
-
-
-def _data_height(ax, pixels: float) -> float:
-    """A display-space height in data units, so a lift is one label tall."""
+def _fit_texts(ax):
+    """Exactly the room the stood-up labels need, no more."""
+    ax.figure.canvas.draw()
     inv = ax.transData.inverted()
-    (_, low), (_, high) = inv.transform([(0, 0), (0, pixels)])
-    return high - low
+    ys = [inv.transform(t.get_window_extent().corners())[:, 1] for t in ax.texts]
+    if not ys:
+        return
+    lo, hi = ax.get_ylim()
+    pad = 0.02 * (hi - lo)
+    ax.set_ylim(
+        min(lo, min(y.min() for y in ys) - pad),
+        max(hi, max(y.max() for y in ys) + pad),
+    )
 
 
 def make_plot_rocksdb():
@@ -382,11 +207,7 @@ def _make_plot_rocksdb_variant(absolute=False):
 
     df_all = _load_data()
 
-    df_all_norm = pd.DataFrame(
-        df_all.groupby(["arch", "test"])[df_all.columns.tolist()]
-        .apply(_normalize_relative_to_default, include_groups=True)
-        .reset_index(drop=True)
-    )
+    df_all_norm = _normalize_relative_to_default(df_all)
 
     sns.set_style(style="ticks")
     sns.set_context("paper")
@@ -404,7 +225,7 @@ def _make_plot_rocksdb_variant(absolute=False):
             nrows=1, ncols=1, figsize=(3.3, 1.3 if absolute else 1.25)
         )
 
-        dropped = _plot_bars(ax, arch_data, show_absolute=absolute)
+        _plot_bars(ax, arch_data, show_absolute=absolute)
 
         ax.set_axisbelow(True)
         ax.grid(axis="y", ls=":", lw=0.4, color="0.85", zorder=0)
@@ -417,26 +238,11 @@ def _make_plot_rocksdb_variant(absolute=False):
         ax.tick_params(axis="y", labelsize=6, length=2)
         ax.tick_params(axis="x", labelsize=6, length=2, pad=XTICK_PAD)
 
-        ax.set_xticks(np.arange(len(METHODS)) * 0.63)
+        ax.set_xticks(np.arange(len(METHODS)) * GROUP_STEP)
         ax.set_xticklabels(METHODS_LABELS, fontsize=XTICK_SIZE, rotation=25)
 
-        if absolute:
-            _draw_dropped(ax, dropped)
-        else:
-            # exactly the room the stood-up labels need, no more
-            fig.canvas.draw()
-            inv = ax.transData.inverted()
-            ys = [
-                inv.transform(t.get_window_extent().corners())[:, 1]
-                for t in ax.texts
-            ]
-            lo, hi = ax.get_ylim()
-            if ys:
-                pad = 0.02 * (hi - lo)
-                ax.set_ylim(
-                    min(lo, min(y.min() for y in ys) - pad),
-                    max(hi, max(y.max() for y in ys) + pad),
-                )
+        if not absolute:
+            _fit_texts(ax)
         ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
         ax.set_ylabel(
             "Throughput (GB/s)"

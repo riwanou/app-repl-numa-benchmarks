@@ -1,372 +1,253 @@
-from multiprocessing.context import BaseContext
+import json
 import os
-import config
+import re
+
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
-import re
-import seaborn as sns
-import pandas as pd
 import numpy as np
-import json
+import pandas as pd
+import seaborn as sns
 
-RESULT_DIR = config.RESULT_DIR
-pattern = re.compile(
-    r"(?P<benchmark>\w+)"  # readwrite, read
-    r"_(?P<distrib>\w+)"  # random, zipf
-    r"_(?P<readratio>\d+)"  # number of reader jobs
-    r"_(?P<writeratio>\d+)"  # number of writer jobs
-    r"(?P<repl>_repl)?"  # matches "_repl" if present
-    r"(?P<unrepl>_unrepl)?"  # matches "_unrepl" if present
-    r"(?P<default>_default)?"  # matches "_default" if present
-    r"(?:_run(?P<run>\d+))?"  # match _run<nb_run>
-    r"\.json$"  # exactly one .json at the end
-)
+import config
 
-# bench_fio.py writes one jsonl per (workload, variant): the "-default" file
-# holds the unreplicated runs, the "-repl" file the replicated ones. The tag of
-# each individual run lives inside the record, not in the filename.
-jsonl_pattern = re.compile(
-    r"(?P<benchmark>[a-z]+)"  # readwrite, read
-    r"_(?P<distrib>[a-z]+)"  # random, zipf
-    r"_(?P<readratio>\d+)"  # read ratio (%)
-    r"_(?P<writeratio>\d+)"  # write ratio (%)
-    r"-(?P<variant>repl|default)"  # replicated or not
-    r"\.jsonl$"
-)
+# bench_fio.py writes one jsonl per workload and kernel, one fio run per line
+JSONL = re.compile(r"readwrite_random_(?P<read>\d+)_(?P<write>\d+)-(repl|default)\.jsonl")
 
-# tag (as written by bench_fio.run_one) -> legend label and (palette, index),
-# ordered left to right. "linux" is the Oranges ramp, "spare" the Blues one.
+# tag written by bench_fio.run_one -> legend label, palette, shade
 SERIES = [
-    ("numabalancing", "Linux Vanilla", ("linux", 3)),
-    ("interleaved", "Interleave", ("linux", 5)),
-    ("repl", "SPARe (No Unreplication)", ("spare", 3)),
-    ("unrepl-bound", "SPARe (Unreplication)", ("spare", 5)),
-    # I forgot to rename interleaved in bench, but its dynamic policy
-    (
-        "unrepl-interleaved",
-        "SPARe (Unrepl. + Dynamic Policy)",
-        ("spare", 8),
-    ),
+    ("numabalancing", "Linux Vanilla", config.LINUX_COLOR, 3),
+    ("interleaved", "Interleave", config.LINUX_COLOR, 5),
+    ("repl", "SPARe (No Unreplication)", config.SPARE_COLOR, 3),
+    ("unrepl", "SPARe (Unreplication)", config.SPARE_COLOR, 5),
+    ("policy", "SPARe (Unrepl. + Dynamic Policy)", config.SPARE_COLOR, 8),
 ]
+SHADES = {config.LINUX_COLOR: 7, config.SPARE_COLOR: 9}
 
-# tags used by the older per-run .json result files
-LEGACY_TAGS = {"": "numabalancing", "unrepl": "unrepl-bound"}
+# 80% reads, writes on a part of the file only
+WRITTEN = re.compile(r"readwrite_written(?P<pct>\d+)_80_20-(repl|default)\.jsonl")
 
-# fio divides the group's bytes by one job's 30s runtime, which over-reports
-# up to 1.8x when the jobs stagger. Divide by wall_seconds() instead.
-USE_WALL_BW = True
+# one image per panel; in LaTeX one row per machine over the two columns:
+# uniform read | write on 2/3, written part read | write on 1/3
+WIDTH_UNIFORM = 2.3
+WIDTH_WRITTEN = 1.15
+# fixed margins in inches, not a tight bbox, so every panel of a row has the
+# same axes height and baseline whatever its labels
+AXES_HEIGHT = 0.85
+# read ticks reach 3 digits, write ticks stay at 2: less room before the label
+MARGIN_LEFT = {"read": 0.43, "write": 0.38}
+# centre of the y label, from the left edge
+YLABEL_X = 0.08
+MARGIN_RIGHT = 0.04
+MARGIN_TOP = 0.04
+MARGIN_TICKS = 0.2
+MARGIN_XLABEL = 0.42
+# only the bottom row names the x axis
+BOTTOM_ROW = "gold"
+# 30% already shows the write-heavy side, more room per bar
+MIN_READ_RATIO = 30
 
 
-def make_plot_fio():
-    os.makedirs(config.PLOT_DIR_FIO, exist_ok=True)
+def bw_from_fio_output(data) -> dict:
+    """GB/s of one fio run, summed over its job groups."""
+    jobs = data.get("jobs", [])
+    return {
+        f"{op}_bw_gb": sum(j[op]["bw_bytes"] for j in jobs) / 1000**3
+        for op in ("read", "write")
+    }
 
-    for arch in os.listdir(RESULT_DIR):
-        if arch not in config.ARCH_SUBNAMES:
+
+def get_data(fio_dir: str) -> pd.DataFrame:
+    rows = []
+    for fname in sorted(os.listdir(fio_dir)):
+        m = JSONL.fullmatch(fname)
+        if not m:
             continue
-        if not os.path.isdir(os.path.join(RESULT_DIR, arch, "fio")):
+        with open(os.path.join(fio_dir, fname)) as f:
+            for line in f:
+                r = json.loads(line)
+                rows.append(
+                    {
+                        "readratio": int(m["read"]),
+                        "writeratio": int(m["write"]),
+                        "run": r["run"],
+                        "benchmark": "readwrite_random",
+                        "tag": r["tag"],
+                        # epoch seconds on the bench machine, for stats_monitoring
+                        "ts_start": r["ts_start"],
+                        "ts_end": r["ts_end"],
+                        **bw_from_fio_output(r["data"]),
+                    }
+                )
+    return pd.DataFrame(rows)
+
+
+def get_written_data(fio_dir: str) -> pd.DataFrame:
+    rows = []
+    for fname in sorted(os.listdir(fio_dir)):
+        m = WRITTEN.fullmatch(fname)
+        if not m:
             continue
-        make_plot_fio_arch(arch)
-
-
-def make_plot_fio_arch(arch):
-    combined_df = get_data(arch)
-    if combined_df.empty:
-        print(f"No random fio data for {arch}, skipping.")
-        return
-
-    agg_df = aggregate(combined_df)
-
-    combined_df["readratio"] = combined_df["readratio"].astype(int)
-    combined_df = combined_df.sort_values(
-        by=["readratio", "tag", "run"], ascending=[False, True, True]
-    ).reset_index(drop=True)
-
-    result_dir = os.path.join(RESULT_DIR, arch, "fio")
-    combined_df.to_csv(os.path.join(result_dir, "details.csv"), index=False)
-    agg_df.to_csv(os.path.join(result_dir, "agg.csv"), index=False)
-
-    read_col = "read_bw_wall" if USE_WALL_BW else "read_bw"
-    write_col = "write_bw_wall" if USE_WALL_BW else "write_bw"
-
-    plot_fio(
-        arch,
-        "read",
-        agg_df,
-        value_col=f"{read_col}_gb",
-        std_col=f"{read_col}_std",
-        ylabel="$\mathbf{Read}$ Bandwidth (GB/s)",
-        is_write=False,
-    )
-    plot_fio(
-        arch,
-        "write",
-        agg_df,
-        value_col=f"{write_col}_gb",
-        std_col=f"{write_col}_std",
-        ylabel="$\mathbf{Write}$ Bandwidth (GB/s)",
-        is_write=True,
-    )
+        with open(os.path.join(fio_dir, fname)) as f:
+            for line in f:
+                r = json.loads(line)
+                rows.append(
+                    {"pct": int(m["pct"]), "tag": r["tag"], **bw_from_fio_output(r["data"])}
+                )
+    return pd.DataFrame(rows)
 
 
 def aggregate(df: pd.DataFrame) -> pd.DataFrame:
-    """Mean and std across the runs of each (tag, ratio, benchmark)."""
-    agg_df = (
+    """Mean and std across the runs of each (tag, ratio)."""
+    return (
         df.groupby(["tag", "readratio", "writeratio", "benchmark"])
         .agg(
             read_bw_gb=("read_bw_gb", "mean"),
             write_bw_gb=("write_bw_gb", "mean"),
-            read_bw_std=("read_bw_gb", "std"),  # std across runs
-            write_bw_std=("write_bw_gb", "std"),  # std across runs
-            read_bw_wall_gb=("read_bw_wall_gb", "mean"),
-            write_bw_wall_gb=("write_bw_wall_gb", "mean"),
-            read_bw_wall_std=("read_bw_wall_gb", "std"),
-            write_bw_wall_std=("write_bw_wall_gb", "std"),
-            wall_s=("wall_s", "mean"),
+            read_bw_std=("read_bw_gb", "std"),
+            write_bw_std=("write_bw_gb", "std"),
+            read_bw_min=("read_bw_gb", "min"),
+            write_bw_min=("write_bw_gb", "min"),
+            read_bw_max=("read_bw_gb", "max"),
+            write_bw_max=("write_bw_gb", "max"),
             nb_runs=("run", "count"),
         )
+        .fillna(0)
+        .reset_index()
+        .sort_values(["readratio", "tag"], ascending=[False, True])
+    )
+
+
+def aggregate_written(df: pd.DataFrame) -> pd.DataFrame:
+    return (
+        df.groupby(["tag", "pct"])
+        .agg(
+            read_bw_gb=("read_bw_gb", "mean"),
+            write_bw_gb=("write_bw_gb", "mean"),
+            read_bw_std=("read_bw_gb", "std"),
+            write_bw_std=("write_bw_gb", "std"),
+            read_bw_min=("read_bw_gb", "min"),
+            write_bw_min=("write_bw_gb", "min"),
+            read_bw_max=("read_bw_gb", "max"),
+            write_bw_max=("write_bw_gb", "max"),
+        )
+        .fillna(0)
         .reset_index()
     )
-    # std is NaN for a single run; matplotlib wants a number for yerr
-    std_cols = [
-        "read_bw_std",
-        "write_bw_std",
-        "read_bw_wall_std",
-        "write_bw_wall_std",
+
+
+def make_plot_fio():
+    os.makedirs(config.PLOT_DIR_FIO, exist_ok=True)
+    make_legend()
+    for arch, name in config.ARCH_SUBNAMES.items():
+        fio_dir = os.path.join(config.RESULT_DIR, arch, "fio")
+        if not os.path.isdir(fio_dir):
+            continue
+        df = get_data(fio_dir)
+        if df.empty:
+            print(f"No fio data for {arch}, skipping.")
+            continue
+        df = df.sort_values(["readratio", "tag", "run"], ascending=[False, True, True])
+        df.to_csv(os.path.join(fio_dir, "details.csv"), index=False)
+        agg = aggregate(df)
+        agg.to_csv(os.path.join(fio_dir, "agg.csv"), index=False)
+        agg = agg[agg["readratio"] >= MIN_READ_RATIO]
+        bottom = name == BOTTOM_ROW
+        plot_read_write(
+            agg,
+            "readratio",
+            "Read Ratio (%)" if bottom else None,
+            WIDTH_UNIFORM,
+            os.path.join(config.PLOT_DIR_FIO, f"{name}_uniform"),
+            switch=kill_switch(agg),
+        )
+        written = get_written_data(fio_dir)
+        if not written.empty:
+            plot_read_write(
+                aggregate_written(written),
+                "pct",
+                "Written Part (%)" if bottom else None,
+                WIDTH_WRITTEN,
+                os.path.join(config.PLOT_DIR_FIO, f"{name}_written"),
+            )
+
+
+def kill_switch(agg: pd.DataFrame) -> float | None:
+    """x of the switch: between the last ratio where the policy shares (read
+    bandwidth closer to unrepl) and the first where it keeps copies."""
+    ratios = sorted(agg["readratio"].unique())
+    bw = agg.pivot_table(index="readratio", columns="tag", values="read_bw_gb")
+    if not {"policy", "repl", "unrepl"} <= set(bw.columns):
+        return None
+    keeps = [
+        abs(bw.loc[r, "policy"] - bw.loc[r, "repl"])
+        < abs(bw.loc[r, "policy"] - bw.loc[r, "unrepl"])
+        for r in ratios
     ]
-    agg_df[std_cols] = agg_df[std_cols].fillna(0)
-    agg_df["readratio"] = agg_df["readratio"].astype(int)
-    return agg_df.sort_values(
-        by=["readratio", "tag"], ascending=[False, True]
-    ).reset_index(drop=True)
+    if True not in keeps or keeps.index(True) == 0:
+        return None
+    return keeps.index(True) - 0.5
 
 
-def wall_seconds(json_data) -> float:
-    """Span the jobs really covered: elapsed, less the 20s ramp and 1s of
-    setup. 30s when they run aligned, more when they stagger."""
-    jobs = json_data.get("jobs", [])
-    if not jobs:
-        return 0.0
-    return max(jobs[0].get("elapsed", 0) - 21, 30.0)
-
-
-def bw_from_fio_output(json_data) -> dict:
-    """Sum the bandwidth of every job group in one fio json output."""
-    read_bytes = write_bytes = 0
-    read_bw = write_bw = 0.0
-    read_bw_mean = read_bw_dev = 0.0
-    write_bw_mean = write_bw_dev = 0.0
-
-    for job in json_data.get("jobs", []):
-        read_stats = job.get("read", {})
-        write_stats = job.get("write", {})
-
-        read_bw += read_stats.get("bw_bytes", 0) / (1000**3)
-        write_bw += write_stats.get("bw_bytes", 0) / (1000**3)
-
-        read_bytes += read_stats.get("io_bytes", 0)
-        write_bytes += write_stats.get("io_bytes", 0)
-
-        read_bw_mean += read_stats.get("bw_mean", 0) / (1000**2)
-        read_bw_dev += read_stats.get("bw_dev", 0) / (1000**2)
-        write_bw_mean += write_stats.get("bw_mean", 0) / (1000**2)
-        write_bw_dev += write_stats.get("bw_dev", 0) / (1000**2)
-
-    wall = wall_seconds(json_data)
-
-    return {
-        "read_bw_gb": read_bw,
-        "write_bw_gb": write_bw,
-        # same bytes, divided by the real window every job ran in
-        "read_bw_wall_gb": read_bytes / wall / (1000**3) if wall > 0 else 0,
-        "write_bw_wall_gb": write_bytes / wall / (1000**3) if wall > 0 else 0,
-        "wall_s": wall,
-        "read_bw_std": read_bw_dev,
-        "write_bw_std": write_bw_dev,
-        "read_bw_std_pct": (read_bw_dev / read_bw_mean) * 100
-        if read_bw_mean > 0
-        else 0,
-        "write_bw_std_pct": (write_bw_dev / write_bw_mean) * 100
-        if write_bw_mean > 0
-        else 0,
-    }
-
-
-def get_data_jsonl(dir: str) -> list:
-    """Read the *-repl.jsonl / *-default.jsonl files written by bench_fio."""
-    rows = []
-
-    for fname in sorted(os.listdir(dir)):
-        # pgtable_*.jsonl belongs to the microbench plots, not here
-        if not fname.endswith(".jsonl") or not fname.startswith("readwrite_"):
-            continue
-
-        match = jsonl_pattern.match(fname)
-        if not match:
-            print(f"Skipping unknown jsonl file format: {fname}")
-            continue
-        if match["distrib"] != "random":
-            continue
-
-        path = os.path.join(dir, fname)
-        with open(path) as f:
-            for lineno, line in enumerate(f, start=1):
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    record = json.loads(line)
-                except json.JSONDecodeError as e:
-                    print(f"Skipping {path}:{lineno}: {e}")
-                    continue
-
-                rows.append(
-                    {
-                        "readratio": match["readratio"],
-                        "writeratio": match["writeratio"],
-                        "run": int(record.get("run", 1)),
-                        "benchmark": f"{match['benchmark']}_{match['distrib']}",
-                        "tag": record.get("tag", ""),
-                        # epoch seconds, as stamped on the bench machine.
-                        # stats_monitoring turns them into the monitor's local
-                        # time; converting here would use the *plotting*
-                        # machine's timezone instead.
-                        "ts_start": record.get("ts_start"),
-                        "ts_end": record.get("ts_end"),
-                        **bw_from_fio_output(record.get("data", {})),
-                    }
-                )
-
-    return rows
-
-
-def get_data(arch: str) -> pd.DataFrame:
-    dir = os.path.join(RESULT_DIR, arch, "fio")
-
-    rows = get_data_jsonl(dir)
-    if rows:
-        combined_df = pd.DataFrame(rows)
-        print(
-            f"Avg std percent — Read:  {combined_df['read_bw_std_pct'].mean():.3f}%"
-            f"  Write: {combined_df['write_bw_std_pct'].mean():.3f}%"
-        )
-        return combined_df
-
-    return get_data_legacy_json(dir)
-
-
-def get_data_legacy_json(dir: str) -> pd.DataFrame:
-    data = []
-
-    for fname in os.listdir(dir):
-        if not fname.endswith(".json"):
-            continue
-
-        match = pattern.match(fname)
-        if not match:
-            print(f"Skipping unknown file format: {fname}")
-            continue
-
-        benchmark = match["benchmark"]
-        distrib = match["distrib"]
-        readratio = match["readratio"]
-        writeratio = match["writeratio"]
-        is_repl = match["repl"] is not None
-        is_unrepl = match["unrepl"] is not None
-        is_default = match["default"] is not None
-        run = match["run"] if match["run"] else "1"
-
-        if distrib != "random":
-            continue
-
-        path = os.path.join(dir, fname)
-        if os.path.getsize(path) == 0:
-            continue
-        try:
-            with open(path, "r") as f:
-                json_data = json.load(f)
-        except Exception as e:
-            print(f"Skipping {path}: {e}")
-            continue
-
-        tag = ""
-        if is_repl:
-            tag = "repl"
-        if is_unrepl:
-            tag = "unrepl"
-        if is_default:
-            tag = "default"
-
-        data.append(
-            {
-                "readratio": readratio,
-                "writeratio": writeratio,
-                "run": int(run),
-                "benchmark": f"{benchmark}_{distrib}",
-                "tag": LEGACY_TAGS.get(tag, tag),
-                **bw_from_fio_output(json_data),
-            }
-        )
-
-    if not data:
-        return pd.DataFrame()
-
-    combined_df = pd.DataFrame(data)
-
-    print(
-        f"Avg std percent — Read:  {combined_df['read_bw_std_pct'].mean():.3f}%  Write: {combined_df['write_bw_std_pct'].mean():.3f}%"
-    )
-
-    return combined_df
-
-
-def plot_fio(arch, title, df_param, value_col, std_col, ylabel, is_write=False):
-    df = df_param.copy()
-    df["readratio"] = df["readratio"].astype(int)
-
-    read_ratios = sorted(df["readratio"].unique())
-    x = np.arange(len(read_ratios))
-
+def plot_read_write(agg, col, xlabel, width, prefix, switch=None):
+    """One image for read bandwidth, one for write, one group of bars per value
+    of col; LaTeX puts them side by side."""
     plt.rcParams.update({"font.family": "serif", "font.serif": "DejaVu Serif"})
-
     sns.set_style("ticks")
     sns.set_context("paper")
-    fig, ax = plt.subplots(
-        figsize=(3.31, 1.65),
-    )
+    for op in ("read", "write"):
+        bottom = MARGIN_XLABEL if xlabel else MARGIN_TICKS
+        height = MARGIN_TOP + AXES_HEIGHT + bottom
+        fig = plt.figure(figsize=(width, height))
+        ax = fig.add_axes(
+            [
+                MARGIN_LEFT[op] / width,
+                bottom / height,
+                1 - (MARGIN_LEFT[op] + MARGIN_RIGHT) / width,
+                AXES_HEIGHT / height,
+            ]
+        )
+        draw_bars(ax, agg, col, op)
+        ax.yaxis.set_label_coords((YLABEL_X - MARGIN_LEFT[op]) / (width - MARGIN_LEFT[op] - MARGIN_RIGHT), 0.5)
+        ax.yaxis.label.set_verticalalignment("center")
+        if xlabel:
+            ax.set_xlabel(xlabel, fontsize=6)
+        if switch is not None:
+            ax.axvline(switch, ls="--", lw=0.5, color="0.35", zorder=1)
+        # named once per row, the write panel beside it shares the line
+        if switch is not None and op == "read":
+            ax.text(
+                switch,
+                1.0,
+                " kill switch",
+                transform=ax.get_xaxis_transform(),
+                ha="left",
+                va="top",
+                fontsize=5,
+                color="0.35",
+            )
+        fig.savefig(f"{prefix}_{op}.pdf", dpi=300)
+        plt.close(fig)
 
-    palettes = {
-        "linux": sns.color_palette(config.LINUX_COLOR, n_colors=7),
-        "spare": sns.color_palette(config.SPARE_COLOR, n_colors=9),
-    }
 
-    error_kw = {"linewidth": 0.3, "capthick": 0.3}
-    capsize = 0.7
-
-    series = []
-    for tag, label, (palette_name, shade) in SERIES:
-        sub = df[df["tag"] == tag].set_index("readratio")
-        values = [
-            sub.loc[r, value_col] if r in sub.index else 0 for r in read_ratios
-        ]
-        if all(v == 0 for v in values):
-            continue
-        stds = [
-            sub.loc[r, std_col] if r in sub.index else 0 for r in read_ratios
-        ]
-        series.append((values, stds, label, palettes[palette_name][shade]))
-
+def draw_bars(ax, agg: pd.DataFrame, col: str, op: str):
+    keys = sorted(agg[col].unique())
+    x = np.arange(len(keys))
+    series = [s for s in SERIES if s[0] in set(agg["tag"])]
     # keep the group of bars centred on the tick whatever the number of series
-    width = 0.85 / max(len(series), 1)
+    width = 0.85 / len(series)
 
-    for i, (values, stds, label, color) in enumerate(series):
-        pos = x + (i - (len(series) - 1) / 2) * width
+    for i, (tag, label, palette, shade) in enumerate(series):
+        sub = agg[agg["tag"] == tag].set_index(col).reindex(keys, fill_value=0)
+        color = sns.color_palette(palette, n_colors=SHADES[palette])[shade]
+        mean = sub[f"{op}_bw_gb"]
         ax.bar(
-            pos,
-            values,
+            x + (i - (len(series) - 1) / 2) * width,
+            mean,
             width,
-            yerr=stds,
-            error_kw=error_kw,
-            capsize=capsize,
+            # range of the runs: the policy can land either side of its switch
+            yerr=[mean - sub[f"{op}_bw_min"], sub[f"{op}_bw_max"] - mean],
+            error_kw={"linewidth": 0.3, "capthick": 0.3},
+            capsize=0.7,
             label=label,
             color=color,
             edgecolor=color,
@@ -374,54 +255,42 @@ def plot_fio(arch, title, df_param, value_col, std_col, ylabel, is_write=False):
             zorder=2,
         )
 
+    # every other group on a faint band, to read the groups apart
+    for k in x[1::2]:
+        ax.axvspan(k - 0.5, k + 0.5, color="#f8f8f8", lw=0, zorder=0)
+    ax.set_xlim(-0.5, len(keys) - 0.5)
+
     # faint dotted rules at each tick, like the pressure plot
     ax.set_axisbelow(True)
     ax.grid(axis="y", ls=":", lw=0.4, color="0.85", zorder=0)
-
     sns.despine(ax=ax)
-
-    ax.tick_params(axis="y", labelsize=6, length=2)
-    ax.tick_params(axis="x", labelsize=6, length=2)
-
+    ax.tick_params(labelsize=6, length=2)
     ax.set_xticks(x)
-    ax.set_xticklabels([f"{r}%" for r in read_ratios])
-    # ax.set_xlabel("Read Ratio (%)")
-    ax.set_ylabel(ylabel, fontsize=7)
+    ax.set_xticklabels(keys)
+    ax.set_ylabel(rf"$\mathbf{{{op.capitalize()}}}$ (GB/s)", fontsize=7)
     ax.yaxis.set_major_formatter(mtick.FormatStrFormatter("%.0f"))
-    ax.yaxis.set_major_locator(mtick.MaxNLocator(nbins=6))
-    ax.set_xlabel("Read Ratio (%)", fontsize=6)
+    ax.yaxis.set_major_locator(mtick.MaxNLocator(nbins=4))
 
-    # legend inside figure
-    ax.legend(
-        loc="upper left" if not is_write else "upper right",
-        fontsize=5,
-        ncol=1,
-        framealpha=0.8,
-        edgecolor="none",
-        handlelength=1.2,
-        handletextpad=0.4,
-        borderaxespad=0.3,
-    )
 
-    fig.tight_layout()
-    path = os.path.join(config.PLOT_DIR_FIO, config.ARCH_SUBNAMES[arch])
-    plt.savefig(
-        f"{path}_{title}.pdf", bbox_inches="tight", pad_inches=0, dpi=300
-    )
-
-    handles, labels = ax.get_legend_handles_labels()
-    fig_legend = plt.figure(figsize=(3.3, 0.5))
-    legend = fig_legend.legend(
+def make_legend():
+    """One row over both columns, so the paper places it once."""
+    handles = [
+        plt.Rectangle((0, 0), 1, 1, color=sns.color_palette(palette, n_colors=SHADES[palette])[shade])
+        for _, _, palette, shade in SERIES
+    ]
+    labels = [label for _, label, _, _ in SERIES]
+    fig = plt.figure(figsize=(6.9, 0.2))
+    fig.legend(
         handles,
         labels,
-        fontsize=8,
+        loc="center",
         ncol=len(handles),
-        edgecolor="white",
-        framealpha=1.0,
+        fontsize=6.5,
+        frameon=False,
+        handlelength=1.5,
+        handletextpad=0.4,
+        columnspacing=1.2,
     )
-
-    fig_legend.subplots_adjust(left=0, right=1, top=1, bottom=0)
-    path = os.path.join(config.PLOT_DIR_FIO, "legend")
-    # plt.savefig(f"{path}.pdf", bbox_inches="tight", pad_inches=0, dpi=300)
-    # plt.savefig(f"{path}.png", bbox_inches="tight", pad_inches=0, dpi=300)
-    plt.close(fig_legend)
+    path = os.path.join(config.PLOT_DIR_FIO, "legend.pdf")
+    fig.savefig(path, bbox_inches="tight", pad_inches=0.02, dpi=300)
+    plt.close(fig)

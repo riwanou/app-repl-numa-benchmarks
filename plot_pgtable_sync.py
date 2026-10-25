@@ -1,4 +1,4 @@
-"""Mean us per munmap, with the slowdown over vanilla.
+"""Mean us per munmap, with the slowdown over replication off on the same kernel.
 
 uv run run.py plot-pgtable-sync
 """
@@ -15,9 +15,9 @@ import seaborn as sns
 
 import config
 
-BASE = "pgtable_sync_baseline"
+BASE = "pgtable_sync_off"
 LABELS = {
-    "vanilla": "Linux Vanilla",
+    "vanilla": "Replication off",
     "shared": "SPARe PT shared",
     "diverged": "SPARe PT diverged",
 }
@@ -44,11 +44,11 @@ CHUNK_STATES = [
 
 
 def load(arch: str, subfolder: str | None = None) -> pd.DataFrame:
-    """One row per tag, over whatever csvs sit in that chunk size's folder."""
+    """One row per tag, over every run of that chunk size."""
     folder = os.path.join(config.RESULT_DIR, arch, "microbench", "pgtable_sync")
     if subfolder:
         folder = os.path.join(folder, subfolder)
-    paths = glob.glob(os.path.join(folder, "*.csv"))
+    paths = glob.glob(os.path.join(folder, "run*", "*.csv"))
     if not paths:
         return pd.DataFrame()
 

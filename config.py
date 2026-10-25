@@ -36,6 +36,17 @@ def repl_setup(placement: int, exts: list[str]):
         sh(f"echo {ext} > {REPL_DEBUGFS}/registered")
 
 
+def repl_write_unreplication(on: bool):
+    """Write unreplication, on either kernel."""
+    root = REPL_SYSFS if os.path.isdir(REPL_SYSFS) else REPL_DEBUGFS
+    sh(f"echo {int(on)} > {root}/write_unreplication")
+
+
+def repl_knob(name: str, value: int):
+    """One 7.3 sysfs knob."""
+    sh(f"echo {value} > {REPL_SYSFS}/{name}")
+
+
 def repl_cmd(cmd: str) -> str:
     """cmd replicated: 7.3 flags the process, its children inherit it."""
     if os.path.isdir(REPL_SYSFS):
@@ -141,6 +152,15 @@ def sh(cmd, cwd=None):
         cwd=cwd or ROOT_DIR,
         executable="/bin/bash",
     )
+
+
+def tune_machine():
+    """The provision/run_bench.sh settings, applied by every bench so a run
+    does not depend on how it was launched."""
+    sh("echo 0 > /proc/sys/kernel/numa_balancing")
+    sh("for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do echo performance > $g; done")
+    sh("echo 1 > /sys/devices/system/cpu/intel_pstate/no_turbo")
+    sh("echo never > /sys/kernel/mm/transparent_hugepage/enabled")
 
 
 def get_time():

@@ -70,8 +70,7 @@ def make_stats_pressure():
         print(f"[OK] {len(df)} rows -> {output}")
 
         # the same table the way it is read: a level per row, a variant per
-        # column, in the order the phases ran. Keyed on the variant tag, not
-        # the label: repl-bound and repl-firsttouch share one label
+        # column, in the order the phases ran
         wide = df.pivot_table(
             index="phase", columns="variant", values="qps_mean_steady", sort=False
         )[available]

@@ -33,22 +33,25 @@ class Phase:
 PLAN_4 = [
     Phase("normal", "max", 60),
     Phase("6G", "6G", 60),
-    Phase("4.5G", "4500M", 60),
     Phase("3G", "3G", 60),
+    Phase("4.5G", "4500M", 60),
+    Phase("6G back", "6G", 60),
     Phase("release", "max", 60),
 ]
 
 PLAN_2 = [
     Phase("normal", "max", 60),
     Phase("3.5G", "3500M", 60),
-    Phase("3G", "3G", 60),
     Phase("2.5G", "2560M", 60),
+    Phase("3G", "3G", 60),
+    Phase("3.5G back", "3500M", 60),
     Phase("release", "max", 60),
 ]
 
-PLANS = {2: PLAN_2, 4: PLAN_4}
+# settle covers the first query run, slower on 4 nodes
+PLANS = {2: (PLAN_2, 30), 4: (PLAN_4, 90)}
 
-TAIL = 10  # the bench outlives the plan, settle is per variant
+TAIL = 10  # the bench outlives the plan
 QUIESCE = 20  # let the previous variant's teardown finish
 
 # our sampling rate, and the monitoring one run.py passes to Monitoring
@@ -59,7 +62,7 @@ CGROUP = os.path.join(CGROUP_ROOT, "bench")
 REPL_STATS = "/sys/kernel/debug/repl_pt/stats"
 REPL_PG_STATS = "/sys/kernel/debug/repl_pt/pg_stats"
 
-CGROUP_STAT_KEYS = ["anon", "file", "pgscan", "pgsteal", "pgmajfault"]
+CGROUP_STAT_KEYS = ["anon", "file", "anon_thp", "file_thp", "pgscan", "pgsteal", "pgmajfault"]
 PR_SET_PDEATHSIG = 1
 
 # what numa balancing did and when. machine wide, so a busy machine pollutes
@@ -97,7 +100,7 @@ def read_kv(path: str) -> dict[str, str]:
     )
 
 
-def get_plan() -> list[Phase]:
+def get_plan() -> tuple[list[Phase], int]:
     """The staircase for this machine, picked on its node count."""
     nodes = len(
         [n for n in os.listdir("/sys/devices/system/node") if n[:4] == "node"]
@@ -255,8 +258,8 @@ def run_phase(phase, variant, bench, writer, log, start) -> bool:
 
 
 def run_variant(variant):
-    plan = get_plan()
-    running_time = variant.settle + sum(p.seconds for p in plan) + TAIL
+    plan, settle = get_plan()
+    running_time = settle + sum(p.seconds for p in plan) + TAIL
     print(f"=== {variant.tag}: {len(plan)} phases, {running_time}s")
 
     os.makedirs(config.RESULT_DIR_PRESSURE, exist_ok=True)
@@ -294,7 +297,7 @@ def run_variant(variant):
         since = datetime.datetime.now().isoformat()
         bench = start_bench(variant, running_time)
         sh(f"echo 1 > {REPL_STATS}/clear || true")
-        time.sleep(variant.settle)
+        time.sleep(settle)
 
         start = time.monotonic()
         try:

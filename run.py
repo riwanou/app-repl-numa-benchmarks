@@ -7,6 +7,7 @@ import bench_llama
 import bench_locality
 import bench_micro
 import bench_sharing
+import config
 import monitoring
 import pressure
 
@@ -23,6 +24,10 @@ parser.add_argument(
         "rocksdb-repl",
         "fio",
         "fio-repl",
+        "fio-hot",
+        "fio-hot-trial",
+        "fio-written",
+        "fio-written-default",
         "fio-pgt-spare",
         "fio-pgt-mitosis",
         "fio-pgt-hydra",
@@ -59,6 +64,8 @@ parser.add_argument(
     help="Variant to run",
 )
 args = parser.parse_args()
+if not args.run.startswith(("plot", "stats")):
+    config.tune_machine()
 
 
 def bench_and_monitor(
@@ -100,6 +107,14 @@ elif args.run == "fio":
     bench_and_monitor(bench_fio.run_bench_fio, "fio")
 elif args.run == "fio-repl":
     bench_and_monitor(bench_fio.run_bench_fio_repl, "fio-repl")
+elif args.run == "fio-hot":
+    bench_and_monitor(bench_fio.run_bench_fio_hot, "fio-hot")
+elif args.run == "fio-hot-trial":
+    bench_and_monitor(bench_fio.run_bench_fio_hot_trial, "fio-hot-trial")
+elif args.run == "fio-written":
+    bench_and_monitor(bench_fio.run_bench_fio_written, "fio-written")
+elif args.run == "fio-written-default":
+    bench_and_monitor(bench_fio.run_bench_fio_written_default, "fio-written-default")
 elif args.run == "fio-pgt-spare":
     bench_and_monitor(bench_fio.run_bench_fio_pgt_spare, "fio-pgt-spare")
 elif args.run == "fio-pgt-mitosis":
@@ -125,9 +140,9 @@ elif args.run == "sharing":
     # one run that pays for the uncore counters
     bench_and_monitor(bench_sharing.run_bench_sharing, "sharing", coherence=True)
 elif args.run == "bench-pgtable-sync-baseline":
-    bench_micro.run_bench_pgtable_sync("baseline")
+    bench_micro.run_bench_pgtable_sync(["baseline"])
 elif args.run == "bench-pgtable-sync-repl":
-    bench_micro.run_bench_pgtable_sync("on")
+    bench_micro.run_bench_pgtable_sync(["off", "on"])
 elif args.run == "bench-pgtable-own":
     bench_micro.run_bench_pgtable("mmap")
 elif args.run == "bench-pgtable-carrefour":

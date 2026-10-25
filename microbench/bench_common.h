@@ -23,7 +23,7 @@ size_t size;
 pthread_barrier_t barrier;
 
 #define MADV_REPLICATE 63
-#define MAP_REPL 0x8000000
+#define MAP_REPL 0x200000
 
 #define PAGE_SIZE 4096
 

@@ -3,7 +3,7 @@ import csv
 import glob
 import shutil
 import config
-from config import sh, get_time
+from config import get_time, repl_cmd, repl_setup, sh
 
 # benchmark.sh invokes ./db_bench, so it must run from rocksdb/build
 BUILD_DIR = os.path.join(config.ROOT_DIR, "rocksdb", "build")
@@ -126,17 +126,13 @@ def _do_bench(
 
     report_path = os.path.join(output_dir, "report.tsv")
 
-    repl_start = ""
-    repl_end = ""
-    if repl:
-        repl_start = "echo 1 > /sys/kernel/debug/repl_pt/policy &&"
-        repl_end = "&& echo 0 > /sys/kernel/debug/repl_pt/policy"
-
     bench_cmd = _bench_cmd(
         variant, BENCH_ENV, f"OUTPUT_DIR={output_dir}", numactl_invoc
     )
+    if repl:
+        bench_cmd = repl_cmd(f"env {bench_cmd}")
     start_time = get_time()
-    sh(f"{repl_start} {bench_cmd} {repl_end}", cwd=BUILD_DIR)
+    sh(bench_cmd, cwd=BUILD_DIR)
     end_time = get_time()
 
     with open(report_path, mode="r", newline="") as f:
@@ -254,21 +250,16 @@ def run_bench_rocksdb_repl():
     #             numactl,
     #         )
 
-    sh("echo 0 > /sys/kernel/debug/repl_pt/main_placement")
-
     # patched-repl variant: with normal replication
     for bench in BENCHES:
         for run_idx in range(NB_RUNS):
             _prepare_round(
                 bench, f"patched-repl-{bench}-round{run_idx}", run_idx
             )
-            sh("echo 1 > /sys/kernel/debug/repl_pt/clear_registered")
-            sh("echo .sst > /sys/kernel/debug/repl_pt/registered")
-            sh("echo 1 > /sys/kernel/debug/repl_pt/write_unreplication")
+            repl_setup(0, [".sst"])
             _do_bench(
                 f"patched-repl-{bench}",
                 bench,
                 run_idx,
                 repl=True,
             )
-            sh("echo 0 > /sys/kernel/debug/repl_pt/write_unreplication")

@@ -18,6 +18,8 @@ done
 # echo off > /sys/devices/system/cpu/smt/control
 # disable frequency boosting
 echo 1 > /sys/devices/system/cpu/intel_pstate/no_turbo
+# no transparent huge pages
+echo never > /sys/kernel/mm/transparent_hugepage/enabled
 
 
 if [ ! -d "$workdir/app-repl-numa-benchmarks" ]; then

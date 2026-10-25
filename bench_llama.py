@@ -10,7 +10,7 @@ import json
 import os
 import shutil
 import config
-from config import sh
+from config import repl_cmd, repl_setup, sh
 
 RESULT_DIR = config.RESULT_DIR_LLAMA
 
@@ -54,7 +54,7 @@ REPL_ARMS = [
 # one csv per kernel variant, holding the mean of each of its arms
 CSVS = [("llama", ARMS), ("llama-repl", REPL_ARMS)]
 
-REPL = "/sys/kernel/debug/repl_pt"
+MODEL_FILE = os.path.basename(MODEL)
 
 
 def _bench_cmd(numactl, numa_flag, out):
@@ -70,9 +70,7 @@ def _drop_caches():
 
 def _repl_setup():
     sh("echo 0 > /proc/sys/kernel/numa_balancing")
-    sh(f"echo 0 > {REPL}/main_placement")
-    sh(f"echo 1 > {REPL}/clear_registered")
-    sh(f"echo Llama-3.1-Tulu-3-8B-Q8_0.gguf > {REPL}/registered")
+    repl_setup(0, [MODEL_FILE])
 
 
 def _run_arm(tag, numactl, numa_flag, repl_enabled):
@@ -84,12 +82,7 @@ def _run_arm(tag, numactl, numa_flag, repl_enabled):
 
     cmd = _bench_cmd(numactl, numa_flag, out)
     if repl_enabled:
-        # policy is per-pid, so the run must be a child of this shell
-        cmd = f"""(
-          echo 1 > {REPL}/policy &&
-          {cmd};
-          echo 0 > {REPL}/policy
-        )"""
+        cmd = repl_cmd(cmd)
     sh(cmd)
 
     shutil.copy(out, json_path)
@@ -165,7 +158,6 @@ def run_bench_llama_repl():
     for tag, numactl, numa_flag, _ in REPL_ARMS:
         _run_arm(tag, numactl, numa_flag, repl_enabled=True)
         write_csv("llama-repl", REPL_ARMS)
-        sh(f"cat {REPL}/registered")
 
 
 def write_all_csv():

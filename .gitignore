@@ -8,3 +8,5 @@ dirtest/dirtest
 provision/data/virtu/debian12/debian-12-generic-amd64.qcow2
 provision/data/virtu/ubuntu14/ubuntu-14.04-server-cloudimg-amd64-disk1.img
 duckdb_data
+results/*/monitor/*_tmp.csv
+mlc
